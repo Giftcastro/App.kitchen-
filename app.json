@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Kitchen Co.",
+    "slug": "kitchen-co",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "kitchenco",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kitchenco.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      },
+      "package": "com.kitchenco.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "viewport": {
+        "width": "device-width",
+        "height": "device-height",
+        "initialScale": 1,
+        "maximumScale": 1,
+        "userScalable": false
+      },
+      "backgroundColor": "#000000"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

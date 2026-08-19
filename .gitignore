@@ -1,0 +1,32 @@
+# OS / editor
+.DS_Store
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.vscode/
+
+# Node
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Build artifacts
+*.tsbuildinfo
+tsc_output.txt
+
+# Misc
+.env
+.env.local

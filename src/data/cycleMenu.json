@@ -1,0 +1,338 @@
+{
+  "Week 1": [
+    {
+      "DAY": "Monday",
+      "MAIN MEAL": "Traditional Beef Bobotie with Yellow Rice & Sambal",
+      "VEGETARIAN MEAL": "Lentil & Sweet Potato Bobotie",
+      "HEALTHY MEAL": "Grilled Chicken Breast with Quinoa & Steamed Broccoli",
+      "CURRY OF THE DAY": "Mild Cape Malay Chicken Curry with Roti",
+      "GOURMET SANDWICH": "Smoked Chicken & Avocado Baguette"
+    },
+    {
+      "DAY": "Tuesday",
+      "MAIN MEAL": "Flame-grilled Boerewors with Chakalaka & Pap",
+      "VEGETARIAN MEAL": "Soya Boerewors with Chakalaka & Creamy Pap",
+      "HEALTHY MEAL": "Lemon Herb Hake with Roasted Mediterranean Veggies",
+      "CURRY OF THE DAY": "Durban Beef Curry with Basmati Rice",
+      "GOURMET SANDWICH": "Toasted Macon, Egg & Cheese on Sourdough"
+    },
+    {
+      "DAY": "Wednesday",
+      "MAIN MEAL": "Slow-cooked Beef Brisket with Garlic Mashed Potatoes",
+      "VEGETARIAN MEAL": "Butternut & Spinach Lasagne",
+      "HEALTHY MEAL": "Sesame Tofu Poke Bowl with Brown Rice & Edamame",
+      "CURRY OF THE DAY": "Creamy Butter Chicken with Garlic Naan",
+      "GOURMET SANDWICH": "Roast Beef, Mustard & Rocket Panini"
+    },
+    {
+      "DAY": "Thursday",
+      "MAIN MEAL": "Sticky BBQ Chicken Drumsticks with Savoury Rice & Corn",
+      "VEGETARIAN MEAL": "Three-Cheese Macaroni & Cheese with Stewed Tomatoes",
+      "HEALTHY MEAL": "Cajun Chicken Salad with Avocado & Yogurt Dressing",
+      "CURRY OF THE DAY": "Spicy Lamb Rogan Josh with Fragrant Rice",
+      "GOURMET SANDWICH": "Caprese Toastie (Mozzarella, Tomato & Pesto)"
+    },
+    {
+      "DAY": "Friday",
+      "MAIN MEAL": "Crispy Fish & Chips with Tartare Sauce",
+      "VEGETARIAN MEAL": "Crumbed Mushroom Burger with Sweet Potato Fries",
+      "HEALTHY MEAL": "Grilled Sirloin Strips with Roasted Butternut & Spinach",
+      "CURRY OF THE DAY": "Vegetable Korma with Yellow Rice",
+      "GOURMET SANDWICH": "Pulled BBQ Chicken Wrap with Crunchy Slaw"
+    }
+  ],
+  "Week 2": [
+    {
+      "DAY": "Monday",
+      "MAIN MEAL": "Cottage Pie with Roasted Carrots & Peas",
+      "VEGETARIAN MEAL": "Lentil Shepherd's Pie",
+      "HEALTHY MEAL": "Lemon-Garlic Grilled Chicken with Asparagus & Cauliflower Mash",
+      "CURRY OF THE DAY": "Aromatic Beef Korma with Jasmine Rice",
+      "GOURMET SANDWICH": "Tuna Mayo & Sweetcorn on Rye"
+    },
+    {
+      "DAY": "Tuesday",
+      "MAIN MEAL": "Grilled Pork Chops with Applesauce & Roasted Potatoes",
+      "VEGETARIAN MEAL": "Vegetable Stir-fry with Cashews & Rice Noodles",
+      "HEALTHY MEAL": "Baked Trout with Green Beans & Herbed Quinoa",
+      "CURRY OF THE DAY": "South Indian Fish Curry with Basmati",
+      "GOURMET SANDWICH": "Pastrami, Pickles & Mustard Sourdough Toastie"
+    },
+    {
+      "DAY": "Wednesday",
+      "MAIN MEAL": "Savory Beef Stew with Dumplings",
+      "VEGETARIAN MEAL": "Hearty Bean Stew with Dumplings",
+      "HEALTHY MEAL": "Mediterranean Chickpea Salad with Feta & Cucumber",
+      "CURRY OF THE DAY": "Spicy Vindaloo Chicken with Roti",
+      "GOURMET SANDWICH": "Chicken Caesar Wrap with Macon Bits"
+    },
+    {
+      "DAY": "Thursday",
+      "MAIN MEAL": "Chicken Schnitzel with Cheese Sauce & Mash",
+      "VEGETARIAN MEAL": "Butternut Squash Risotto",
+      "HEALTHY MEAL": "Teriyaki Salmon Bowl with Edamame & Avocado",
+      "CURRY OF THE DAY": "Yellow Dhal Makhani with Rice",
+      "GOURMET SANDWICH": "Smoked Macon, Lettuce & Tomato (MLT) Ciabatta"
+    },
+    {
+      "DAY": "Friday",
+      "MAIN MEAL": "Boerewors Roll with Caramelized Onions & Chips",
+      "VEGETARIAN MEAL": "Vegetarian Hot Dog with Onions & Relish",
+      "HEALTHY MEAL": "Beef Stir-Fry with Broccoli & Cauliflower Rice",
+      "CURRY OF THE DAY": "Durban Lamb Curry (Bunny Chow style)",
+      "GOURMET SANDWICH": "Gourmet Club Sandwich on White Toast"
+    }
+  ],
+  "Week 3": [
+    {
+      "DAY": "Monday",
+      "MAIN MEAL": "Creamy Chicken & Mushroom Pasta",
+      "VEGETARIAN MEAL": "Wild Mushroom Alfredo Pasta",
+      "HEALTHY MEAL": "Grilled Chicken strips with Sweet Potato Mash",
+      "CURRY OF THE DAY": "Cape Malay Mutton Curry",
+      "GOURMET SANDWICH": "Tandoori Chicken & Mint Raita Wrap"
+    },
+    {
+      "DAY": "Tuesday",
+      "MAIN MEAL": "Beef Stroganoff on a Bed of Tagliatelle",
+      "VEGETARIAN MEAL": "Mushroom & Lentil Stroganoff",
+      "HEALTHY MEAL": "Seared Tuna with Asian Greens",
+      "CURRY OF THE DAY": "Thai Green Chicken Curry",
+      "GOURMET SANDWICH": "Egg Salad & Watercress Sandwich"
+    },
+    {
+      "DAY": "Wednesday",
+      "MAIN MEAL": "Sweet and Sour Pork with Egg Fried Rice",
+      "VEGETARIAN MEAL": "Sweet and Sour Tofu with Veggie Fried Rice",
+      "HEALTHY MEAL": "Quinoa Bowl with Roasted Beetroot & Goat's Cheese",
+      "CURRY OF THE DAY": "Chickpea & Potato Curry with Naan",
+      "GOURMET SANDWICH": "Macon & Brie Toastie with Cranberry Sauce"
+    },
+    {
+      "DAY": "Thursday",
+      "MAIN MEAL": "Traditional Beef Lasagne with Side Salad",
+      "VEGETARIAN MEAL": "Roasted Vegetable & Ricotta Lasagne",
+      "HEALTHY MEAL": "Herb Chicken Breast with Zucchini Noodles",
+      "CURRY OF THE DAY": "Beef Madras with Fragrant Rice",
+      "GOURMET SANDWICH": "Salami, Provolone & Pesto Panini"
+    },
+    {
+      "DAY": "Friday",
+      "MAIN MEAL": "BBQ Beef Burger with Potato Wedges",
+      "VEGETARIAN MEAL": "Falafel Burger with Hummus & Wedges",
+      "HEALTHY MEAL": "Grilled Hake with Garlic Spinach & Sweet Potato",
+      "CURRY OF THE DAY": "Chicken Jalfrezi with Basmati",
+      "GOURMET SANDWICH": "Coronation Chicken Baguette"
+    }
+  ],
+  "Week 4": [
+    {
+      "DAY": "Monday",
+      "MAIN MEAL": "Savory Mince Pie with Mash & Gravy",
+      "VEGETARIAN MEAL": "Creamy Lentil Cottage Pie",
+      "HEALTHY MEAL": "Cajun Tofu with Roasted Pumpkin & Quinoa",
+      "CURRY OF THE DAY": "Butter Chicken with Roti",
+      "GOURMET SANDWICH": "Smoked Salmon & Cream Cheese Bagel"
+    },
+    {
+      "DAY": "Tuesday",
+      "MAIN MEAL": "Chicken Parmigiana with Spaghetti Marinara",
+      "VEGETARIAN MEAL": "Eggplant Parmigiana with Spaghetti",
+      "HEALTHY MEAL": "Lean Beef Patty with Avocado & Salad (No Bun)",
+      "CURRY OF THE DAY": "Yellow Fish Curry with Steamed Rice",
+      "GOURMET SANDWICH": "Spicy Meatball Marinara Sub"
+    },
+    {
+      "DAY": "Wednesday",
+      "MAIN MEAL": "Bangers and Mash with Onion Gravy",
+      "VEGETARIAN MEAL": "Vegan Sausages with Mash & Onion Gravy",
+      "HEALTHY MEAL": "Poached Chicken Salad with Citrus Dressing",
+      "CURRY OF THE DAY": "Aloo Gobi (Potato & Cauliflower) Curry",
+      "GOURMET SANDWICH": "Turkey, Avocado & Cranberry Wrap"
+    },
+    {
+      "DAY": "Thursday",
+      "MAIN MEAL": "Honey Mustard Glazed Pork Ribs with Corn on the Cob",
+      "VEGETARIAN MEAL": "BBQ Jackfruit Burger with Corn",
+      "HEALTHY MEAL": "Baked Cod with Asparagus & Wild Rice",
+      "CURRY OF THE DAY": "Lamb Korma with Garlic Naan",
+      "GOURMET SANDWICH": "Hummus, Cucumber & Roasted Red Pepper Pita"
+    },
+    {
+      "DAY": "Friday",
+      "MAIN MEAL": "Beef Vetkoek with Savory Mince",
+      "VEGETARIAN MEAL": "Vetkoek with Curried Lentils",
+      "HEALTHY MEAL": "Grilled Sirloin with Cauliflower Mash & Green Beans",
+      "CURRY OF THE DAY": "Creamy Coconut Prawn Curry",
+      "GOURMET SANDWICH": "Pulled Pork (Macon-style Beef) Sandwich"
+    }
+  ],
+  "Week 5": [
+    {
+      "DAY": "Monday",
+      "MAIN MEAL": "Traditional Beef Bobotie with Yellow Rice & Sambal",
+      "VEGETARIAN MEAL": "Lentil & Sweet Potato Bobotie",
+      "HEALTHY MEAL": "Grilled Chicken Breast with Quinoa & Steamed Broccoli",
+      "CURRY OF THE DAY": "Mild Cape Malay Chicken Curry with Roti",
+      "GOURMET SANDWICH": "Smoked Chicken & Avocado Baguette"
+    },
+    {
+      "DAY": "Tuesday",
+      "MAIN MEAL": "Flame-grilled Boerewors with Chakalaka & Pap",
+      "VEGETARIAN MEAL": "Soya Boerewors with Chakalaka & Creamy Pap",
+      "HEALTHY MEAL": "Lemon Herb Hake with Roasted Mediterranean Veggies",
+      "CURRY OF THE DAY": "Durban Beef Curry with Basmati Rice",
+      "GOURMET SANDWICH": "Toasted Macon, Egg & Cheese on Sourdough"
+    },
+    {
+      "DAY": "Wednesday",
+      "MAIN MEAL": "Slow-cooked Beef Brisket with Garlic Mashed Potatoes",
+      "VEGETARIAN MEAL": "Butternut & Spinach Lasagne",
+      "HEALTHY MEAL": "Sesame Tofu Poke Bowl with Brown Rice & Edamame",
+      "CURRY OF THE DAY": "Creamy Butter Chicken with Garlic Naan",
+      "GOURMET SANDWICH": "Roast Beef, Mustard & Rocket Panini"
+    },
+    {
+      "DAY": "Thursday",
+      "MAIN MEAL": "Sticky BBQ Chicken Drumsticks with Savoury Rice & Corn",
+      "VEGETARIAN MEAL": "Three-Cheese Macaroni & Cheese with Stewed Tomatoes",
+      "HEALTHY MEAL": "Cajun Chicken Salad with Avocado & Yogurt Dressing",
+      "CURRY OF THE DAY": "Spicy Lamb Rogan Josh with Fragrant Rice",
+      "GOURMET SANDWICH": "Caprese Toastie (Mozzarella, Tomato & Pesto)"
+    },
+    {
+      "DAY": "Friday",
+      "MAIN MEAL": "Crispy Fish & Chips with Tartare Sauce",
+      "VEGETARIAN MEAL": "Crumbed Mushroom Burger with Sweet Potato Fries",
+      "HEALTHY MEAL": "Grilled Sirloin Strips with Roasted Butternut & Spinach",
+      "CURRY OF THE DAY": "Vegetable Korma with Yellow Rice",
+      "GOURMET SANDWICH": "Pulled BBQ Chicken Wrap with Crunchy Slaw"
+    }
+  ],
+  "Week 6": [
+    {
+      "DAY": "Monday",
+      "MAIN MEAL": "Cottage Pie with Roasted Carrots & Peas",
+      "VEGETARIAN MEAL": "Lentil Shepherd's Pie",
+      "HEALTHY MEAL": "Lemon-Garlic Grilled Chicken with Asparagus & Cauliflower Mash",
+      "CURRY OF THE DAY": "Aromatic Beef Korma with Jasmine Rice",
+      "GOURMET SANDWICH": "Tuna Mayo & Sweetcorn on Rye"
+    },
+    {
+      "DAY": "Tuesday",
+      "MAIN MEAL": "Grilled Pork Chops with Applesauce & Roasted Potatoes",
+      "VEGETARIAN MEAL": "Vegetable Stir-fry with Cashews & Rice Noodles",
+      "HEALTHY MEAL": "Baked Trout with Green Beans & Herbed Quinoa",
+      "CURRY OF THE DAY": "South Indian Fish Curry with Basmati",
+      "GOURMET SANDWICH": "Pastrami, Pickles & Mustard Sourdough Toastie"
+    },
+    {
+      "DAY": "Wednesday",
+      "MAIN MEAL": "Savory Beef Stew with Dumplings",
+      "VEGETARIAN MEAL": "Hearty Bean Stew with Dumplings",
+      "HEALTHY MEAL": "Mediterranean Chickpea Salad with Feta & Cucumber",
+      "CURRY OF THE DAY": "Spicy Vindaloo Chicken with Roti",
+      "GOURMET SANDWICH": "Chicken Caesar Wrap with Macon Bits"
+    },
+    {
+      "DAY": "Thursday",
+      "MAIN MEAL": "Chicken Schnitzel with Cheese Sauce & Mash",
+      "VEGETARIAN MEAL": "Butternut Squash Risotto",
+      "HEALTHY MEAL": "Teriyaki Salmon Bowl with Edamame & Avocado",
+      "CURRY OF THE DAY": "Yellow Dhal Makhani with Rice",
+      "GOURMET SANDWICH": "Smoked Macon, Lettuce & Tomato (MLT) Ciabatta"
+    },
+    {
+      "DAY": "Friday",
+      "MAIN MEAL": "Boerewors Roll with Caramelized Onions & Chips",
+      "VEGETARIAN MEAL": "Vegetarian Hot Dog with Onions & Relish",
+      "HEALTHY MEAL": "Beef Stir-Fry with Broccoli & Cauliflower Rice",
+      "CURRY OF THE DAY": "Durban Lamb Curry (Bunny Chow style)",
+      "GOURMET SANDWICH": "Gourmet Club Sandwich on White Toast"
+    }
+  ],
+  "Week 7": [
+    {
+      "DAY": "Monday",
+      "MAIN MEAL": "Creamy Chicken & Mushroom Pasta",
+      "VEGETARIAN MEAL": "Wild Mushroom Alfredo Pasta",
+      "HEALTHY MEAL": "Grilled Chicken strips with Sweet Potato Mash",
+      "CURRY OF THE DAY": "Cape Malay Mutton Curry",
+      "GOURMET SANDWICH": "Tandoori Chicken & Mint Raita Wrap"
+    },
+    {
+      "DAY": "Tuesday",
+      "MAIN MEAL": "Beef Stroganoff on a Bed of Tagliatelle",
+      "VEGETARIAN MEAL": "Mushroom & Lentil Stroganoff",
+      "HEALTHY MEAL": "Seared Tuna with Asian Greens",
+      "CURRY OF THE DAY": "Thai Green Chicken Curry",
+      "GOURMET SANDWICH": "Egg Salad & Watercress Sandwich"
+    },
+    {
+      "DAY": "Wednesday",
+      "MAIN MEAL": "Sweet and Sour Pork with Egg Fried Rice",
+      "VEGETARIAN MEAL": "Sweet and Sour Tofu with Veggie Fried Rice",
+      "HEALTHY MEAL": "Quinoa Bowl with Roasted Beetroot & Goat's Cheese",
+      "CURRY OF THE DAY": "Chickpea & Potato Curry with Naan",
+      "GOURMET SANDWICH": "Macon & Brie Toastie with Cranberry Sauce"
+    },
+    {
+      "DAY": "Thursday",
+      "MAIN MEAL": "Traditional Beef Lasagne with Side Salad",
+      "VEGETARIAN MEAL": "Roasted Vegetable & Ricotta Lasagne",
+      "HEALTHY MEAL": "Herb Chicken Breast with Zucchini Noodles",
+      "CURRY OF THE DAY": "Beef Madras with Fragrant Rice",
+      "GOURMET SANDWICH": "Salami, Provolone & Pesto Panini"
+    },
+    {
+      "DAY": "Friday",
+      "MAIN MEAL": "BBQ Beef Burger with Potato Wedges",
+      "VEGETARIAN MEAL": "Falafel Burger with Hummus & Wedges",
+      "HEALTHY MEAL": "Grilled Hake with Garlic Spinach & Sweet Potato",
+      "CURRY OF THE DAY": "Chicken Jalfrezi with Basmati",
+      "GOURMET SANDWICH": "Coronation Chicken Baguette"
+    }
+  ],
+  "Week 8": [
+    {
+      "DAY": "Monday",
+      "MAIN MEAL": "Savory Mince Pie with Mash & Gravy",
+      "VEGETARIAN MEAL": "Creamy Lentil Cottage Pie",
+      "HEALTHY MEAL": "Cajun Tofu with Roasted Pumpkin & Quinoa",
+      "CURRY OF THE DAY": "Butter Chicken with Roti",
+      "GOURMET SANDWICH": "Smoked Salmon & Cream Cheese Bagel"
+    },
+    {
+      "DAY": "Tuesday",
+      "MAIN MEAL": "Chicken Parmigiana with Spaghetti Marinara",
+      "VEGETARIAN MEAL": "Eggplant Parmigiana with Spaghetti",
+      "HEALTHY MEAL": "Lean Beef Patty with Avocado & Salad (No Bun)",
+      "CURRY OF THE DAY": "Yellow Fish Curry with Steamed Rice",
+      "GOURMET SANDWICH": "Spicy Meatball Marinara Sub"
+    },
+    {
+      "DAY": "Wednesday",
+      "MAIN MEAL": "Bangers and Mash with Onion Gravy",
+      "VEGETARIAN MEAL": "Vegan Sausages with Mash & Onion Gravy",
+      "HEALTHY MEAL": "Poached Chicken Salad with Citrus Dressing",
+      "CURRY OF THE DAY": "Aloo Gobi (Potato & Cauliflower) Curry",
+      "GOURMET SANDWICH": "Turkey, Avocado & Cranberry Wrap"
+    },
+    {
+      "DAY": "Thursday",
+      "MAIN MEAL": "Honey Mustard Glazed Pork Ribs with Corn on the Cob",
+      "VEGETARIAN MEAL": "BBQ Jackfruit Burger with Corn",
+      "HEALTHY MEAL": "Baked Cod with Asparagus & Wild Rice",
+      "CURRY OF THE DAY": "Lamb Korma with Garlic Naan",
+      "GOURMET SANDWICH": "Hummus, Cucumber & Roasted Red Pepper Pita"
+    },
+    {
+      "DAY": "Friday",
+      "MAIN MEAL": "Beef Vetkoek with Savory Mince",
+      "VEGETARIAN MEAL": "Vetkoek with Curried Lentils",
+      "HEALTHY MEAL": "Grilled Sirloin with Cauliflower Mash & Green Beans",
+      "CURRY OF THE DAY": "Creamy Coconut Prawn Curry",
+      "GOURMET SANDWICH": "Pulled Pork (Macon-style Beef) Sandwich"
+    }
+  ]
+}
