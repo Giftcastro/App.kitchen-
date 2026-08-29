@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Platform, SafeAreaView, StatusBar, TextInput, ScrollView } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Platform, StatusBar, TextInput, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { useKitchen } from '../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
@@ -9,13 +10,15 @@ import * as Notifications from 'expo-notifications';
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
 });
 
 export default function PayFastSandboxScreen() {
-  const { cart, placeOrder, user, saveCard, orderNote, appliedDiscount, calculateDiscountAmount } = useKitchen();
+  const { cart, placeOrder, user, savedCards, saveCard, orderNote, appliedDiscount, calculateDiscountAmount, deliveryInfo } = useKitchen();
   const router = useRouter();
   const webViewRef = useRef<WebView>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -23,18 +26,26 @@ export default function PayFastSandboxScreen() {
   const [showSuccess, setShowSuccess] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [saveCardEnabled, setSaveCardEnabled] = useState(false);
+  // A saved card only ever exposes a masked number, so re-selecting one skips
+  // straight to CVV confirmation rather than asking for the full PAN again.
+  const [selectedSavedCardId, setSelectedSavedCardId] = useState<string | null>(null);
+  // finalTotal is derived live from `cart`, which placeOrder() empties on
+  // success — snapshot the amount actually paid so the success screen still
+  // has something to show once the cart is gone.
+  const [paidAmount, setPaidAmount] = useState(0);
 
   // Calculate discount amount and final total (only on eligible items)
   const totalPrice = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const discountAmount = calculateDiscountAmount(cart, appliedDiscount);
-  const finalTotal = totalPrice - discountAmount;
+  const deliveryFee = deliveryInfo.fee ?? 0;
+  const finalTotal = totalPrice - discountAmount + deliveryFee;
 
   // Card form fields
   const [cardholderName, setCardholderName] = useState('');
   const [cardNumber, setCardNumber] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [cvv, setCvv] = useState('');
-  const [formErrors, setFormErrors] = useState<{[key: string]: string}>({});
+  const [formErrors, setFormErrors] = useState<{[key: string]: string | undefined}>({});
 
   // Helper to detect card type from number
   const getCardType = (number: string): 'visa' | 'mastercard' | 'amex' | 'other' => {
@@ -73,7 +84,15 @@ export default function PayFastSandboxScreen() {
     requestPermissions();
   }, []);
 
-  // Format card number with spaces every 4 digits
+  // Card number and expiry are deliberately NOT auto-formatted with inserted
+  // spaces/slashes while typing (no "1234 5678" / "12/25" live reformat).
+  // Rewriting a controlled TextInput's value mid-keystroke to insert
+  // characters is a well-documented Android cursor-jump/flicker source —
+  // the native cursor snaps to the end of the text on every reformat,
+  // which is exactly the "glitching" this was causing. Digits-only input
+  // (matching how the CVV field already behaved, which never glitched)
+  // sidesteps the whole bug category. formatCardNumber/formatExpiry are
+  // kept for display-only use (e.g. a formatted summary) if ever needed.
   const formatCardNumber = (text: string) => {
     const cleaned = text.replace(/\D/g, '').slice(0, 16);
     const groups = cleaned.match(/.{1,4}/g);
@@ -91,6 +110,15 @@ export default function PayFastSandboxScreen() {
 
   const validateCardForm = () => {
     const errors: {[key: string]: string} = {};
+
+    // A saved card was already validated when it was first entered — re-confirming
+    // it for a faster checkout only needs the CVV, never the full card number again.
+    if (selectedSavedCardId) {
+      if (cvv.length < 3) errors.cvv = 'Please enter a valid CVV';
+      setFormErrors(errors);
+      return Object.keys(errors).length === 0;
+    }
+
     const cleanedCardNum = cardNumber.replace(/\s/g, '');
 
     if (!cardholderName.trim()) {
@@ -99,10 +127,11 @@ export default function PayFastSandboxScreen() {
     if (cleanedCardNum.length < 16) {
       errors.cardNumber = 'Please enter a valid 16-digit card number';
     }
-    if (expiryDate.length < 5) {
+    if (expiryDate.length < 4) {
       errors.expiryDate = 'Please enter a valid expiry date (MM/YY)';
     } else {
-      const [month, year] = expiryDate.split('/');
+      const month = expiryDate.slice(0, 2);
+      const year = expiryDate.slice(2, 4);
       const now = new Date();
       const currentYear = now.getFullYear() % 100;
       const currentMonth = now.getMonth() + 1;
@@ -122,18 +151,33 @@ export default function PayFastSandboxScreen() {
 
   const handleCardSubmit = () => {
     if (validateCardForm()) {
-      // Save card if enabled
-      if (saveCardEnabled && user) {
+      // Only save a *new* card — a previously-saved one is already on file.
+      if (!selectedSavedCardId && saveCardEnabled && user) {
         saveCard({
           cardholderName: cardholderName.trim(),
           cardNumber: maskCardNumber(cardNumber),
-          expiryDate: expiryDate,
+          expiryDate: formatExpiry(expiryDate),
           cardType: getCardType(cardNumber),
         });
       }
       setShowCardForm(false);
       setIsLoading(true);
     }
+  };
+
+  const handleSelectSavedCard = (cardId: string) => {
+    setSelectedSavedCardId(cardId);
+    setCvv('');
+    setFormErrors({});
+  };
+
+  const handleUseDifferentCard = () => {
+    setSelectedSavedCardId(null);
+    setCardholderName('');
+    setCardNumber('');
+    setExpiryDate('');
+    setCvv('');
+    setFormErrors({});
   };
 
   // Function to trigger the local push notification
@@ -182,12 +226,12 @@ export default function PayFastSandboxScreen() {
             align-items: center;
             height: 100vh;
             margin: 0;
-            background-color: #000000;
+            background-color: #FFFFFF;
             text-align: center;
           }
           .loader {
-            border: 4px solid #1C1C1E;
-            border-top: 4px solid #FFFFFF;
+            border: 4px solid #EBEBEB;
+            border-top: 4px solid #000000;
             border-radius: 50%;
             width: 40px;
             height: 40px;
@@ -198,7 +242,7 @@ export default function PayFastSandboxScreen() {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
           }
-          h2 { color: #FFFFFF; font-size: 18px; font-weight: 600; }
+          h2 { color: #000000; font-size: 18px; font-weight: 600; }
         </style>
       </head>
       <body onload="document.forms['payfast_form'].submit();">
@@ -227,14 +271,17 @@ export default function PayFastSandboxScreen() {
 
     if (url.startsWith(RETURN_URL)) {
       // 1. Send system push notification
+      setIsLoading(false);
       await triggerSuccessNotification();
       
       // 2. Send email notification to the user's email
       await sendEmailNotification();
       
-      // 3. Clear state and record order details
+      // 3. Clear state and record order details — snapshot the total first,
+      // since placeOrder() empties the cart that finalTotal is derived from.
+      setPaidAmount(finalTotal);
       placeOrder();
-      
+
       // 4. Show success screen
       setShowSuccess(true);
     } else if (url.startsWith(CANCEL_URL)) {
@@ -246,20 +293,13 @@ export default function PayFastSandboxScreen() {
   if (showSuccess) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#000000" />
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.successContainer}>
           <View style={styles.successIconWrap}>
             <Text style={styles.successIcon}>✅</Text>
           </View>
           <Text style={styles.successTitle}>Payment Successful!</Text>
-          {appliedDiscount ? (
-            <Text style={styles.successAmount}>
-              <Text style={styles.successOriginalPrice}>R{totalPrice.toFixed(2)}</Text>
-              {' '}R{finalTotal.toFixed(2)}
-            </Text>
-          ) : (
-            <Text style={styles.successAmount}>R{totalPrice.toFixed(2)}</Text>
-          )}
+          <Text style={styles.successAmount}>R{paidAmount.toFixed(2)}</Text>
           <Text style={styles.successSubtext}>
             Your order has been placed and the kitchen is preparing your meal.
           </Text>
@@ -303,7 +343,7 @@ export default function PayFastSandboxScreen() {
   if (showCardForm) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#000000" />
+        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.replace('/cart')} style={styles.closeButton}>
             <Text style={styles.closeButtonText}>Cancel</Text>
@@ -320,9 +360,17 @@ export default function PayFastSandboxScreen() {
             <Text style={styles.summaryTitle}>Order Summary</Text>
             {cart.map((item, idx) => (
               <View key={item.id || idx} style={styles.summaryRow}>
-                <Text style={styles.summaryItem}>
-                  {item.quantity}x {item.name}
-                </Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.summaryItem}>
+                    {item.quantity}x {item.name}
+                  </Text>
+                  {item.deliveryDateLabel && (
+                    <Text style={styles.summaryItemDate}>📅 {item.deliveryDateLabel}</Text>
+                  )}
+                  {item.addOns && item.addOns.length > 0 && (
+                    <Text style={styles.summaryItemAddOns}>+ {item.addOns.map((a: any) => a.name).join(', ')}</Text>
+                  )}
+                </View>
                 <Text style={styles.summaryPrice}>R{(item.price * item.quantity).toFixed(2)}</Text>
               </View>
             ))}
@@ -335,6 +383,15 @@ export default function PayFastSandboxScreen() {
                 </View>
               </>
             ) : null}
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryItem}>
+                {deliveryInfo.fee != null ? `Delivery Fee (${deliveryInfo.distanceKm}km)` : 'Delivery Fee'}
+              </Text>
+              <Text style={styles.summaryPrice}>
+                {deliveryInfo.fee != null ? `R${deliveryFee.toFixed(2)}` : 'Add address'}
+              </Text>
+            </View>
             {appliedDiscount ? (
               <>
                 <View style={styles.summaryDivider} />
@@ -347,109 +404,157 @@ export default function PayFastSandboxScreen() {
             <View style={styles.summaryDivider} />
             <View style={styles.summaryTotalRow}>
               <Text style={styles.summaryTotalLabel}>Total</Text>
-              {appliedDiscount ? (
-                <Text style={styles.summaryTotalValue}>
-                  <Text style={styles.summaryOriginalPrice}>R{totalPrice.toFixed(2)}</Text>
-                  {' '}R{finalTotal.toFixed(2)}
-                </Text>
-              ) : (
-                <Text style={styles.summaryTotalValue}>R{totalPrice.toFixed(2)}</Text>
-              )}
+              <Text style={styles.summaryTotalValue}>R{finalTotal.toFixed(2)}</Text>
             </View>
           </View>
+
+          {/* Saved Cards — quick-select skips straight to CVV confirmation */}
+          {savedCards.length > 0 && (
+            <View style={styles.savedCardsSection}>
+              <Text style={styles.savedCardsTitle}>SAVED CARDS</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.savedCardsRow}>
+                {savedCards.map((card) => {
+                  const isSelected = selectedSavedCardId === card.id;
+                  return (
+                    <TouchableOpacity
+                      key={card.id}
+                      style={[styles.savedCardChip, isSelected && styles.savedCardChipSelected]}
+                      onPress={() => handleSelectSavedCard(card.id)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={styles.savedCardChipIcon}>💳</Text>
+                      <View>
+                        <Text style={styles.savedCardChipType}>{card.cardType.toUpperCase()}</Text>
+                        <Text style={styles.savedCardChipNumber}>{card.cardNumber}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity
+                  style={[styles.savedCardChip, styles.newCardChip, !selectedSavedCardId && styles.savedCardChipSelected]}
+                  onPress={handleUseDifferentCard}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.savedCardChipIcon}>➕</Text>
+                  <Text style={styles.savedCardChipType}>New Card</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          )}
 
           {/* Card Details Form */}
           <View style={styles.cardFormSection}>
             <Text style={styles.cardFormTitle}>💳 Payment Details</Text>
             <Text style={styles.cardFormSubtitle}>
-              Enter your card information to complete the payment
+              {selectedSavedCardId
+                ? 'Confirm the CVV for your saved card to complete the payment'
+                : 'Enter your card information to complete the payment'}
             </Text>
 
-            {/* Cardholder Name */}
-            <View style={styles.cardInputGroup}>
-              <Text style={styles.cardLabel}>CARDHOLDER NAME</Text>
-              <View style={[styles.cardInputWrapper, formErrors.cardholderName ? styles.cardInputError : null]}>
-                <TextInput
-                  style={styles.cardInput}
-                  placeholder="John Doe"
-                  placeholderTextColor="#6B6B6B"
-                  value={cardholderName}
-                  onChangeText={(val) => { setCardholderName(val); setFormErrors({...formErrors, cardholderName: ''}); }}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                />
+            {selectedSavedCardId ? (
+              <View style={styles.selectedCardSummary}>
+                <Text style={styles.selectedCardSummaryIcon}>💳</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.selectedCardSummaryName}>
+                    {savedCards.find((c) => c.id === selectedSavedCardId)?.cardholderName}
+                  </Text>
+                  <Text style={styles.selectedCardSummaryNumber}>
+                    {savedCards.find((c) => c.id === selectedSavedCardId)?.cardNumber}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={handleUseDifferentCard}>
+                  <Text style={styles.selectedCardSummaryChange}>Change</Text>
+                </TouchableOpacity>
               </View>
-              {formErrors.cardholderName && <Text style={styles.cardFieldError}>{formErrors.cardholderName}</Text>}
-            </View>
+            ) : (
+              <>
+                {/* Cardholder Name */}
+                <View style={styles.cardInputGroup}>
+                  <Text style={styles.cardLabel}>CARDHOLDER NAME</Text>
+                  <View style={[styles.cardInputWrapper, formErrors.cardholderName ? styles.cardInputError : null]}>
+                    <TextInput
+                      style={styles.cardInput}
+                      placeholder="John Doe"
+                      placeholderTextColor="#6B6B6B"
+                      value={cardholderName}
+                      onChangeText={(val) => { setCardholderName(val); setFormErrors({...formErrors, cardholderName: undefined}); }}
+                      autoCapitalize="words"
+                      autoCorrect={false}
+                    />
+                  </View>
+                  {formErrors.cardholderName && <Text style={styles.cardFieldError}>{formErrors.cardholderName}</Text>}
+                </View>
 
-            {/* Card Number */}
+                {/* Card Number */}
+                <View style={styles.cardInputGroup}>
+                  <Text style={styles.cardLabel}>CARD NUMBER</Text>
+                  <View style={[styles.cardInputWrapper, formErrors.cardNumber ? styles.cardInputError : null]}>
+                    <Text style={styles.cardInputIcon}>💳</Text>
+                    <TextInput
+                      style={styles.cardInput}
+                      placeholder="1234 5678 9012 3456"
+                      placeholderTextColor="#6B6B6B"
+                      value={cardNumber}
+                      onChangeText={(val) => { setCardNumber(val.replace(/\D/g, '').slice(0, 16)); setFormErrors({...formErrors, cardNumber: undefined}); }}
+                      keyboardType="number-pad"
+                      maxLength={16}
+                    />
+                  </View>
+                  {formErrors.cardNumber && <Text style={styles.cardFieldError}>{formErrors.cardNumber}</Text>}
+                </View>
+
+                <View style={styles.cardInputGroup}>
+                  <Text style={styles.cardLabel}>EXPIRY DATE</Text>
+                  <View style={[styles.cardInputWrapper, formErrors.expiryDate ? styles.cardInputError : null]}>
+                    <TextInput
+                      style={styles.cardInput}
+                      placeholder="MM/YY"
+                      placeholderTextColor="#6B6B6B"
+                      value={expiryDate}
+                      onChangeText={(val) => { setExpiryDate(val.replace(/\D/g, '').slice(0, 4)); setFormErrors({...formErrors, expiryDate: undefined}); }}
+                      keyboardType="number-pad"
+                      maxLength={4}
+                    />
+                  </View>
+                  {formErrors.expiryDate && <Text style={styles.cardFieldError}>{formErrors.expiryDate}</Text>}
+                </View>
+              </>
+            )}
+
+            {/* CVV — required for both a new card and a re-confirmed saved card */}
             <View style={styles.cardInputGroup}>
-              <Text style={styles.cardLabel}>CARD NUMBER</Text>
-              <View style={[styles.cardInputWrapper, formErrors.cardNumber ? styles.cardInputError : null]}>
-                <Text style={styles.cardInputIcon}>💳</Text>
+              <Text style={styles.cardLabel}>CVV</Text>
+              <View style={[styles.cardInputWrapper, formErrors.cvv ? styles.cardInputError : null, { maxWidth: 140 }]}>
                 <TextInput
                   style={styles.cardInput}
-                  placeholder="1234 5678 9012 3456"
+                  placeholder="123"
                   placeholderTextColor="#6B6B6B"
-                  value={cardNumber}
-                  onChangeText={(val) => { setCardNumber(formatCardNumber(val)); setFormErrors({...formErrors, cardNumber: ''}); }}
+                  value={cvv}
+                  onChangeText={(val) => { setCvv(val.replace(/\D/g, '').slice(0, 4)); setFormErrors({...formErrors, cvv: undefined}); }}
                   keyboardType="number-pad"
-                  maxLength={19}
+                  maxLength={4}
+                  secureTextEntry
                 />
               </View>
-              {formErrors.cardNumber && <Text style={styles.cardFieldError}>{formErrors.cardNumber}</Text>}
+              {formErrors.cvv && <Text style={styles.cardFieldError}>{formErrors.cvv}</Text>}
             </View>
 
-            {/* Expiry and CVV row */}
-            <View style={styles.cardRow}>
-              <View style={[styles.cardInputGroup, { flex: 1, marginRight: 12 }]}>
-                <Text style={styles.cardLabel}>EXPIRY DATE</Text>
-                <View style={[styles.cardInputWrapper, formErrors.expiryDate ? styles.cardInputError : null]}>
-                  <TextInput
-                    style={styles.cardInput}
-                    placeholder="MM/YY"
-                    placeholderTextColor="#6B6B6B"
-                    value={expiryDate}
-                    onChangeText={(val) => { setExpiryDate(formatExpiry(val)); setFormErrors({...formErrors, expiryDate: ''}); }}
-                    keyboardType="number-pad"
-                    maxLength={5}
-                  />
+            {/* Save Card Checkbox — only relevant when entering a new card */}
+            {!selectedSavedCardId && (
+              <TouchableOpacity
+                style={styles.saveCardRow}
+                onPress={() => setSaveCardEnabled(!saveCardEnabled)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.checkbox, saveCardEnabled && styles.checkboxSelected]}>
+                  {saveCardEnabled && <Text style={styles.checkboxCheck}>✓</Text>}
                 </View>
-                {formErrors.expiryDate && <Text style={styles.cardFieldError}>{formErrors.expiryDate}</Text>}
-              </View>
-
-              <View style={[styles.cardInputGroup, { flex: 1 }]}>
-                <Text style={styles.cardLabel}>CVV</Text>
-                <View style={[styles.cardInputWrapper, formErrors.cvv ? styles.cardInputError : null]}>
-                  <TextInput
-                    style={styles.cardInput}
-                    placeholder="123"
-                    placeholderTextColor="#6B6B6B"
-                    value={cvv}
-                    onChangeText={(val) => { setCvv(val.replace(/\D/g, '').slice(0, 4)); setFormErrors({...formErrors, cvv: ''}); }}
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    secureTextEntry
-                  />
+                <View style={styles.saveCardTextContainer}>
+                  <Text style={styles.saveCardTitle}>Save Card for Future Purchases</Text>
+                  <Text style={styles.saveCardSubtitle}>Your card will be securely stored for faster checkout next time</Text>
                 </View>
-                {formErrors.cvv && <Text style={styles.cardFieldError}>{formErrors.cvv}</Text>}
-              </View>
-            </View>
-
-            {/* Save Card Checkbox */}
-            <TouchableOpacity 
-              style={styles.saveCardRow} 
-              onPress={() => setSaveCardEnabled(!saveCardEnabled)}
-              activeOpacity={0.7}
-            >
-              <View style={[styles.checkbox, saveCardEnabled && styles.checkboxSelected]}>
-                {saveCardEnabled && <Text style={styles.checkboxCheck}>✓</Text>}
-              </View>
-              <View style={styles.saveCardTextContainer}>
-                <Text style={styles.saveCardTitle}>Save Card for Future Purchases</Text>
-                <Text style={styles.saveCardSubtitle}>Your card will be securely stored for faster checkout next time</Text>
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            )}
 
             {/* Security note */}
             <View style={styles.securityNote}>
@@ -474,7 +579,7 @@ export default function PayFastSandboxScreen() {
   // PayFast WebView (payment processing)
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.replace('/cart')} style={styles.closeButton}>
           <Text style={styles.closeButtonText}>Cancel</Text>
@@ -485,50 +590,88 @@ export default function PayFastSandboxScreen() {
         </View>
       </View>
 
-      {/* Order summary */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Order Summary</Text>
-        {cart.map((item, idx) => (
-          <View key={item.id || idx} style={styles.summaryRow}>
-            <Text style={styles.summaryItem}>
-              {item.quantity}x {item.name}
-            </Text>
-            <Text style={styles.summaryPrice}>R{(item.price * item.quantity).toFixed(2)}</Text>
-          </View>
-        ))}
-        {appliedDiscount ? (
-          <>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryDiscountRow}>
-              <Text style={styles.summaryDiscountLabel}>Discount ({appliedDiscount.percentage}%)</Text>
-              <Text style={styles.summaryDiscountValue}>-R{discountAmount.toFixed(2)}</Text>
+      <ScrollView style={styles.processingScroll} contentContainerStyle={styles.processingScrollContent}>
+        {/* Order summary */}
+        <View style={styles.summaryCard}>
+          <Text style={styles.summaryTitle}>Order Summary</Text>
+          {cart.map((item, idx) => (
+            <View key={item.id || idx} style={styles.summaryRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.summaryItem}>
+                  {item.quantity}x {item.name}
+                </Text>
+                {item.deliveryDateLabel && (
+                  <Text style={styles.summaryItemDate}>📅 {item.deliveryDateLabel}</Text>
+                )}
+                {item.addOns && item.addOns.length > 0 && (
+                  <Text style={styles.summaryItemAddOns}>+ {item.addOns.map((a: any) => a.name).join(', ')}</Text>
+                )}
+              </View>
+              <Text style={styles.summaryPrice}>R{(item.price * item.quantity).toFixed(2)}</Text>
             </View>
-          </>
-        ) : null}
-        <View style={styles.summaryDivider} />
-        <View style={styles.summaryTotalRow}>
-          <Text style={styles.summaryTotalLabel}>Total</Text>
-          {appliedDiscount ? (
-            <Text style={styles.summaryTotalValue}>
-              <Text style={styles.summaryOriginalPrice}>R{totalPrice.toFixed(2)}</Text>
-              {' '}R{finalTotal.toFixed(2)}
+          ))}
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryItem}>
+              {deliveryInfo.fee != null ? `Delivery (${deliveryInfo.distanceKm}km)` : 'Delivery'}
             </Text>
-          ) : (
-            <Text style={styles.summaryTotalValue}>R{totalPrice.toFixed(2)}</Text>
-          )}
+            <Text style={styles.summaryPrice}>
+              {deliveryInfo.fee != null ? `R${deliveryFee.toFixed(2)}` : 'Add address'}
+            </Text>
+          </View>
+          {appliedDiscount ? (
+            <>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryDiscountRow}>
+                <Text style={styles.summaryDiscountLabel}>Discount ({appliedDiscount.percentage}%)</Text>
+                <Text style={styles.summaryDiscountValue}>-R{discountAmount.toFixed(2)}</Text>
+              </View>
+            </>
+          ) : null}
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryTotalRow}>
+            <Text style={styles.summaryTotalLabel}>Total</Text>
+            <Text style={styles.summaryTotalValue}>R{finalTotal.toFixed(2)}</Text>
+          </View>
         </View>
-      </View>
 
-      <WebView
-        ref={webViewRef}
-        source={{ html: payFastHTML }}
-        onNavigationStateChange={handleNavigationStateChange}
-        onLoadStart={() => setIsLoading(true)}
-        onLoadEnd={() => setIsLoading(false)}
-        style={styles.webview}
-      />
+        {Platform.OS === 'web' ? (
+          <View style={styles.webFallback}>
+            <Text style={styles.webFallbackIcon}>🔒</Text>
+            <Text style={styles.webFallbackTitle}>Sandbox Redirect</Text>
+            <Text style={styles.webFallbackText}>
+              The PayFast hosted page runs inside a native web view, which is not
+              available on the web demo. Use the sandbox controls below to simulate
+              the redirect outcome.
+            </Text>
+            <TouchableOpacity
+              style={[styles.webFallbackBtn, styles.webFallbackBtnSuccess]}
+              onPress={() => handleNavigationStateChange({ url: RETURN_URL })}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.webFallbackBtnText}>Simulate Payment Success</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.webFallbackBtn, styles.webFallbackBtnCancel]}
+              onPress={() => handleNavigationStateChange({ url: CANCEL_URL })}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.webFallbackBtnText}>Simulate Payment Cancelled</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <WebView
+            ref={webViewRef}
+            source={{ html: payFastHTML }}
+            onNavigationStateChange={handleNavigationStateChange}
+            onLoadStart={() => setIsLoading(true)}
+            onLoadEnd={() => setIsLoading(false)}
+            style={styles.webview}
+          />
+        )}
+      </ScrollView>
 
-      {isLoading && (
+      {isLoading && Platform.OS !== 'web' && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color="#FFFFFF" />
           <Text style={styles.loadingText}>Processing payment securely...</Text>
@@ -539,106 +682,136 @@ export default function PayFastSandboxScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#121212' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: '#121212',
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#2C2C2E',
+    borderBottomColor: '#EBEBEB',
   },
   closeButton: { padding: 4 },
-  closeButtonText: { color: '#FF453A', fontWeight: '700', fontSize: 15 },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#FFFFFF' },
-  headerTotal: { backgroundColor: '#1C1C1E', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8 },
-  headerTotalText: { color: '#FFFFFF', fontWeight: '800', fontSize: 14 },
+  closeButtonText: { color: '#E0393E', fontWeight: '700', fontSize: 15 },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: '#000000' },
+  headerTotal: { backgroundColor: '#F6F6F6', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8 },
+  headerTotalText: { color: '#000000', fontWeight: '800', fontSize: 14 },
   webview: { flex: 1, opacity: 0, height: 0 },
-  
+  processingScroll: { flex: 1 },
+  processingScrollContent: { paddingBottom: 24 },
+
+  // Web fallback panel (PayFast's hosted page runs inside a native WebView,
+  // which is unavailable on web). Provides explicit sandbox redirect controls.
+  webFallback: {
+    padding: 24,
+    alignItems: 'center',
+  },
+  webFallbackIcon: { fontSize: 44, marginBottom: 12 },
+  webFallbackTitle: { fontSize: 18, fontWeight: '800', color: '#000000', marginBottom: 8 },
+  webFallbackText: {
+    fontSize: 13,
+    color: '#6B6B6B',
+    textAlign: 'center',
+    lineHeight: 19,
+    marginBottom: 20,
+  },
+  webFallbackBtn: {
+    width: '100%',
+    paddingVertical: 15,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  webFallbackBtnSuccess: { backgroundColor: '#1DA836' },
+  webFallbackBtnCancel: { backgroundColor: '#E0393E' },
+  webFallbackBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+
   // Summary card
-  summaryCard: { backgroundColor: '#1A1A1A', margin: 16, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#2C2C2E' },
-  summaryTitle: { fontSize: 14, fontWeight: '800', color: '#FFFFFF', marginBottom: 12 },
+  summaryCard: { backgroundColor: '#FFFFFF', margin: 16, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#EBEBEB' },
+  summaryTitle: { fontSize: 14, fontWeight: '800', color: '#000000', marginBottom: 12 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 4 },
-  summaryItem: { fontSize: 13, color: '#A0A0A0', flex: 1 },
-  summaryPrice: { fontSize: 13, color: '#FFFFFF', fontWeight: '600' },
-  summaryDivider: { height: 1, backgroundColor: '#2C2C2E', marginVertical: 10 },
+  summaryItem: { fontSize: 13, color: '#6B6B6B' },
+  summaryItemDate: { fontSize: 11, color: '#000000', fontWeight: '600', marginTop: 2 },
+  summaryItemAddOns: { fontSize: 11, color: '#6B6B6B', marginTop: 2 },
+  summaryPrice: { fontSize: 13, color: '#000000', fontWeight: '600' },
+  summaryDivider: { height: 1, backgroundColor: '#EBEBEB', marginVertical: 10 },
   summaryTotalRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  summaryTotalLabel: { fontSize: 14, color: '#8E8E93' },
-  summaryTotalValue: { fontSize: 16, fontWeight: '800', color: '#22C55E' },
-  summaryOriginalPrice: { textDecorationLine: 'line-through', color: '#6B6B6B', fontSize: 14 },
+  summaryTotalLabel: { fontSize: 14, color: '#6B6B6B' },
+  summaryTotalValue: { fontSize: 16, fontWeight: '800', color: '#000000' },
+  summaryOriginalPrice: { textDecorationLine: 'line-through', color: '#9E9E9E', fontSize: 14 },
   summaryDiscountRow: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 4 },
-  summaryDiscountLabel: { fontSize: 13, color: '#5AC8FA' },
-  summaryDiscountValue: { fontSize: 13, color: '#22C55E', fontWeight: '600' },
+  summaryDiscountLabel: { fontSize: 13, color: '#6B6B6B' },
+  summaryDiscountValue: { fontSize: 13, color: '#1DA836', fontWeight: '600' },
   summaryNoteRow: { marginTop: 6, marginBottom: 4 },
-  summaryNoteLabel: { fontSize: 12, fontWeight: '700', color: '#5AC8FA' },
-  summaryNote: { fontSize: 12, color: '#8E8E93', lineHeight: 16, marginTop: 2 },
-  successOriginalPrice: { textDecorationLine: 'line-through', color: '#6B6B6B', fontSize: 24 },
-  
+  summaryNoteLabel: { fontSize: 12, fontWeight: '700', color: '#6B6B6B' },
+  summaryNote: { fontSize: 12, color: '#6B6B6B', lineHeight: 16, marginTop: 2 },
+  successOriginalPrice: { textDecorationLine: 'line-through', color: '#9E9E9E', fontSize: 24 },
+
   loadingOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
   },
-  loadingText: { marginTop: 15, fontSize: 15, color: '#8E8E93', fontWeight: '500' },
+  loadingText: { marginTop: 15, fontSize: 15, color: '#FFFFFF', fontWeight: '500' },
 
   // Card Form Styles
   cardFormScroll: { flex: 1 },
   cardFormContent: { paddingBottom: 20 },
   cardFormSection: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
     marginTop: 0,
     marginBottom: 16,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EBEBEB',
   },
-  cardFormTitle: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', marginBottom: 4 },
-  cardFormSubtitle: { fontSize: 12, color: '#8E8E93', marginBottom: 20, lineHeight: 16 },
+  cardFormTitle: { fontSize: 16, fontWeight: '800', color: '#000000', marginBottom: 4 },
+  cardFormSubtitle: { fontSize: 12, color: '#6B6B6B', marginBottom: 20, lineHeight: 16 },
   cardInputGroup: { marginBottom: 16 },
   cardLabel: { fontSize: 11, fontWeight: '700', color: '#6B6B6B', marginBottom: 6, letterSpacing: 0.5 },
   cardInputWrapper: {
-    backgroundColor: '#1E1E1E',
+    backgroundColor: '#F6F6F6',
     borderWidth: 1.5,
-    borderColor: '#2C2C2E',
+    borderColor: '#EBEBEB',
     borderRadius: 12,
     paddingHorizontal: 14,
     height: 50,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  cardInputError: { borderColor: '#FF453A' },
+  cardInputError: { borderColor: '#E0393E' },
   cardInputIcon: { fontSize: 16, marginRight: 10 },
-  cardInput: { flex: 1, fontSize: 16, color: '#FFFFFF', paddingVertical: 0, height: 50 },
-  cardFieldError: { color: '#FF453A', fontSize: 11, fontWeight: '600', marginTop: 4, marginLeft: 4 },
+  cardInput: { flex: 1, fontSize: 16, color: '#000000', paddingVertical: 0, height: 50 },
+  cardFieldError: { color: '#E0393E', fontSize: 11, fontWeight: '600', marginTop: 4, marginLeft: 4 },
   cardRow: { flexDirection: 'row' },
   securityNote: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#151515',
+    backgroundColor: '#F6F6F6',
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EBEBEB',
     marginTop: 4,
   },
   securityIcon: { fontSize: 16, marginRight: 10 },
-  securityText: { fontSize: 12, color: '#8E8E93', flex: 1, lineHeight: 16 },
+  securityText: { fontSize: 12, color: '#6B6B6B', flex: 1, lineHeight: 16 },
   cardFooter: {
-    backgroundColor: '#0C0C0C',
+    backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#1C1C1E',
+    borderTopColor: '#EBEBEB',
     padding: 16,
     paddingBottom: Platform.OS === 'ios' ? 34 : 16,
   },
   payNowBtn: {
-    backgroundColor: '#22C55E',
+    backgroundColor: '#1DA836',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -651,13 +824,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: '#121212',
+    backgroundColor: '#FFFFFF',
   },
   successIconWrap: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#1A3A1A',
+    backgroundColor: '#EAF7EE',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
@@ -665,20 +838,20 @@ const styles = StyleSheet.create({
     borderColor: '#22C55E',
   },
   successIcon: { fontSize: 40 },
-  successTitle: { fontSize: 24, fontWeight: '900', color: '#FFFFFF', marginBottom: 8 },
-  successAmount: { fontSize: 36, fontWeight: '900', color: '#22C55E', marginBottom: 12 },
+  successTitle: { fontSize: 24, fontWeight: '900', color: '#000000', marginBottom: 8 },
+  successAmount: { fontSize: 36, fontWeight: '900', color: '#000000', marginBottom: 12 },
   successSubtext: {
     fontSize: 14,
-    color: '#8E8E93',
+    color: '#6B6B6B',
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 24,
     paddingHorizontal: 20,
   },
   emailStatusCard: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EBEBEB',
     borderRadius: 14,
     padding: 16,
     width: '100%',
@@ -687,38 +860,38 @@ const styles = StyleSheet.create({
   emailStatusRow: { flexDirection: 'row', alignItems: 'center' },
   emailIcon: { fontSize: 24, marginRight: 12 },
   emailStatusContent: { flex: 1 },
-  emailStatusTitle: { fontSize: 14, fontWeight: '800', color: '#FFFFFF', marginBottom: 2 },
-  emailStatusText: { fontSize: 12, color: '#8E8E93', lineHeight: 16 },
+  emailStatusTitle: { fontSize: 14, fontWeight: '800', color: '#000000', marginBottom: 2 },
+  emailStatusText: { fontSize: 12, color: '#6B6B6B', lineHeight: 16 },
   emailCheckmark: { fontSize: 20 },
   continueShoppingBtn: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#000000',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     width: '100%',
     marginBottom: 12,
   },
-  continueShoppingBtnText: { color: '#000000', fontSize: 16, fontWeight: '800' },
+  continueShoppingBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   backToMenuBtn: {
-    backgroundColor: '#1C1C1E',
+    backgroundColor: '#F6F6F6',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     width: '100%',
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EBEBEB',
   },
-  backToMenuBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  backToMenuBtnText: { color: '#000000', fontSize: 16, fontWeight: '800' },
 
   // Save Card Checkbox Styles
   saveCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#151515',
+    backgroundColor: '#F6F6F6',
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EBEBEB',
     marginBottom: 16,
   },
   checkbox: {
@@ -732,11 +905,11 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   checkboxSelected: {
-    backgroundColor: '#22C55E',
-    borderColor: '#22C55E',
+    backgroundColor: '#1DA836',
+    borderColor: '#1DA836',
   },
   checkboxCheck: {
-    color: '#000000',
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '800',
   },
@@ -746,12 +919,49 @@ const styles = StyleSheet.create({
   saveCardTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#000000',
     marginBottom: 2,
   },
   saveCardSubtitle: {
     fontSize: 11,
-    color: '#8E8E93',
+    color: '#6B6B6B',
     lineHeight: 14,
   },
+
+  // Saved card quick-select
+  savedCardsSection: { marginHorizontal: 16, marginTop: 16, marginBottom: 0 },
+  savedCardsTitle: { fontSize: 11, fontWeight: '700', color: '#6B6B6B', marginBottom: 10, letterSpacing: 0.5 },
+  savedCardsRow: { gap: 10, paddingRight: 4 },
+  savedCardChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#EBEBEB',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    gap: 10,
+    minWidth: 160,
+  },
+  savedCardChipSelected: { borderColor: '#1DA836', backgroundColor: '#EAF7EE' },
+  newCardChip: { justifyContent: 'center', minWidth: 110 },
+  savedCardChipIcon: { fontSize: 18 },
+  savedCardChipType: { color: '#000000', fontSize: 12, fontWeight: '800' },
+  savedCardChipNumber: { color: '#6B6B6B', fontSize: 11, marginTop: 1 },
+  selectedCardSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F6F6F6',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    marginBottom: 16,
+    gap: 12,
+  },
+  selectedCardSummaryIcon: { fontSize: 24 },
+  selectedCardSummaryName: { color: '#000000', fontSize: 14, fontWeight: '700' },
+  selectedCardSummaryNumber: { color: '#6B6B6B', fontSize: 12, marginTop: 2 },
+  selectedCardSummaryChange: { color: '#000000', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
 });

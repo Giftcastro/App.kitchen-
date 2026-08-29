@@ -1,11 +1,25 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList, SafeAreaView, StatusBar, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, FlatList, StatusBar, TouchableOpacity, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen } from '../../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
+
+/** Weekly (cycle) menu items are id-prefixed "cycle-<week>-<day>-..." — see
+ * handleAddCycleItem in (tabs)/index.tsx. That menu only ever shows *today's*
+ * meals and rotates admin-side, so an id like "cycle-Week 1-Monday-..." from
+ * an old order has no guaranteed relationship to what's actually being cooked
+ * today — reordering it verbatim would silently charge a stale price for a
+ * dish that may not exist on the current menu at all.
+ */
+const isCycleMenuItemId = (id: string) => id.startsWith('cycle-');
 
 export default function TabActivityScreen() {
   const { orders, addToCart } = useKitchen();
   const router = useRouter();
+  // In-app modal instead of Alert.alert — Alert is a documented no-op on
+  // React Native Web with no polyfill in this project, so it would render
+  // nothing there. A real Modal works identically on every platform.
+  const [showCantReorder, setShowCantReorder] = useState(false);
 
   const pastOrders = orders.slice(1); // Exclude current/latest order
 
@@ -37,7 +51,7 @@ export default function TabActivityScreen() {
     switch (status.toLowerCase()) {
       case 'pending': return 'Received';
       case 'preparing': return 'Preparing';
-      case 'on_the_way': return 'On The Way';
+            case 'on_the_way': return 'Out for delivery';
       case 'delivered': return 'Delivered';
       case 'cancelled': return 'Cancelled';
       default: return status;
@@ -45,12 +59,8 @@ export default function TabActivityScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#121212" />
-      <View style={styles.header}>
-        <Text style={styles.title}>Past Orders</Text>
-        <Text style={styles.subtitle}>Your order history</Text>
-      </View>
+        <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       {orders.length === 0 ? (
         <View style={styles.emptyContainer}>
@@ -134,10 +144,22 @@ export default function TabActivityScreen() {
                     <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
                     <Text style={[styles.statusText, { color: statusColor }]}>{getStatusLabel(item.status)}</Text>
                   </View>
-                  <TouchableOpacity 
-                    style={styles.reorderBtn}
-                    onPress={() => {
-                      // Add all items from this order to the cart
+                  {(() => {
+                    // An order that touched the Weekly Menu can't be safely
+                    // reordered as a single action — that menu changes daily,
+                    // so a stale cycle- id from this order may not match
+                    // anything on today's actual menu, at today's actual price.
+                    // Rather than silently reordering only part of the order,
+                    // grey the whole action out and explain why on tap.
+                    const hasWeeklyMenuItems = item.items.some(orderItem =>
+                      isCycleMenuItemId(orderItem.id)
+                    );
+
+                    const handlePress = () => {
+                      if (hasWeeklyMenuItems) {
+                        setShowCantReorder(true);
+                        return;
+                      }
                       item.items.forEach(orderItem => {
                         addToCart({
                           id: orderItem.id,
@@ -151,82 +173,113 @@ export default function TabActivityScreen() {
                         });
                       });
                       router.push('/');
-                    }}
-                  >
-                    <Text style={styles.reorderBtnText}>Reorder</Text>
-                  </TouchableOpacity>
+                    };
+
+                    return (
+                      <TouchableOpacity
+                        style={[styles.reorderBtn, hasWeeklyMenuItems && styles.reorderBtnDisabled]}
+                        onPress={handlePress}
+                        activeOpacity={hasWeeklyMenuItems ? 1 : 0.7}
+                      >
+                        <Text style={[styles.reorderBtnText, hasWeeklyMenuItems && styles.reorderBtnTextDisabled]}>
+                          Reorder
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })()}
                 </View>
               </TouchableOpacity>
             );
           }}
         />
       )}
+
+      <Modal
+        visible={showCantReorder}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowCantReorder(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.explainCard}>
+            <Text style={styles.explainIcon}>📅</Text>
+            <Text style={styles.explainTitle}>Can't reorder directly</Text>
+            <Text style={styles.explainText}>
+              This order includes items from the Weekly Menu, which changes every day.
+              Visit Today's Menu to order today's equivalent instead.
+            </Text>
+            <TouchableOpacity style={styles.explainBtn} onPress={() => setShowCantReorder(false)}>
+              <Text style={styles.explainBtnText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#121212' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
   header: { padding: 20, paddingBottom: 16 },
-  title: { fontSize: 28, fontWeight: '900', color: '#FFFFFF', marginBottom: 4 },
-  subtitle: { fontSize: 14, color: '#8E8E93', fontWeight: '500' },
-  
+  title: { fontSize: 28, fontWeight: '900', color: '#000000', marginBottom: 4 },
+  subtitle: { fontSize: 14, color: '#6B6B6B', fontWeight: '500' },
+
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   emptyIcon: { fontSize: 56, marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#FFFFFF', marginBottom: 8 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#000000', marginBottom: 8 },
   emptySubtitle: { fontSize: 14, color: '#6B6B6B', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
-  menuBtn: { backgroundColor: '#FFFFFF', paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14 },
-  menuBtnText: { color: '#000000', fontWeight: '800', fontSize: 15 },
-  
+  menuBtn: { backgroundColor: '#000000', paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14 },
+  menuBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
+
   list: { padding: 16, paddingBottom: 20 },
-  
-  orderCard: { 
-    backgroundColor: '#1A1A1A', 
-    borderWidth: 1, 
-    borderColor: '#2C2C2E', 
-    borderRadius: 20, 
-    padding: 16, 
+
+  orderCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    borderRadius: 20,
+    padding: 16,
     marginBottom: 12,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.08,
     shadowRadius: 12,
-    elevation: 5,
+    elevation: 2,
   },
   orderHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   orderIdContainer: { flex: 1 },
-  orderId: { fontSize: 16, fontWeight: '800', color: '#FFFFFF', marginBottom: 4, letterSpacing: -0.3 },
-  orderDate: { fontSize: 12, color: '#8E8E93', fontWeight: '500' },
+  orderId: { fontSize: 16, fontWeight: '800', color: '#000000', marginBottom: 4, letterSpacing: -0.3 },
+  orderDate: { fontSize: 12, color: '#6B6B6B', fontWeight: '500' },
   orderTotalContainer: { alignItems: 'flex-end' },
-  orderTotal: { fontSize: 18, fontWeight: '900', color: '#FFFFFF', marginBottom: 4, letterSpacing: -0.3 },
-  itemCount: { backgroundColor: '#1E1E1E', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#2C2C2E' },
-  itemCountText: { fontSize: 11, color: '#8E8E93', fontWeight: '600' },
-  
+  orderTotal: { fontSize: 18, fontWeight: '900', color: '#000000', marginBottom: 4, letterSpacing: -0.3 },
+  itemCount: { backgroundColor: '#F6F6F6', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#EBEBEB' },
+  itemCountText: { fontSize: 11, color: '#6B6B6B', fontWeight: '600' },
+
   itemsPreview: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  itemChip: { 
-    backgroundColor: '#1E1E1E', 
-    paddingHorizontal: 12, 
-    paddingVertical: 7, 
+  itemChip: {
+    backgroundColor: '#F6F6F6',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#2C2C2E'
+    borderColor: '#EBEBEB'
   },
-  itemChipText: { fontSize: 12, color: '#A0A0A0', fontWeight: '500' },
+  itemChipText: { fontSize: 12, color: '#6B6B6B', fontWeight: '500' },
   moreChip: {
-    backgroundColor: '#2C2C2E',
+    backgroundColor: '#EBEBEB',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8
   },
-  moreChipText: { fontSize: 12, color: '#8E8E93', fontWeight: '600' },
+  moreChipText: { fontSize: 12, color: '#6B6B6B', fontWeight: '600' },
 
   // Address Section
   addressSection: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#151515',
+    backgroundColor: '#F6F6F6',
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EBEBEB',
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
@@ -235,22 +288,45 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#1E1E1E',
+    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EBEBEB',
   },
   addressIcon: { fontSize: 18 },
   addressDetails: { flex: 1 },
-  addressLabel: { fontSize: 13, fontWeight: '800', color: '#FFFFFF', marginBottom: 3 },
-  addressText: { fontSize: 12, color: '#8E8E93', fontWeight: '500', lineHeight: 16 },
-  
-  orderFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: '#2C2C2E' },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1E1E1E', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: '#2C2C2E' },
+  addressLabel: { fontSize: 13, fontWeight: '800', color: '#000000', marginBottom: 3 },
+  addressText: { fontSize: 12, color: '#6B6B6B', fontWeight: '500', lineHeight: 16 },
+
+  orderFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: '#EBEBEB' },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F6F6F6', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: '#EBEBEB' },
   statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00C853', marginRight: 6 },
-  statusText: { fontSize: 12, color: '#FFFFFF', fontWeight: '700', textTransform: 'capitalize' },
-  reorderBtn: { backgroundColor: '#FFFFFF', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, shadowColor: '#FFFFFF', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 3 },
-  reorderBtnText: { color: '#000000', fontSize: 13, fontWeight: '800' },
+  statusText: { fontSize: 12, color: '#000000', fontWeight: '700', textTransform: 'capitalize' },
+  reorderBtn: { backgroundColor: '#000000', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, shadowColor: '#000000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3 },
+  reorderBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  reorderBtnDisabled: { backgroundColor: '#EBEBEB', shadowOpacity: 0, elevation: 0 },
+  reorderBtnTextDisabled: { color: '#6B6B6B' },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  explainCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    borderRadius: 24,
+    padding: 28,
+    marginHorizontal: 32,
+    alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  explainIcon: { fontSize: 36, marginBottom: 12 },
+  explainTitle: { fontSize: 18, fontWeight: '900', color: '#000000', marginBottom: 8, textAlign: 'center' },
+  explainText: { fontSize: 14, color: '#6B6B6B', textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  explainBtn: { backgroundColor: '#000000', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 14, alignSelf: 'stretch', alignItems: 'center' },
+  explainBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
 });

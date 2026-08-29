@@ -1,0 +1,70 @@
+import React, { useEffect, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { getOrderCutoffInfo } from '../utils/deliveryHelpers';
+
+interface CutoffCountdownProps {
+  compact?: boolean;
+}
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+export const CutoffCountdown: React.FC<CutoffCountdownProps> = ({ compact }) => {
+  const [info, setInfo] = useState(() => getOrderCutoffInfo());
+
+  useEffect(() => {
+    const interval = setInterval(() => setInfo(getOrderCutoffInfo()), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const { minutesUntilCutoff, cutoffPassed, isOpenToday, formattedEarliest } = info;
+
+  if (cutoffPassed || !isOpenToday) {
+    return (
+      <View style={[styles.pill, styles.pillClosed, compact && styles.pillCompact]}>
+        <View style={[styles.dot, styles.dotClosed]} />
+        <Text style={styles.closedText} numberOfLines={1}>
+          Closed for today · next delivery {formattedEarliest}
+        </Text>
+      </View>
+    );
+  }
+
+  const days = Math.floor(minutesUntilCutoff / (60 * 24));
+  const hours = Math.floor((minutesUntilCutoff % (60 * 24)) / 60);
+  const mins = minutesUntilCutoff % 60;
+  const urgent = minutesUntilCutoff <= 60;
+
+  return (
+    <View style={[styles.pill, urgent ? styles.pillUrgent : styles.pillOpen, compact && styles.pillCompact]}>
+      <View style={[styles.dot, urgent ? styles.dotUrgent : styles.dotOpen]} />
+      <Text style={[styles.label, urgent && styles.labelUrgent]} numberOfLines={1}>
+        Order closes in {pad(days)}d : {pad(hours)}h : {pad(mins)}m
+      </Text>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#F6F6F6',
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  pillCompact: { paddingVertical: 6, paddingHorizontal: 10 },
+  pillOpen: { borderColor: '#22C55E40', backgroundColor: '#EAF7EE' },
+  pillUrgent: { borderColor: '#F0DFA0', backgroundColor: '#FFF8E1' },
+  pillClosed: { borderColor: '#EBEBEB', backgroundColor: '#F6F6F6' },
+  dot: { width: 7, height: 7, borderRadius: 4, marginRight: 8 },
+  dotOpen: { backgroundColor: '#1DA836' },
+  dotUrgent: { backgroundColor: '#E8A100' },
+  dotClosed: { backgroundColor: '#9E9E9E' },
+  label: { fontSize: 12, fontWeight: '800', color: '#1DA836', letterSpacing: 0.2 },
+  labelUrgent: { color: '#8A6D00' },
+  closedText: { fontSize: 12, fontWeight: '700', color: '#6B6B6B', flexShrink: 1 },
+});

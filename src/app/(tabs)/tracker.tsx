@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, View, ScrollView, SafeAreaView, StatusBar } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, StatusBar } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen, CartItem } from '../../context/KitchenCoContext';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -12,12 +13,7 @@ export default function TrackerScreen() {
     return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
-        <ScrollView contentContainerStyle={styles.scrollContent}>
-          <View style={styles.headerSection}>
-            <Text style={styles.title}>Order Status</Text>
-            <Text style={styles.subtitle}>Track your current order</Text>
-          </View>
-
+                <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.emptyCard}>
             <View style={styles.emptyIconWrap}>
               <Ionicons name="receipt-outline" size={48} color="#6B6B6B" />
@@ -44,7 +40,7 @@ export default function TrackerScreen() {
       case 'preparing':
         return { icon: 'restaurant', title: 'In the Kitchen', sub: 'Estimated 15-20 mins' };
       case 'on_the_way':
-        return { icon: 'bicycle', title: 'On the Way', sub: 'Your driver is on the way!' };
+        return { icon: 'bicycle', title: 'Out for delivery', sub: 'Your driver is en route' };
       case 'delivered':
         return { icon: 'checkmark-circle', title: 'Delivered', sub: 'Enjoy your meal!' };
       default:
@@ -83,11 +79,8 @@ export default function TrackerScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.headerSection}>
-          <Text style={styles.title}>Order Status</Text>
-          <Text style={styles.subtitle}>Order {currentOrder.id}</Text>
-        </View>
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+        <Text style={styles.orderIdCaption}>ORDER · {currentOrder.id}</Text>
 
         {/* Modern Order Tracker Card */}
         <View style={styles.trackerCard}>
@@ -122,8 +115,14 @@ export default function TrackerScreen() {
                       color={isInactive ? '#6B6B6B' : '#000000'} 
                     />
                   </View>
-                  <Text style={[styles.stepLabel, isInactive && styles.stepLabelInactive]}>
-                    {status === 'pending' ? 'Received' : status === 'on_the_way' ? 'On The Way' : status.charAt(0).toUpperCase() + status.slice(1)}
+                                    <Text style={[styles.stepLabel, isInactive && styles.stepLabelInactive]} numberOfLines={1}>
+                    {status === 'pending'
+                      ? 'Received'
+                      : status === 'preparing'
+                        ? 'Preparing'
+                        : status === 'on_the_way'
+                          ? 'Out for delivery'
+                          : 'Delivered'}
                   </Text>
                 </View>
               );
@@ -151,6 +150,9 @@ export default function TrackerScreen() {
                 {item.category && !item.selectedSize && (
                   <Text style={styles.itemMeta}>{item.category}</Text>
                 )}
+                {item.addOns && item.addOns.length > 0 && (
+                  <Text style={styles.itemMeta}>+ {item.addOns.map(a => a.name).join(', ')}</Text>
+                )}
               </View>
               <View style={styles.itemRight}>
                 <Text style={styles.itemQty}>x{item.quantity}</Text>
@@ -164,12 +166,22 @@ export default function TrackerScreen() {
         <View style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Subtotal</Text>
-            <Text style={styles.summaryValue}>R {currentOrder.total.toFixed(2)}</Text>
+            <Text style={styles.summaryValue}>R {currentOrder.totalPrice.toFixed(2)}</Text>
           </View>
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}>Delivery</Text>
-            <Text style={[styles.summaryValue, styles.summaryFree]}>Free</Text>
+            <Text style={styles.summaryLabel}>Delivery Fee</Text>
+            {currentOrder.deliveryFee ? (
+              <Text style={styles.summaryValue}>R {currentOrder.deliveryFee.toFixed(2)}</Text>
+            ) : (
+              <Text style={[styles.summaryValue, styles.summaryFree]}>Free</Text>
+            )}
           </View>
+          {currentOrder.discountAmount ? (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Discount</Text>
+              <Text style={[styles.summaryValue, styles.summaryFree]}>- R {currentOrder.discountAmount.toFixed(2)}</Text>
+            </View>
+          ) : null}
           <View style={styles.summaryDivider} />
           <View style={styles.summaryRow}>
             <Text style={styles.summaryTotalLabel}>Total</Text>
@@ -182,153 +194,148 @@ export default function TrackerScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#121212' }, // Fallback, theme applied inline
+  container: { flex: 1, backgroundColor: '#FFFFFF' }, // Fallback, theme applied inline
   scrollContent: { padding: 16, paddingBottom: 32 },
-  
+
   headerSection: { marginBottom: 24 },
-  title: { fontSize: 28, fontWeight: '900', color: '#FFFFFF', marginBottom: 6 },
-  subtitle: { fontSize: 14, color: '#8E8E93', fontWeight: '500' },
-  trackerIconWrapDelivered: { backgroundColor: '#22C55E' },
+  title: { fontSize: 28, fontWeight: '900', color: '#000000', marginBottom: 6 },
+  subtitle: { fontSize: 14, color: '#6B6B6B', fontWeight: '500' },
+  trackerIconWrapDelivered: { backgroundColor: '#EAF7EE', borderColor: '#22C55E' },
   progressFillDelivered: { backgroundColor: '#22C55E' },
   stepActiveWrap: { backgroundColor: '#5AC8FA' },
   stepCompletedWrap: { backgroundColor: '#22C55E' },
   stepDeliveredWrap: { backgroundColor: '#22C55E' },
-  
-  emptyCard: { 
-    backgroundColor: '#1A1A1A', 
+
+  emptyCard: {
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#2C2C2E', 
-    borderRadius: 24, 
-    padding: 40, 
+    borderColor: '#EBEBEB',
+    borderRadius: 24,
+    padding: 40,
     alignItems: 'center',
     marginTop: 40,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.08,
     shadowRadius: 16,
-    elevation: 8,
+    elevation: 3,
   },
-  emptyIconWrap: { 
-    width: 90, 
-    height: 90, 
-    borderRadius: 45, 
-    backgroundColor: '#1E1E1E', 
-    justifyContent: 'center', 
+  emptyIconWrap: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: '#F6F6F6',
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EBEBEB',
   },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#FFFFFF', marginTop: 16, marginBottom: 8, letterSpacing: -0.3 },
-  emptySubtitle: { fontSize: 14, color: '#8E8E93', textAlign: 'center', lineHeight: 20 },
-  
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#000000', marginTop: 16, marginBottom: 8, letterSpacing: -0.3 },
+  emptySubtitle: { fontSize: 14, color: '#6B6B6B', textAlign: 'center', lineHeight: 20 },
+
   // Tracker Card
-  trackerCard: { 
-    backgroundColor: '#1A1A1A', 
-    borderWidth: 1, 
-    borderColor: '#2C2C2E', 
-    borderRadius: 24, 
-    padding: 24, 
+  trackerCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    borderRadius: 24,
+    padding: 24,
     marginBottom: 28,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.08,
     shadowRadius: 16,
-    elevation: 8,
+    elevation: 3,
   },
   trackerHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 24 },
-  trackerIconWrap: { 
-    width: 52, 
-    height: 52, 
-    borderRadius: 26, 
-    backgroundColor: '#FFFFFF', 
-    justifyContent: 'center', 
+  trackerIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
   },
   trackerHeaderText: { flex: 1 },
-  trackerTitle: { fontSize: 18, fontWeight: '900', color: '#FFFFFF', marginBottom: 3, letterSpacing: -0.3 },
-  trackerSub: { fontSize: 13, color: '#8E8E93', fontWeight: '500' },
-  
+  trackerTitle: { fontSize: 18, fontWeight: '900', color: '#000000', marginBottom: 3, letterSpacing: -0.3 },
+  trackerSub: { fontSize: 13, color: '#6B6B6B', fontWeight: '500' },
+
   progressContainer: { marginBottom: 28 },
-  progressBar: { height: 8, backgroundColor: '#1E1E1E', borderRadius: 4, overflow: 'hidden' },
-  progressFill: { width: '60%', height: '100%', backgroundColor: '#FFFFFF', borderRadius: 4, shadowColor: '#FFFFFF', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 4 },
-  
+  progressBar: { height: 8, backgroundColor: '#EBEBEB', borderRadius: 4, overflow: 'hidden' },
+  progressFill: { width: '60%', height: '100%', backgroundColor: '#000000', borderRadius: 4 },
+
   stepsContainer: { flexDirection: 'row', justifyContent: 'space-between' },
   step: { alignItems: 'center', flex: 1 },
   stepCompleted: { opacity: 1 },
   stepActive: { opacity: 1 },
-  stepIconWrap: { 
-    width: 36, 
-    height: 36, 
-    borderRadius: 18, 
-    backgroundColor: '#FFFFFF', 
-    justifyContent: 'center', 
+  stepIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
-    shadowColor: '#FFFFFF',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
   },
-  stepLabel: { fontSize: 12, fontWeight: '700', color: '#FFFFFF', textAlign: 'center' },
+    orderIdCaption: { fontSize: 11, fontWeight: '800', color: '#6B6B6B', letterSpacing: 1.2, marginBottom: 12, marginTop: 4 },
+  stepLabel: { fontSize: 11, fontWeight: '700', color: '#000000', textAlign: 'center' },
   stepLabelInactive: { color: '#6B6B6B' },
-  
+
   // Section Headers
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 8 },
   sectionTitle: { fontSize: 13, fontWeight: '800', color: '#6B6B6B', textTransform: 'uppercase', letterSpacing: 0.8 },
-  sectionCount: { fontSize: 12, color: '#8E8E93', fontWeight: '600' },
-  
+  sectionCount: { fontSize: 12, color: '#6B6B6B', fontWeight: '600' },
+
   // Items
   itemsContainer: { marginBottom: 20 },
-  itemCard: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#1A1A1A', 
-    borderRadius: 16, 
-    padding: 16, 
+  itemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#2C2C2E',
+    borderColor: '#EBEBEB',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.06,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 1,
   },
-  itemIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#1E1E1E', justifyContent: 'center', alignItems: 'center', marginRight: 14, borderWidth: 1, borderColor: '#2C2C2E' },
+  itemIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F6F6F6', justifyContent: 'center', alignItems: 'center', marginRight: 14, borderWidth: 1, borderColor: '#EBEBEB' },
   itemEmoji: { fontSize: 20 },
   itemInfo: { flex: 1 },
-  itemName: { fontSize: 14, fontWeight: '700', color: '#FFFFFF', marginBottom: 3 },
+  itemName: { fontSize: 14, fontWeight: '700', color: '#000000', marginBottom: 3 },
   itemMeta: { fontSize: 12, color: '#6B6B6B', fontWeight: '500' },
   itemRight: { alignItems: 'flex-end' },
-  itemQty: { fontSize: 13, color: '#8E8E93', fontWeight: '600' },
-  itemPrice: { fontSize: 14, fontWeight: '800', color: '#FFFFFF', marginTop: 2 },
-  
+  itemQty: { fontSize: 13, color: '#6B6B6B', fontWeight: '600' },
+  itemPrice: { fontSize: 14, fontWeight: '800', color: '#000000', marginTop: 2 },
+
   // Summary
-  summaryCard: { 
-    backgroundColor: '#1A1A1A', 
-    borderWidth: 1, 
-    borderColor: '#2C2C2E', 
-    borderRadius: 20, 
+  summaryCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    borderRadius: 20,
     padding: 20,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.08,
     shadowRadius: 12,
-    elevation: 5,
+    elevation: 2,
   },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  summaryLabel: { fontSize: 14, color: '#8E8E93', fontWeight: '500' },
-  summaryValue: { fontSize: 14, color: '#FFFFFF', fontWeight: '600', letterSpacing: -0.2 },
+  summaryLabel: { fontSize: 14, color: '#6B6B6B', fontWeight: '500' },
+  summaryValue: { fontSize: 14, color: '#000000', fontWeight: '600', letterSpacing: -0.2 },
   summaryFree: { color: '#00C853', fontWeight: '700' },
-  summaryDivider: { height: 1, backgroundColor: '#2C2C2E', marginVertical: 14 },
-  summaryTotalLabel: { fontSize: 15, fontWeight: '800', color: '#FFFFFF', letterSpacing: -0.3 },
-  summaryTotalValue: { fontSize: 18, fontWeight: '900', color: '#FFFFFF', letterSpacing: -0.4 },
+  summaryDivider: { height: 1, backgroundColor: '#EBEBEB', marginVertical: 14 },
+  summaryTotalLabel: { fontSize: 15, fontWeight: '800', color: '#000000', letterSpacing: -0.3 },
+  summaryTotalValue: { fontSize: 18, fontWeight: '900', color: '#000000', letterSpacing: -0.4 },
 });

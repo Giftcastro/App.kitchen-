@@ -10,17 +10,19 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TextInput,
   Modal,
+  Switch,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   useKitchen,
   DeliveryAddress,
 } from "../../context/KitchenCoContext";
 import { useRouter } from "expo-router";
+import { calculateDeliveryFee } from "../../utils/deliveryHelpers";
 
 export default function TabProfileScreen() {
   const {
@@ -33,8 +35,21 @@ export default function TabProfileScreen() {
     addAddress,
     removeAddress,
     setDefaultAddress,
+    useCompanyAddress,
+    companies,
+    deliveryInfo,
+    remindersEnabled,
+    setRemindersEnabled,
   } = useKitchen();
   const router = useRouter();
+
+  // Corporate accounts have a registered company address on top of any
+  // personal addresses — shown as a selectable entry rather than hidden,
+  // since it's the effective delivery destination until the employee
+  // explicitly picks a personal one instead.
+  const company = user?.companyName ? companies.find(c => c.name === user.companyName) : null;
+  const companyAddress = company?.address?.distanceKm != null ? company.address : null;
+  const isCompanyAddressDefault = companyAddress != null && deliveryInfo.address?.id === `company-${company?.id}`;
 
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [addressLabel, setAddressLabel] = useState("");
@@ -42,6 +57,7 @@ export default function TabProfileScreen() {
   const [addressSuburb, setAddressSuburb] = useState("");
   const [addressCity, setAddressCity] = useState("");
   const [addressCode, setAddressCode] = useState("");
+  const [addressDistance, setAddressDistance] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showDeleteCardConfirm, setShowDeleteCardConfirm] = useState<
     string | null
@@ -56,6 +72,8 @@ export default function TabProfileScreen() {
     if (!addressStreet.trim() || !addressSuburb.trim() || !addressCity.trim())
       return;
 
+    const parsedDistance = parseFloat(addressDistance);
+
     const newAddress: DeliveryAddress = {
       id: `addr-${Date.now()}`,
       label: addressLabel.trim() || "Home",
@@ -64,6 +82,7 @@ export default function TabProfileScreen() {
       city: addressCity.trim(),
       code: addressCode.trim(),
       isDefault: savedAddresses.length === 0,
+      distanceKm: Number.isFinite(parsedDistance) ? parsedDistance : undefined,
     };
 
     addAddress(newAddress);
@@ -72,6 +91,7 @@ export default function TabProfileScreen() {
     setAddressSuburb("");
     setAddressCity("");
     setAddressCode("");
+    setAddressDistance("");
     setShowAddressModal(false);
   };
 
@@ -104,40 +124,43 @@ export default function TabProfileScreen() {
 
   const isAdmin = user.role === "admin";
   const totalOrders = orders.length;
-  const totalSpent = orders.reduce((sum, order) => sum + order.total, 0);
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Status bar */}
-      <StatusBar barStyle="light-content" backgroundColor="#121212" />
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        {/* Profile Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>My Profile</Text>
-        </View>
-
-        {/* Profile Card - User info and stats */}
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+                {/* Profile Card — compact identity + stats */}
         <View style={styles.profileCard}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {user.name ? user.name.charAt(0).toUpperCase() : "U"}
-              </Text>
+          <View style={styles.profileTopRow}>
+            <View style={styles.avatarContainer}>
+              <View style={styles.avatar}>
+                <Text style={styles.avatarText}>
+                  {user.name ? user.name.charAt(0).toUpperCase() : "U"}
+                </Text>
+              </View>
+              <View style={styles.onlineDot} />
             </View>
-            <View style={styles.onlineDot} />
+            <View style={styles.profileInfo}>
+              <Text style={styles.profileName}>{user.name}</Text>
+              <Text style={styles.profileEmail}>{user.email}</Text>
+              <View style={[styles.roleChip, isAdmin && styles.roleChipAdmin]}>
+                <Text
+                  style={[
+                    styles.roleChipText,
+                    isAdmin && styles.roleChipTextAdmin,
+                  ]}
+                >
+                  {isAdmin ? "Admin" : "Customer"}
+                </Text>
+              </View>
+            </View>
           </View>
-          <Text style={styles.profileName}>{user.name}</Text>
-          <Text style={styles.profileEmail}>{user.email}</Text>
 
           <View style={styles.statsRow}>
             <View style={styles.statBox}>
               <Text style={styles.statValue}>{totalOrders}</Text>
               <Text style={styles.statLabel}>Orders</Text>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statBox}>
-              <Text style={styles.statValue}>R{totalSpent.toFixed(0)}</Text>
-              <Text style={styles.statLabel}>Spent</Text>
             </View>
           </View>
         </View>
@@ -174,6 +197,35 @@ export default function TabProfileScreen() {
           </View>
         </View>
 
+        {/* Notifications Section — customers only; admins don't place
+            personal orders so there's nothing to remind them about. */}
+        {!isAdmin && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Notifications</Text>
+            <View style={styles.menuCard}>
+              <View style={styles.menuItem}>
+                <View style={styles.menuItemLeft}>
+                  <View style={styles.menuIcon}>
+                    <Text style={styles.menuIconText}>🔔</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.menuItemTitle}>Order reminders</Text>
+                    <Text style={styles.menuItemSubtitle}>
+                      One nudge on business days if you haven't ordered yet
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={remindersEnabled}
+                  onValueChange={setRemindersEnabled}
+                  trackColor={{ false: "#D1D1D1", true: "#00C853" }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* Delivery Addresses Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -185,7 +237,14 @@ export default function TabProfileScreen() {
               <Text style={styles.addAddressBtnText}>+ Add</Text>
             </TouchableOpacity>
           </View>
-          {savedAddresses.length === 0 ? (
+          {companyAddress ? (
+            <Text style={styles.companyAddressHint}>
+              {isCompanyAddressDefault
+                ? `Orders deliver to your ${company?.name} address by default. Add a personal address below if you'd like an order sent elsewhere.`
+                : `A personal address is set as default. You can switch back to your ${company?.name} address any time.`}
+            </Text>
+          ) : null}
+          {savedAddresses.length === 0 && !companyAddress ? (
             <TouchableOpacity
               style={styles.emptyAddressCard}
               onPress={() => setShowAddressModal(true)}
@@ -198,9 +257,42 @@ export default function TabProfileScreen() {
             </TouchableOpacity>
           ) : (
             <View style={styles.menuCard}>
+              {companyAddress && (
+                <View style={styles.addressItem}>
+                  <View style={styles.addressItemLeft}>
+                    {isCompanyAddressDefault && (
+                      <View style={styles.defaultBadge}>
+                        <Text style={styles.defaultBadgeText}>Default</Text>
+                      </View>
+                    )}
+                    <View style={styles.addressInfo}>
+                      <View style={styles.addressLabelRow}>
+                        <Text style={styles.addressLabel}>{company?.name} (Company Address)</Text>
+                        {!isCompanyAddressDefault && (
+                          <TouchableOpacity
+                            onPress={useCompanyAddress}
+                            style={styles.setDefaultLink}
+                          >
+                            <Text style={styles.setDefaultText}>Set as default</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <Text style={styles.addressLine1}>
+                        {companyAddress.unit ? `${companyAddress.unit}, ${companyAddress.street}` : companyAddress.street}
+                      </Text>
+                      <Text style={styles.addressLine2}>
+                        {companyAddress.suburb}, {companyAddress.city} {companyAddress.code}
+                      </Text>
+                      <Text style={styles.addressFee}>
+                        {companyAddress.distanceKm}km · R{calculateDeliveryFee(companyAddress.distanceKm!)} delivery fee
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              )}
               {savedAddresses.map((address, index) => (
                 <React.Fragment key={address.id}>
-                  {index > 0 && <View style={styles.menuDivider} />}
+                  {(index > 0 || companyAddress) && <View style={styles.menuDivider} />}
                   <TouchableOpacity
                     style={styles.addressItem}
                     onLongPress={() => setShowDeleteConfirm(address.id)}
@@ -229,6 +321,16 @@ export default function TabProfileScreen() {
                         <Text style={styles.addressLine1}>{address.street}</Text>
                         <Text style={styles.addressLine2}>
                           {address.suburb}, {address.city} {address.code}
+                        </Text>
+                        <Text style={styles.addressFee}>
+                          {address.distanceKm != null
+                            ? (() => {
+                                const fee = calculateDeliveryFee(address.distanceKm);
+                                return fee != null
+                                  ? `${address.distanceKm}km · R${fee} delivery fee`
+                                  : `${address.distanceKm}km · outside delivery area`;
+                              })()
+                            : 'Add a distance to see delivery fee'}
                         </Text>
                       </View>
                     </View>
@@ -304,63 +406,102 @@ export default function TabProfileScreen() {
           )}
         </View>
 
-        {/* Quick Actions Section */}
+        {/* Help & Support Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <Text style={styles.sectionTitle}>Help &amp; Support</Text>
           <View style={styles.menuCard}>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => router.push("/cart")}
-            >
+            <View style={styles.menuItem}>
               <View style={styles.menuItemLeft}>
                 <View style={styles.menuIcon}>
-                  <Text style={styles.menuIconText}>🛒</Text>
+                  <Text style={styles.menuIconText}>✉️</Text>
                 </View>
                 <View>
-                  <Text style={styles.menuItemTitle}>View Cart</Text>
-                  <Text style={styles.menuItemSubtitle}>Check your items</Text>
+                  <Text style={styles.menuItemTitle}>Email Support</Text>
+                  <Text style={styles.menuItemSubtitle}>
+                    support@kitchenco.co.za
+                  </Text>
                 </View>
               </View>
-              <Text style={styles.menuArrow}>›</Text>
-            </TouchableOpacity>
+            </View>
 
             <View style={styles.menuDivider} />
 
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => router.push("/activity")}
-            >
+            <View style={styles.menuItem}>
               <View style={styles.menuItemLeft}>
                 <View style={styles.menuIcon}>
-                  <Text style={styles.menuIconText}>📋</Text>
+                  <Text style={styles.menuIconText}>📞</Text>
                 </View>
                 <View>
-                  <Text style={styles.menuItemTitle}>Order History</Text>
-                  <Text style={styles.menuItemSubtitle}>View past orders</Text>
+                  <Text style={styles.menuItemTitle}>Call Us</Text>
+                  <Text style={styles.menuItemSubtitle}>
+                    011 234 5678 · Mon–Fri, 08:00–17:00
+                  </Text>
                 </View>
               </View>
-              <Text style={styles.menuArrow}>›</Text>
-            </TouchableOpacity>
-
-            <View style={styles.menuDivider} />
-
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => router.push("/tracker")}
-            >
-              <View style={styles.menuItemLeft}>
-                <View style={styles.menuIcon}>
-                  <Text style={styles.menuIconText}>📍</Text>
-                </View>
-                <View>
-                  <Text style={styles.menuItemTitle}>Track Order</Text>
-                  <Text style={styles.menuItemSubtitle}>Current order status</Text>
-                </View>
-              </View>
-              <Text style={styles.menuArrow}>›</Text>
-            </TouchableOpacity>
+            </View>
           </View>
         </View>
+
+        {/* Quick Actions Section — customer ordering shortcuts only; admins
+            manage the kitchen from the Admin tab, not place personal orders. */}
+        {!isAdmin && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Quick Actions</Text>
+            <View style={styles.menuCard}>
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => router.push("/cart")}
+              >
+                <View style={styles.menuItemLeft}>
+                  <View style={styles.menuIcon}>
+                    <Text style={styles.menuIconText}>🛒</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.menuItemTitle}>View Cart</Text>
+                    <Text style={styles.menuItemSubtitle}>Check your items</Text>
+                  </View>
+                </View>
+                <Text style={styles.menuArrow}>›</Text>
+              </TouchableOpacity>
+
+              <View style={styles.menuDivider} />
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => router.push("/activity")}
+              >
+                <View style={styles.menuItemLeft}>
+                  <View style={styles.menuIcon}>
+                    <Text style={styles.menuIconText}>📋</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.menuItemTitle}>Order History</Text>
+                    <Text style={styles.menuItemSubtitle}>View past orders</Text>
+                  </View>
+                </View>
+                <Text style={styles.menuArrow}>›</Text>
+              </TouchableOpacity>
+
+              <View style={styles.menuDivider} />
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => router.push("/tracker")}
+              >
+                <View style={styles.menuItemLeft}>
+                  <View style={styles.menuIcon}>
+                    <Text style={styles.menuIconText}>📍</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.menuItemTitle}>Track Order</Text>
+                    <Text style={styles.menuItemSubtitle}>Current order status</Text>
+                  </View>
+                </View>
+                <Text style={styles.menuArrow}>›</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* Sign Out Button */}
         <View style={styles.footer}>
@@ -433,15 +574,33 @@ export default function TabProfileScreen() {
                 </View>
               </View>
 
-              <Text style={styles.formLabel}>Postal Code</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="e.g. 2128"
-                placeholderTextColor="#6B6B6B"
-                value={addressCode}
-                onChangeText={setAddressCode}
-                keyboardType="numeric"
-              />
+              <View style={styles.formRow}>
+                <View style={styles.formRowHalf}>
+                  <Text style={styles.formLabel}>Postal Code</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="e.g. 2128"
+                    placeholderTextColor="#6B6B6B"
+                    value={addressCode}
+                    onChangeText={setAddressCode}
+                    keyboardType="numeric"
+                  />
+                </View>
+                <View style={styles.formRowHalf}>
+                  <Text style={styles.formLabel}>Distance (km)</Text>
+                  <TextInput
+                    style={styles.formInput}
+                    placeholder="e.g. 14"
+                    placeholderTextColor="#6B6B6B"
+                    value={addressDistance}
+                    onChangeText={setAddressDistance}
+                    keyboardType="numeric"
+                  />
+                </View>
+              </View>
+              <Text style={styles.formHint}>
+                Road distance from the kitchen — sets your delivery fee (R100–R350 by distance band).
+              </Text>
 
               <TouchableOpacity
                 style={[
@@ -533,17 +692,26 @@ export default function TabProfileScreen() {
           </View>
         </View>
       </Modal>
+
+
     </SafeAreaView>
   );
 }
 
 // Base styles with consistent black/grey/white color palette
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#121212" },
-  scrollContent: { paddingBottom: 32 },
+  container: { flex: 1, backgroundColor: "#FFFFFF" },
+    scrollContent: {
+    paddingBottom: 32,
+    // Keep cards at a readable width on tablet-sized frames instead of
+    // stretching full-width across the wider layout.
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+  },
 
   header: { padding: 20, paddingBottom: 16 },
-  headerTitle: { fontSize: 28, fontWeight: "900", color: "#FFFFFF", marginBottom: 4 },
+  headerTitle: { fontSize: 28, fontWeight: "900", color: "#000000", marginBottom: 4 },
 
   welcomeCard: {
     flex: 1,
@@ -556,7 +724,7 @@ const styles = StyleSheet.create({
   welcomeTitle: {
     fontSize: 24,
     fontWeight: "900",
-    color: "#FFFFFF",
+    color: "#000000",
     marginBottom: 12,
     textAlign: "center",
   },
@@ -569,74 +737,79 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   signInButton: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#000000",
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 14,
   },
-  signInButtonText: { color: "#000000", fontWeight: "800", fontSize: 16 },
+  signInButtonText: { color: "#FFFFFF", fontWeight: "800", fontSize: 16 },
 
-  profileCard: {
-    backgroundColor: "#1A1A1A",
-    borderWidth: 1,
-    borderColor: "#2C2C2E",
-    borderRadius: 24,
-    padding: 28,
-    marginHorizontal: 16,
-    marginBottom: 28,
-    alignItems: "center",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 14,
-    elevation: 6,
-  },
-  avatarContainer: { position: "relative", marginBottom: 16 },
-  avatar: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    profileCard: {
     backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#EBEBEB",
+    borderRadius: 20,
+    padding: 20,
+    marginHorizontal: 16,
+    marginBottom: 24,
+  },
+  profileTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+  },
+  profileInfo: { flex: 1, marginLeft: 16 },
+  avatarContainer: { position: "relative" },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#000000",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#5AC8FA",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 10,
   },
-  avatarText: { fontSize: 36, fontWeight: "900", color: "#000000" },
+  avatarText: { fontSize: 24, fontWeight: "900", color: "#FFFFFF" },
   onlineDot: {
     position: "absolute",
-    bottom: 4,
-    right: 4,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    bottom: 1,
+    right: 1,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: "#00C853",
-    borderWidth: 3,
-    borderColor: "#121212",
+    borderWidth: 2.5,
+    borderColor: "#FFFFFF",
   },
-  profileName: { fontSize: 22, fontWeight: "900", color: "#FFFFFF", marginBottom: 6 },
-  profileEmail: { fontSize: 14, color: "#8E8E93", marginBottom: 20 },
+  profileName: { fontSize: 18, fontWeight: "800", color: "#000000", marginBottom: 2 },
+  profileEmail: { fontSize: 13, color: "#6B6B6B", marginBottom: 8 },
+  roleChip: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: "#EBEBEB",
+  },
+  roleChipText: { fontSize: 11, fontWeight: "700", color: "#6B6B6B" },
+  roleChipAdmin: { backgroundColor: "#FFF3C4" },
+  roleChipTextAdmin: { color: "#8A6D00" },
 
   statsRow: {
     flexDirection: "row",
     width: "100%",
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: "#2C2C2E",
+    borderTopColor: "#EBEBEB",
   },
   statBox: { flex: 1, alignItems: "center" },
-  statValue: { fontSize: 20, fontWeight: "900", color: "#FFFFFF", marginBottom: 4 },
+  statValue: { fontSize: 20, fontWeight: "900", color: "#000000", marginBottom: 4 },
   statLabel: {
     fontSize: 12,
-    color: "#8E8E93",
+    color: "#6B6B6B",
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  statDivider: { width: 1, backgroundColor: "#2C2C2E", marginHorizontal: 16 },
+  statDivider: { width: 1, backgroundColor: "#EBEBEB", marginHorizontal: 16 },
 
   section: { marginBottom: 24, paddingHorizontal: 16 },
   sectionHeader: {
@@ -655,20 +828,27 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     paddingHorizontal: 4,
   },
-  addAddressBtn: { backgroundColor: "#FFFFFF", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
-  addAddressBtnText: { color: "#000000", fontSize: 13, fontWeight: "800" },
+  addAddressBtn: { backgroundColor: "#000000", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
+  addAddressBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
+  companyAddressHint: {
+    fontSize: 12,
+    color: "#6B6B6B",
+    lineHeight: 16,
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
 
   menuCard: {
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#2C2C2E",
+    borderColor: "#EBEBEB",
     borderRadius: 20,
     overflow: "hidden",
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.08,
     shadowRadius: 12,
-    elevation: 5,
+    elevation: 2,
   },
   menuItem: {
     flexDirection: "row",
@@ -681,50 +861,50 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#1E1E1E",
+    backgroundColor: "#F6F6F6",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 16,
     borderWidth: 1,
-    borderColor: "#2C2C2E",
+    borderColor: "#EBEBEB",
   },
   menuIconText: { fontSize: 22 },
-  menuIconAdmin: { backgroundColor: "#3D2F00" },
-  menuIconUser: { backgroundColor: "#1E1E1E" },
+  menuIconAdmin: { backgroundColor: "#FFF3C4" },
+  menuIconUser: { backgroundColor: "#F6F6F6" },
   menuItemTitle: {
     fontSize: 15,
     fontWeight: "800",
-    color: "#FFFFFF",
+    color: "#000000",
     marginBottom: 3,
     letterSpacing: -0.2,
   },
-  menuItemSubtitle: { fontSize: 13, color: "#8E8E93", fontWeight: "500" },
+  menuItemSubtitle: { fontSize: 13, color: "#6B6B6B", fontWeight: "500" },
   menuArrow: { fontSize: 28, color: "#6B6B6B", fontWeight: "300" },
-  menuDivider: { height: 1, backgroundColor: "#2C2C2E", marginHorizontal: 16 },
+  menuDivider: { height: 1, backgroundColor: "#EBEBEB", marginHorizontal: 16 },
 
   badge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#2C2C2E",
+    borderColor: "#EBEBEB",
   },
-  badgeUser: { backgroundColor: "#1A1A1A" },
-  badgeAdmin: { backgroundColor: "#3D2F00" },
-  badgeText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
+  badgeUser: { backgroundColor: "#F6F6F6" },
+  badgeAdmin: { backgroundColor: "#FFF3C4" },
+  badgeText: { color: "#000000", fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
 
   // Address Styles
   emptyAddressCard: {
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#F6F6F6",
     borderWidth: 1,
-    borderColor: "#2C2C2E",
+    borderColor: "#EBEBEB",
     borderRadius: 20,
     padding: 28,
     alignItems: "center",
     borderStyle: "dashed",
   },
   emptyAddressIcon: { fontSize: 32, marginBottom: 12 },
-  emptyAddressText: { fontSize: 15, fontWeight: "700", color: "#8E8E93", marginBottom: 6 },
+  emptyAddressText: { fontSize: 15, fontWeight: "700", color: "#6B6B6B", marginBottom: 6 },
   emptyAddressSubtext: { fontSize: 12, color: "#6B6B6B", textAlign: "center" },
   addressItem: {
     flexDirection: "row",
@@ -748,18 +928,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 4,
   },
-  addressLabel: { fontSize: 15, fontWeight: "800", color: "#FFFFFF", marginRight: 10 },
+  addressLabel: { fontSize: 15, fontWeight: "800", color: "#000000", marginRight: 10 },
   setDefaultLink: {
     paddingVertical: 2,
     paddingHorizontal: 6,
-    backgroundColor: "#1E1E1E",
+    backgroundColor: "#F6F6F6",
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#2C2C2E",
+    borderColor: "#EBEBEB",
   },
-  setDefaultText: { fontSize: 10, color: "#5AC8FA", fontWeight: "700" },
-  addressLine1: { fontSize: 13, color: "#A0A0A0", fontWeight: "500", marginBottom: 2 },
-  addressLine2: { fontSize: 12, color: "#8E8E93", fontWeight: "500" },
+  setDefaultText: { fontSize: 10, color: "#000000", fontWeight: "700", textDecorationLine: "underline" },
+  addressLine1: { fontSize: 13, color: "#6B6B6B", fontWeight: "500", marginBottom: 2 },
+  addressLine2: { fontSize: 12, color: "#6B6B6B", fontWeight: "500" },
+  addressFee: { fontSize: 11.5, color: "#000000", fontWeight: "600", marginTop: 3 },
   addressDeleteBtn: { padding: 8, marginLeft: 10 },
   addressDeleteIcon: { fontSize: 18 },
 
@@ -767,9 +948,9 @@ const styles = StyleSheet.create({
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#2C2C2E",
+    borderColor: "#EBEBEB",
     paddingVertical: 16,
     borderRadius: 16,
     alignSelf: "stretch",
@@ -777,23 +958,23 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   logoutIcon: { fontSize: 18, marginRight: 10 },
-  logoutText: { color: "#FF3B30", fontSize: 16, fontWeight: "800" },
+  logoutText: { color: "#E0393E", fontSize: 16, fontWeight: "800" },
   version: { fontSize: 12, color: "#6B6B6B", fontWeight: "600" },
 
   // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.85)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "#0C0C0C",
+    backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
     borderTopWidth: 1,
-    borderTopColor: "#1C1C1E",
-    shadowColor: "#FFFFFF",
+    borderTopColor: "#EBEBEB",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
@@ -804,12 +985,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
-  modalTitle: { fontSize: 22, fontWeight: "900", color: "#FFFFFF", letterSpacing: -0.5 },
-  modalClose: { fontSize: 28, color: "#8E8E93", fontWeight: "600" },
+  modalTitle: { fontSize: 22, fontWeight: "900", color: "#000000", letterSpacing: -0.5 },
+  modalClose: { fontSize: 28, color: "#6B6B6B", fontWeight: "600" },
   addressForm: {},
+  formHint: {
+    fontSize: 11.5,
+    color: "#6B6B6B",
+    marginTop: 6,
+    lineHeight: 16,
+  },
   formLabel: {
     fontSize: 12,
-    color: "#8E8E93",
+    color: "#6B6B6B",
     fontWeight: "700",
     marginBottom: 6,
     marginTop: 14,
@@ -817,36 +1004,36 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   formInput: {
-    backgroundColor: "#151515",
+    backgroundColor: "#F6F6F6",
     borderWidth: 1,
-    borderColor: "#1C1C1E",
+    borderColor: "#EBEBEB",
     borderRadius: 14,
     padding: 14,
     fontSize: 15,
-    color: "#FFFFFF",
+    color: "#000000",
   },
   formRow: { flexDirection: "row", gap: 12 },
   formRowHalf: { flex: 1 },
   saveAddressBtn: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#000000",
     paddingVertical: 18,
     borderRadius: 16,
     alignItems: "center",
     marginTop: 24,
-    shadowColor: "#FFFFFF",
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 6,
   },
   saveAddressBtnDisabled: { opacity: 0.4 },
-  saveAddressBtnText: { color: "#000000", fontSize: 16, fontWeight: "800" },
+  saveAddressBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
 
   // Delete Confirm Modal
   deleteConfirmCard: {
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: "#2C2C2E",
+    borderColor: "#EBEBEB",
     borderRadius: 24,
     padding: 28,
     marginHorizontal: 32,
@@ -854,47 +1041,47 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.6,
+    shadowOpacity: 0.15,
     shadowRadius: 20,
     elevation: 10,
   },
   deleteConfirmIcon: { fontSize: 40, marginBottom: 12 },
-  deleteConfirmTitle: { fontSize: 20, fontWeight: "900", color: "#FFFFFF", marginBottom: 6 },
-  deleteConfirmText: { fontSize: 14, color: "#8E8E93", marginBottom: 24, textAlign: "center" },
+  deleteConfirmTitle: { fontSize: 20, fontWeight: "900", color: "#000000", marginBottom: 6 },
+  deleteConfirmText: { fontSize: 14, color: "#6B6B6B", marginBottom: 24, textAlign: "center" },
   deleteConfirmButtons: { flexDirection: "row", gap: 12 },
   deleteCancelBtn: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#2C2C2E",
+    borderColor: "#EBEBEB",
     alignItems: "center",
-    backgroundColor: "#1E1E1E",
+    backgroundColor: "#F6F6F6",
   },
-  deleteCancelText: { color: "#8E8E93", fontSize: 15, fontWeight: "800" },
+  deleteCancelText: { color: "#6B6B6B", fontSize: 15, fontWeight: "800" },
   deleteConfirmBtn: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 14,
-    backgroundColor: "#FF3B30",
+    backgroundColor: "#E0393E",
     alignItems: "center",
   },
   deleteConfirmBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
 
   // Saved Cards Styles
-  addCardBtn: { backgroundColor: "#FFFFFF", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
-  addCardBtnText: { color: "#000000", fontSize: 13, fontWeight: "800" },
+  addCardBtn: { backgroundColor: "#000000", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
+  addCardBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
   emptyCardCard: {
-    backgroundColor: "#1A1A1A",
+    backgroundColor: "#F6F6F6",
     borderWidth: 1,
-    borderColor: "#2C2C2E",
+    borderColor: "#EBEBEB",
     borderRadius: 20,
     padding: 28,
     alignItems: "center",
     borderStyle: "dashed",
   },
   emptyCardIcon: { fontSize: 32, marginBottom: 12 },
-  emptyCardText: { fontSize: 15, fontWeight: "700", color: "#8E8E93", marginBottom: 6 },
+  emptyCardText: { fontSize: 15, fontWeight: "700", color: "#6B6B6B", marginBottom: 6 },
   emptyCardSubtext: { fontSize: 12, color: "#6B6B6B", textAlign: "center" },
   cardItem: {
     flexDirection: "row",
@@ -907,18 +1094,18 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: "#1E1E1E",
+    backgroundColor: "#F6F6F6",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
     borderWidth: 1,
-    borderColor: "#2C2C2E",
+    borderColor: "#EBEBEB",
   },
   cardIconText: { fontSize: 16 },
   cardInfo: { flex: 1 },
-  cardLabel: { fontSize: 14, fontWeight: "700", color: "#FFFFFF", marginBottom: 2 },
-  cardNumber: { fontSize: 13, color: "#A0A0A0", fontWeight: "500", marginBottom: 2 },
-  cardExpiry: { fontSize: 12, color: "#8E8E93" },
+  cardLabel: { fontSize: 14, fontWeight: "700", color: "#000000", marginBottom: 2 },
+  cardNumber: { fontSize: 13, color: "#6B6B6B", fontWeight: "500", marginBottom: 2 },
+  cardExpiry: { fontSize: 12, color: "#6B6B6B" },
   cardDeleteBtn: { padding: 8, marginLeft: 10 },
   cardDeleteIcon: { fontSize: 18 },
 });

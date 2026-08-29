@@ -13,54 +13,71 @@ export const DeliveryEstimator: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  const { formattedDate, isAfterCutoff, minutesLeft } = deliveryInfo;
+  const { formattedDate, minutesLeft, open, cutoffPassed, isOpenToday } = deliveryInfo;
+
+  // One line instead of a header + divider + separate badge repeating the
+  // same date/cutoff info three ways — same facts, said once. Each state
+  // leads with what to DO, always names the 9:00 AM cutoff driving the date
+  // (rather than leaving the reader to guess), and ends with the date it
+  // gets you.
+  const isUrgent = cutoffPassed || (minutesLeft > 0 && minutesLeft <= 60);
+  let text: string;
+  if (!open && !cutoffPassed) {
+    // Two different situations were sharing one message here before: on a
+    // weekday morning before 8am there's still a 9am cutoff today to hit, so
+    // "order by 9am today" stays accurate no matter when in that window they
+    // actually check out. A weekend is different — the 2-business-day count
+    // toward formattedDate starts from TODAY (a weekend day counts as day 0,
+    // same as any other day it's measured from), not from the next cutoff.
+    // Naming the next cutoff day here would look like it should relate
+    // arithmetically to formattedDate and it doesn't — so this states only
+    // what's actually true: ordering now gets you formattedDate.
+    text = isOpenToday
+      ? `Kitchen opens 8:00 AM — order by 9:00 AM today for delivery ${formattedDate}`
+      : `Kitchen's closed for the weekend — order now for delivery ${formattedDate}`;
+  } else if (cutoffPassed) {
+    text = `Today's 9:00 AM cutoff has passed — order now for delivery ${formattedDate}`;
+  } else if (minutesLeft > 0 && minutesLeft <= 60) {
+    text = `${minutesLeft} min left before the 9:00 AM cutoff — order now for delivery ${formattedDate}!`;
+  } else {
+    text = `Order by 9:00 AM today for delivery ${formattedDate}`;
+  }
 
   return (
-    <View style={styles.card}>
-      <View style={styles.header}>
-        <View style={styles.iconWrapper}>
-          <Ionicons name="bicycle" size={20} color="#FFFFFF" />
-        </View>
-        <View style={styles.headerTextContainer}>
-          <Text style={styles.label}>ESTIMATED DELIVERY</Text>
-          <Text style={styles.dateText}>{formattedDate}</Text>
-          <Text style={styles.subtext}>Guaranteed arrival before 11:00 AM</Text>
-        </View>
+    <View style={[styles.row, isUrgent && styles.rowUrgent]}>
+      <View style={[styles.iconWrapper, isUrgent && styles.iconWrapperUrgent]}>
+        <Ionicons name="bicycle" size={16} color={isUrgent ? '#8A6D00' : '#FFFFFF'} />
       </View>
-
-      <View style={styles.divider} />
-
-      {/* Dynamic Urgency / Cutoff Alert Indicator */}
-      {!isAfterCutoff && minutesLeft > 0 && minutesLeft <= 60 ? (
-        <View style={[styles.badge, styles.urgentBadge]}>
-          <Text style={styles.urgentBadgeText}>
-            ⚠️ Order within {minutesLeft} mins to secure this slot!
-          </Text>
-        </View>
-      ) : !isAfterCutoff ? (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>Daily dispatch cutoff is 11:00 AM</Text>
-        </View>
-      ) : (
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>Passed 11 AM run. Next cycle active.</Text>
-        </View>
-      )}
+      <Text style={[styles.text, isUrgent && styles.textUrgent]} numberOfLines={2}>
+        {isUrgent ? '⚠️ ' : ''}{text}
+      </Text>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: '#111111', borderRadius: 20, padding: 18, borderWidth: 1, borderColor: '#1C1C1E', marginBottom: 12, shadowColor: '#000000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 5 },
-  header: { flexDirection: 'row', alignItems: 'center' },
-  iconWrapper: { backgroundColor: '#FFFFFF', width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 14, shadowColor: '#FFFFFF', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
-  headerTextContainer: { flex: 1 },
-  label: { fontSize: 10, fontWeight: '800', color: '#8E8E93', letterSpacing: 1 },
-  dateText: { fontSize: 17, fontWeight: '900', color: '#FFFFFF', marginTop: 2, letterSpacing: -0.3 },
-  subtext: { fontSize: 12, color: '#8E8E93', marginTop: 2, fontWeight: '500' },
-  divider: { height: 1, backgroundColor: '#1C1C1E', marginVertical: 14 },
-  badge: { backgroundColor: '#1A1A1A', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10, alignItems: 'center', borderWidth: 1, borderColor: '#2C2C2E' },
-  badgeText: { fontSize: 11, fontWeight: '700', color: '#8E8E93' },
-  urgentBadge: { backgroundColor: '#2A1F00', borderColor: '#5A4600', borderWidth: 1 },
-  urgentBadgeText: { fontSize: 11, fontWeight: '800', color: '#FFD60A' }
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F6F6F6',
+    borderRadius: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    marginBottom: 12,
+  },
+  rowUrgent: { backgroundColor: '#FFF8E1', borderColor: '#F0DFA0' },
+  iconWrapper: {
+    backgroundColor: '#000000',
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  iconWrapperUrgent: { backgroundColor: '#FFFFFF' },
+  text: { flex: 1, fontSize: 12.5, fontWeight: '700', color: '#000000' },
+  textUrgent: { color: '#8A6D00' },
 });

@@ -1,5 +1,10 @@
 import React, { createContext, useContext, useState, Dispatch, SetStateAction, useMemo, useEffect } from 'react';
 import { ThemeColors, getThemeColors } from '../utils/theme';
+import { buildMenuFromStaticData, NormalizedMenuItem, AddOnOption } from '../utils/menuNormalize';
+export type { AddOnOption };
+import { syncOrderReminder, cancelOrderReminder } from '../utils/orderReminders';
+import { calculateDeliveryFee } from '../utils/deliveryHelpers';
+import staticMenuData from '../data/staticMenu.json';
 
 export type AccountType = 'individual' | 'company';
 
@@ -28,6 +33,12 @@ export interface CartItem {
   image?: string;
   selectedSize?: string;
   notes?: string;
+  /** yyyy-mm-dd — set when this item was pre-scheduled for a specific weekday (Main Menu only). */
+  deliveryDate?: string;
+  /** e.g. "Mon, 8 Sep" — display label for deliveryDate. */
+  deliveryDateLabel?: string;
+  /** Extras selected for this specific item (e.g. "Extra Bacon") — already folded into `price`; kept here for display/receipt purposes only. */
+  addOns?: AddOnOption[];
 }
 
 export interface Order {
@@ -41,6 +52,8 @@ export interface Order {
   userEmail?: string;
   userName?: string;
   deliveryAddress?: DeliveryAddress;
+  /** Distance-based delivery fee charged on this order (see deliveryHelpers.ts). Undefined on older demo orders predating this field — treat as R0/"Free". */
+  deliveryFee?: number;
   note?: string;
   discount?: Discount;
   discountAmount?: number;
@@ -54,18 +67,38 @@ export interface DeliveryAddress {
   city: string;
   code: string;
   isDefault: boolean;
+  /** Road distance from the kitchen, in km — drives the delivery fee band. */
+  distanceKm?: number;
 }
 
 export interface MenuCategory {
   id: string;
   name: string;
-  items: {
-    id: string;
-    name: string;
-    description: string;
-    price: number;
-    image?: string;
-  }[];
+  items: NormalizedMenuItem[];
+  addOns?: AddOnOption[];
+}
+
+export interface CompanyAddress {
+  street: string;
+  /** Floor / suite / unit within the building, e.g. "Floor 4, Suite 402". */
+  unit?: string;
+  suburb: string;
+  city: string;
+  code: string;
+  /** Standing delivery notes for this address (access code, loading bay, etc.) — shown to the courier on every order to this company. */
+  instructions?: string;
+  /** Road distance from the kitchen, in km — drives the delivery fee band. */
+  distanceKm?: number;
+}
+
+/** A corporate client. Users are matched to one by their work-email domain at login. */
+export interface Company {
+  id: string;
+  name: string;
+  /** Lowercase domains, no "@" — e.g. "acmelogistics.com". */
+  domains: string[];
+  /** Registered delivery address for bulk/company orders. */
+  address?: CompanyAddress;
 }
 
 export interface SavedCard {
@@ -96,7 +129,8 @@ interface KitchenContextType {
   orderNote: string;
   setOrderNote: Dispatch<SetStateAction<string>>;
   appliedDiscount: Discount | null;
-  setAppliedDiscount: Dispatch<SetStateAction<Discount | null>>;
+  /** Explicit user action (apply code / remove) — pauses the auto-apply-best-discount effect so it isn't silently undone. */
+  setAppliedDiscount: (discount: Discount | null) => void;
   activeWeek: number;
   setActiveWeek: Dispatch<SetStateAction<number>>;
   login: (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string) => void;
@@ -108,8 +142,8 @@ interface KitchenContextType {
   allUsers: AppUser[];
   menus: MenuCategory[];
   discounts: Discount[];
-  addMenuItem: (categoryId: string, item: any) => void;
-  updateMenuItem: (categoryId: string, itemId: string, item: any) => void;
+  addMenuItem: (categoryId: string, item: { name: string; price: number; description: string; image?: string }) => void;
+  updateMenuItem: (categoryId: string, itemId: string, item: { name: string; price: number; description: string; image?: string }) => void;
   deleteMenuItem: (categoryId: string, itemId: string) => void;
   addDiscount: (discount: Discount) => void;
   updateDiscount: (discountId: string, discount: Partial<Discount>) => void;
@@ -117,16 +151,27 @@ interface KitchenContextType {
   addUser: (user: AppUser) => void;
   updateUser: (userId: string, updates: Partial<AppUser>) => void;
   deleteUser: (userId: string) => void;
+  companies: Company[];
+  addCompany: (company: Omit<Company, 'id'>) => void;
+  updateCompany: (companyId: string, updates: Partial<Omit<Company, 'id'>>) => void;
+  deleteCompany: (companyId: string) => void;
+  updateOrderStatus: (orderId: string, status: string) => void;
   savedAddresses: DeliveryAddress[];
   addAddress: (address: DeliveryAddress) => void;
   removeAddress: (addressId: string) => void;
   setDefaultAddress: (addressId: string) => void;
+  /** Clears any personal default address so a corporate account's deliveryInfo falls back to their company's registered address. */
+  useCompanyAddress: () => void;
+  /** Auto-resolved delivery destination + distance-based fee for the current user — company address for corporate accounts, default saved address otherwise. */
+  deliveryInfo: { distanceKm: number | null; fee: number | null; address: DeliveryAddress | null; addressLabel: string | null };
   savedCards: SavedCard[];
   saveCard: (card: Omit<SavedCard, 'id' | 'createdAt'>) => void;
   removeCard: (cardId: string) => void;
   theme: ThemeColors;
   isItemEligibleForDiscount: (item: CartItem, discount: Discount | null) => boolean;
   calculateDiscountAmount: (cartItems: CartItem[], discount: Discount | null) => number;
+  remindersEnabled: boolean;
+  setRemindersEnabled: Dispatch<SetStateAction<boolean>>;
 }
 
 export const KitchenCoContext = createContext<KitchenContextType | undefined>(undefined);
@@ -137,13 +182,77 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [activeWeek, setActiveWeek] = useState<number>(1);
   const [allUsers, setAllUsers] = useState<AppUser[]>([]);
-  const [menus, setMenus] = useState<MenuCategory[]>([]);
+  // Seeded from the same normalized shape the Menu screen renders, so admin
+  // edits here are the actual data the customer-facing menu reads — not a
+  // parallel array nothing ever displays.
+  const [menus, setMenus] = useState<MenuCategory[]>(() => buildMenuFromStaticData(staticMenuData));
   const [discounts, setDiscounts] = useState<Discount[]>([]);
-  const [appliedDiscount, setAppliedDiscount] = useState<Discount | null>(null);
+  const [companies, setCompanies] = useState<Company[]>([
+    {
+      id: 'co-1',
+      name: 'Acme Logistics',
+      domains: ['acmelogistics.com'],
+      address: {
+        street: '14 Rivonia Road',
+        unit: 'Floor 6, Suite 604',
+        suburb: 'Sandton',
+        city: 'Johannesburg',
+        code: '2196',
+        instructions: 'Use the loading bay entrance at the rear. Sign in at security, ask for the 6th floor reception.',
+        distanceKm: 14,
+      },
+    },
+    {
+      id: 'co-2',
+      name: 'Nexus Financial',
+      domains: ['nexusfinancial.co.za'],
+      address: {
+        street: '88 Fredman Drive',
+        unit: 'Ground Floor',
+        suburb: 'Sandton',
+        city: 'Johannesburg',
+        code: '2196',
+        instructions: 'Deliver to the front reception desk. Visitor parking available in Bay 3-6.',
+        distanceKm: 18,
+      },
+    },
+  ]);
+  const [appliedDiscount, setAppliedDiscountState] = useState<Discount | null>(null);
+  // Pauses the auto-apply effect below once the user has made an explicit
+  // choice (applied a code, or removed one) — otherwise the next unrelated
+  // cart change (e.g. a quantity +/- tap) would silently re-pick the "best"
+  // discount and undo what they just did. Resets on a fresh cart/session.
+  const [discountAutoApplyPaused, setDiscountAutoApplyPaused] = useState(false);
+  const setAppliedDiscount = (discount: Discount | null) => {
+    setDiscountAutoApplyPaused(true);
+    setAppliedDiscountState(discount);
+  };
   const [savedAddresses, setSavedAddresses] = useState<DeliveryAddress[]>([]);
   const [savedCards, setSavedCards] = useState<SavedCard[]>([]);
   const [orderNote, setOrderNote] = useState<string>('');
+  const [remindersEnabled, setRemindersEnabled] = useState<boolean>(true);
   const theme = useMemo(() => getThemeColors(), []);
+
+  // Keep the single daily "don't forget to order" reminder in sync with
+  // cart/order state — re-evaluated (and re-scheduled/cancelled) whenever
+  // any of these change. See src/utils/orderReminders.ts for the actual
+  // anti-spam rules.
+  React.useEffect(() => {
+    if (!user || user.role === 'admin') {
+      cancelOrderReminder();
+      return;
+    }
+    const todayKey = new Date().toDateString();
+    const hasOrderedToday = orders.some(
+      o => o.userEmail === user.email && new Date(o.timestamp).toDateString() === todayKey
+    );
+    syncOrderReminder({
+      now: new Date(),
+      remindersEnabled,
+      hasOrderedToday,
+      cartHasItems: cart.length > 0,
+    });
+  }, [user, orders, cart, remindersEnabled]);
 
   // Demo data for orders and users
   React.useEffect(() => {
@@ -151,11 +260,52 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       { id: 'USR-1001', name: 'John Customer', email: 'john@example.com', role: 'customer', joinedDate: '12 Jun 2026', orderCount: 3 },
       { id: 'USR-1002', name: 'Jane Smith', email: 'jane@example.com', role: 'customer', joinedDate: '28 May 2026', orderCount: 7 },
       { id: 'USR-1003', name: 'Mike Johnson', email: 'mike@example.com', role: 'customer', joinedDate: '5 Jun 2026', orderCount: 1 },
+      // Demonstrates work-email domain matching — signing in with any
+      // @acmelogistics.com address auto-detects this same company.
+      { id: 'USR-1004', name: 'Sipho Dlamini', email: 'sipho@acmelogistics.com', role: 'customer', accountType: 'company', companyName: 'Acme Logistics', joinedDate: '3 Aug 2026', orderCount: 3 },
     ];
     
     const todayStr = new Date().toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
-    
+    // yyyy-mm-dd, for a demo order whose items are pre-scheduled for delivery
+    // today — so the admin dashboard's "Due Today" tracking has something
+    // real to show regardless of what the actual current date happens to be.
+    // Built from local date parts, not toISOString() (UTC) — the due-date
+    // comparison this feeds (isSameDay) uses local getFullYear/Month/Date,
+    // so a UTC-based string could land on the wrong calendar day depending
+    // on the device's timezone offset.
+    const _today = new Date();
+    const todayISO = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, '0')}-${String(_today.getDate()).padStart(2, '0')}`;
+    const todayDeliveryLabel = new Date().toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' });
+
     const demoOrders: Order[] = [
+      {
+        // A corporate bulk order placed a few days ago and pre-scheduled for
+        // delivery today — the realistic case "Due Today" is meant to catch:
+        // items booked for a specific date, not just orders placed today.
+        id: 'ORD-1295',
+        items: [
+          { id: 'bulk-1', name: 'Chicken Aglio e Olio Penne', price: 80, category: 'CIAO ITALY', quantity: 15, selectedSize: 'Small', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+          { id: 'bulk-2', name: 'Beef Lasagne', price: 80, category: 'CIAO ITALY', quantity: 10, selectedSize: 'Small', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+        ],
+        total: 2100,
+        totalPrice: 2000,
+        deliveryFee: 100,
+        status: 'preparing',
+        date: '26 Aug 2026, 09:10',
+        timestamp: '26 Aug 2026, 09:10',
+        userEmail: 'sipho@acmelogistics.com',
+        userName: 'Sipho Dlamini',
+        deliveryAddress: {
+          id: 'company-acme',
+          label: 'Acme Logistics',
+          street: 'Floor 6, Suite 604, 14 Rivonia Road',
+          suburb: 'Sandton',
+          city: 'Johannesburg',
+          code: '2196',
+          isDefault: true,
+          distanceKm: 14,
+        },
+      },
       {
         id: 'ORD-1290',
         items: [
@@ -208,9 +358,12 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         items: [
           { id: '3', name: 'Creamy Chicken & Mushroom Pasta', price: 140, category: 'CIAO ITALY', quantity: 1, selectedSize: 'Regular' },
           { id: '4', name: 'Green Salad', price: 20, category: 'SIDES & SAUCES', quantity: 1 },
+          // Weekly Menu item (id prefixed "cycle-") — included so Activity has a
+          // real example of an order that can't be reordered as a single action.
+          { id: 'cycle-Week 1-Monday-MAIN MEAL-TraditionalBeefBobotiewithYellowRice&Sambal', name: 'Traditional Beef Bobotie with Yellow Rice & Sambal', price: 80, category: 'Week 1 • Monday', quantity: 1, selectedSize: 'Regular' },
         ],
-        total: 160,
-        totalPrice: 160,
+        total: 240,
+        totalPrice: 240,
         status: 'delivered',
         date: '16 Jul 2026, 14:20',
         timestamp: '16 Jul 2026, 14:20',
@@ -327,8 +480,10 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     setAllUsers(prev => {
       const exists = prev.find(u => u.email === email);
       if (exists) {
+        // Refresh accountType/companyName too — a company registered after this
+        // user's original signup should still get linked on their next sign-in.
         return prev.map(u =>
-          u.email === email ? { ...u, orderCount: u.orderCount } : u
+          u.email === email ? { ...u, accountType, companyName } : u
         );
       }
       return [...prev, {
@@ -347,15 +502,21 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     setUser(null);
     setCart([]);
-    setAppliedDiscount(null);
+    setAppliedDiscountState(null);
+    setDiscountAutoApplyPaused(false);
   };
 
-  // Auto-apply the best matching discount whenever cart, discounts, or user changes
+  // Auto-apply the best matching discount whenever cart, discounts, or user
+  // changes — but only until the user makes an explicit choice of their own
+  // (see setAppliedDiscount above), and only for as long as they still have
+  // a cart going (a fresh, empty cart always gets a fresh auto-suggestion).
   useEffect(() => {
     if (cart.length === 0) {
-      setAppliedDiscount(null);
+      setAppliedDiscountState(null);
+      setDiscountAutoApplyPaused(false);
       return;
     }
+    if (discountAutoApplyPaused) return;
 
     const now = new Date();
     const validDiscounts = discounts.filter(d => {
@@ -380,8 +541,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    setAppliedDiscount(bestDiscount);
-  }, [cart, discounts, user]);
+    setAppliedDiscountState(bestDiscount);
+  }, [cart, discounts, user, discountAutoApplyPaused]);
 
   const addToCart = (newItem: CartItem) => {
     setCart(prevCart => {
@@ -405,14 +566,66 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
 
   const clearCart = () => {
     setCart([]);
-    setAppliedDiscount(null);
+    setAppliedDiscountState(null);
+    setDiscountAutoApplyPaused(false);
   };
+
+  // Resolves where an order would deliver to and what that costs, without
+  // requiring a picker: a personal address the user has explicitly set as
+  // default always wins (lets a corporate employee place a personal order
+  // elsewhere, or switch after relocating to a different site); otherwise
+  // corporate accounts fall back to their company's registered address, and
+  // everyone else falls back to whatever saved address they have. Shared by
+  // the cart/checkout previews and by placeOrder itself so all three agree.
+  const deliveryInfo = useMemo((): { distanceKm: number | null; fee: number | null; address: DeliveryAddress | null; addressLabel: string | null } => {
+    if (!user) return { distanceKm: null, fee: null, address: null, addressLabel: null };
+
+    const personalDefault = savedAddresses.find(a => a.isDefault) || (!user.companyName ? savedAddresses[0] : null) || null;
+    if (personalDefault) {
+      if (personalDefault.distanceKm != null) {
+        return {
+          distanceKm: personalDefault.distanceKm,
+          fee: calculateDeliveryFee(personalDefault.distanceKm),
+          address: personalDefault,
+          addressLabel: `${personalDefault.label} — ${personalDefault.street}`,
+        };
+      }
+      return { distanceKm: null, fee: null, address: null, addressLabel: `${personalDefault.label} (missing distance)` };
+    }
+
+    if (user.companyName) {
+      const company = companies.find(c => c.name === user.companyName);
+      if (company?.address?.distanceKm != null) {
+        const resolvedAddress: DeliveryAddress = {
+          id: `company-${company.id}`,
+          label: company.name,
+          street: company.address.unit ? `${company.address.unit}, ${company.address.street}` : company.address.street,
+          suburb: company.address.suburb,
+          city: company.address.city,
+          code: company.address.code,
+          isDefault: true,
+          distanceKm: company.address.distanceKm,
+        };
+        return {
+          distanceKm: company.address.distanceKm,
+          fee: calculateDeliveryFee(company.address.distanceKm),
+          address: resolvedAddress,
+          addressLabel: `${company.name} — ${company.address.street}`,
+        };
+      }
+      return { distanceKm: null, fee: null, address: null, addressLabel: company ? `${company.name} (no delivery address on file)` : null };
+    }
+
+    return { distanceKm: null, fee: null, address: null, addressLabel: null };
+  }, [user, companies, savedAddresses]);
 
   const placeOrder = (deliveryAddress?: DeliveryAddress) => {
     if (cart.length === 0) return;
     const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const discountAmount = calculateDiscountAmount(cart, appliedDiscount);
-    const finalTotal = totalAmount - discountAmount;
+    const resolvedAddress = deliveryAddress ?? deliveryInfo.address ?? undefined;
+    const deliveryFee = deliveryAddress ? calculateDeliveryFee(deliveryAddress.distanceKm ?? -1) ?? 0 : (deliveryInfo.fee ?? 0);
+    const finalTotal = totalAmount - discountAmount + deliveryFee;
     const nowStr = new Date().toLocaleString();
 
     const newOrder: Order = {
@@ -425,7 +638,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       timestamp: nowStr,
       userEmail: user?.email,
       userName: user?.name,
-      deliveryAddress: deliveryAddress,
+      deliveryAddress: resolvedAddress,
+      deliveryFee: deliveryFee || undefined,
       note: orderNote || undefined,
       discount: appliedDiscount || undefined,
       discountAmount: discountAmount || undefined,
@@ -442,22 +656,35 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     }
     
     setOrderNote(''); // Clear note after order is placed
-    setAppliedDiscount(null); // Clear discount after order
-    clearCart();
+    clearCart(); // also resets appliedDiscount + the auto-apply pause flag
   };
 
-  const addMenuItem = (categoryId: string, item: any) => {
-    setMenus(prev => prev.map(cat => 
-      cat.id === categoryId 
-        ? { ...cat, items: [...cat.items, { ...item, id: `item-${Date.now()}` }] }
+  const addMenuItem = (categoryId: string, item: { name: string; price: number; description: string; image?: string }) => {
+    setMenus(prev => prev.map(cat =>
+      cat.id === categoryId
+        ? { ...cat, items: [...cat.items, {
+            id: `item-${Date.now()}`,
+            name: item.name,
+            description: item.description,
+            image: item.image,
+            sizes: [{ label: 'Regular', price: item.price }],
+          }] }
         : cat
     ));
   };
 
-  const updateMenuItem = (categoryId: string, itemId: string, item: any) => {
+  const updateMenuItem = (categoryId: string, itemId: string, item: { name: string; price: number; description: string; image?: string }) => {
     setMenus(prev => prev.map(cat =>
       cat.id === categoryId
-        ? { ...cat, items: cat.items.map(i => i.id === itemId ? { ...i, ...item } : i) }
+        ? { ...cat, items: cat.items.map(i => i.id === itemId ? {
+            ...i,
+            name: item.name,
+            description: item.description,
+            image: item.image,
+            // The admin edit form only ever collects a single price, so an
+            // edit collapses multi-size items (e.g. Small/Large) to one size.
+            sizes: [{ label: 'Regular', price: item.price }],
+          } : i) }
         : cat
     ));
   };
@@ -485,9 +712,9 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     if (discount.categoryId) {
       return item.category.toLowerCase() === discount.categoryId.toLowerCase();
     }
-    // If discount has company, only apply to items from that company (match on category)
+    // If discount targets a specific corporate client, only the matching user's items qualify
     if (discount.company) {
-      return item.category.toLowerCase().includes(discount.company.toLowerCase());
+      return user?.companyName?.toLowerCase() === discount.company.toLowerCase();
     }
     // No targeting specified - apply to all items (global discount)
     return true;
@@ -522,6 +749,23 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     setAllUsers(prev => prev.filter(u => u.id !== userId));
   };
 
+  // Corporate client management — companies are matched to users by work-email domain at login.
+  const addCompany = (company: Omit<Company, 'id'>) => {
+    setCompanies(prev => [...prev, { ...company, id: `co-${Date.now()}` }]);
+  };
+
+  const updateCompany = (companyId: string, updates: Partial<Omit<Company, 'id'>>) => {
+    setCompanies(prev => prev.map(c => c.id === companyId ? { ...c, ...updates } : c));
+  };
+
+  const deleteCompany = (companyId: string) => {
+    setCompanies(prev => prev.filter(c => c.id !== companyId));
+  };
+
+  const updateOrderStatus = (orderId: string, status: string) => {
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+  };
+
   // Delivery address management
   const addAddress = (address: DeliveryAddress) => {
     setSavedAddresses(prev => {
@@ -552,6 +796,12 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     setSavedAddresses(prev =>
       prev.map(a => ({ ...a, isDefault: a.id === addressId }))
     );
+  };
+
+  // Clears any personal default so a corporate account's deliveryInfo falls
+  // back to their company's registered address again (see deliveryInfo).
+  const useCompanyAddress = () => {
+    setSavedAddresses(prev => prev.map(a => ({ ...a, isDefault: false })));
   };
 
   // Card management functions
@@ -594,10 +844,17 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         addUser,
         updateUser,
         deleteUser,
+        companies,
+        addCompany,
+        updateCompany,
+        deleteCompany,
+        updateOrderStatus,
         savedAddresses,
         addAddress,
         removeAddress,
         setDefaultAddress,
+        useCompanyAddress,
+        deliveryInfo,
         savedCards,
         saveCard,
         removeCard,
@@ -608,6 +865,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         theme,
         isItemEligibleForDiscount,
         calculateDiscountAmount,
+        remindersEnabled,
+        setRemindersEnabled,
       }}
     >
       {children}

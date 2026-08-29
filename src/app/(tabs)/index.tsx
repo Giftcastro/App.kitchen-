@@ -1,8 +1,15 @@
-import React, { useState, useMemo } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity, SafeAreaView, StatusBar, Modal, TextInput, Dimensions, ScrollView } from 'react-native';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { StyleSheet, Text, View, FlatList, TouchableOpacity, StatusBar, Modal, TextInput, ScrollView, useWindowDimensions, Animated } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useKitchen } from '../../context/KitchenCoContext';
-import FloatingCartBanner from '../../components/FloatingCartBanner';
 import { DeliveryEstimator } from '../../components/DeliveryEstimator';
+import { CutoffCountdown } from '../../components/CutoffCountdown';
+import { QuickAddButton } from '../../components/QuickAddButton';
+import { getUpcomingOrderableWeekdays, getOrderCutoffInfo } from '../../utils/deliveryHelpers';
+import { useResponsive } from '../../utils/responsive';
+import { APP_MAX_WIDTH } from '../../utils/theme';
 
 import staticMenuData from '../../data/staticMenu.json';
 import cycleMenuData from '../../data/cycleMenu.json';
@@ -12,13 +19,14 @@ interface SizeOption { label: string; price: number; }
 interface UIReadyItem {
   id: string; name: string; description: string;
   category: string; image?: string; sizes: SizeOption[];
+  /** Optional dietary tags (e.g. "Keto", "Vegan") — only rendered when present in menu data. */
+  tags?: string[];
 }
 
 const CYCLE_ITEM_PRICE = 80;
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_GAP = 12;
-const NUM_COLUMNS = 2;
-const CARD_WIDTH = (SCREEN_WIDTH - 16 * 2 - CARD_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
+const PAGE_PADDING = 16;
+const CARD_GAP = 20; // minimum horizontal gutter (actual gap grows via space-between)
+const ROW_GAP = 28; // vertical spacing between grid rows
 
 const MEAL_TYPE_ICONS: Record<string, string> = {
   'MAIN MEAL': '🍖', 'VEGETARIAN MEAL': '🥦',
@@ -29,19 +37,100 @@ const MEAL_TYPE_COLORS: Record<string, string> = {
   'HEALTHY MEAL': '#06C167', 'CURRY OF THE DAY': '#FF9500', 'GOURMET SANDWICH': '#5AC8FA',
 };
 
+// A signature colour per Main Menu category — tints each card's image
+// placeholder so the grid reads as varied and photo-like even without real
+// food photography, the same trick already used for the Today's Menu cards.
+const STATIC_CATEGORY_COLORS: Record<string, string> = {
+  'CIAO ITALY': '#FF7F50',
+  'STIR FRY': '#FF9500',
+  'POKE BOWL': '#06C167',
+  'WRAPS': '#F4B400',
+  'HOT DOGS': '#E63946',
+  'BURGER BAR': '#D97706',
+  'SALAD BAR': '#22C55E',
+  'SANDWICHES': '#5AC8FA',
+  'FITNESS MEALS': '#00C2A8',
+  'VEGAN MEALS': '#65A30D',
+  'SOUPS': '#C2410C',
+  'RAMEN BOWLS': '#DC2626',
+  'PORK SPECIALITIES': '#B45309',
+  "CHEF'S MEAL OF THE DAY": '#A855F7',
+};
+
+// Category names live in data as shouty caps ("CIAO ITALY") since that's how
+// the client's product list is authored — display-only title-casing here
+// (never used for matching/lookup) reads calmer, closer to the reference UI.
+function formatCategoryLabel(name: string): string {
+  return name
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.replace(/^[a-z]/, c => c.toUpperCase()))
+    .join(' ');
+}
+
 export default function MenuScreen() {
-  const { addToCart, cart, activeWeek, theme, discounts } = useKitchen();
-  const [isStaticMenu, setIsStaticMenu] = useState(true);
+  const { addToCart, cart, activeWeek, theme, discounts, menus, user } = useKitchen();
+  const router = useRouter();
+  const [menuView, setMenuView] = useState<'main' | 'today'>('main');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<any>(null);
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [isCycleItem, setIsCycleItem] = useState(false);
+  const [modalQuantity, setModalQuantity] = useState(1);
+  const [selectedSizeIndex, setSelectedSizeIndex] = useState(0);
+  // Which upcoming weekdays (Main Menu only) this order should be scheduled for.
+  // Empty = a normal, undated order. Only static-menu items support this — the
+  // rotating weekly menu's content is admin-controlled week to week, so it isn't
+  // safe to let customers book against it 2 weeks out.
+  const [selectedDeliveryDates, setSelectedDeliveryDates] = useState<string[]>([]);
+  // Names of category-level extras (e.g. "Extra Bacon") selected for the item
+  // currently open in the customize modal — an Uber-Eats-style modifier tied
+  // to this specific order, not a standalone browsable menu item.
+  const [selectedAddOns, setSelectedAddOns] = useState<Set<string>>(new Set());
+  const upcomingWeekdays = useMemo(() => getUpcomingOrderableWeekdays(), []);
+
+  // Today's Menu (cycle items) has no future-date picker — it's an order for
+  // "today" only. Once today's 9:00 AM cutoff has passed (or it's a
+  // non-business day), there's no valid delivery slot left for it, so adding
+  // it to the cart must be blocked rather than just showing a passive banner.
+  const [cutoffInfo, setCutoffInfo] = useState(() => getOrderCutoffInfo());
+  useEffect(() => {
+    const interval = setInterval(() => setCutoffInfo(getOrderCutoffInfo()), 30000);
+    return () => clearInterval(interval);
+  }, []);
+  const todayOrderingClosed = !cutoffInfo.isOpenToday;
+  const [showOrderingClosedNotice, setShowOrderingClosedNotice] = useState(false);
+
+  // Card sizing follows the responsive app frame. Phones keep the compact
+  // 2-column grid; tablets widen the frame and move to 3 columns so cards
+  // stay readable instead of stretching.
+  // 4px slack guards against scrollbar / sub-pixel rounding on web so cards
+  // always genuinely fit side-by-side (prevents list-like wrapping).
+  const { width: windowWidth } = useWindowDimensions();
+  const { isTablet, contentMaxWidth } = useResponsive();
+  const frameWidth = Math.min(windowWidth, contentMaxWidth);
+  const usableWidth = frameWidth - PAGE_PADDING * 2 - 4;
+  const numColumns = isTablet ? 3 : 2;
+  const CARD_WIDTH = Math.floor((usableWidth - CARD_GAP * (numColumns - 1)) / numColumns);
 
   // Get current day of the week
   const getCurrentDayName = (): string => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[new Date().getDay()];
+  };
+
+  // Meals only run Monday–Friday, so the "no meals today" message should
+  // point to the next weekday with a menu (Monday) rather than always
+  // saying "tomorrow" — which is wrong on Saturday (tomorrow is Sunday,
+  // also meal-less).
+  const getNoMealsMessage = (): string => {
+    const dayIndex = new Date().getDay(); // 0=Sun ... 6=Sat
+    if (dayIndex === 6 || dayIndex === 0) {
+      // Saturday or Sunday
+      return 'Meals are served Monday to Friday. Check back Monday!';
+    }
+    return 'Check back tomorrow!';
   };
 
   const getItemQuantity = (id: string) => {
@@ -95,44 +184,22 @@ export default function MenuScreen() {
     return '🍽️';
   };
 
-  const flattenedStaticMenu = useMemo(() => {
-    const items: UIReadyItem[] = [];
-    if (!staticMenuData) return items;
-    const parseItem = (rawItem: any, category: string, idx: number): UIReadyItem => {
-      let parsedSizes: SizeOption[] = [];
-      if (rawItem.sizes && Array.isArray(rawItem.sizes)) {
-        parsedSizes = rawItem.sizes.map((s: any) => ({ label: s.label || 'Regular', price: Number(s.price) || 0 }));
-      } else if (rawItem.price !== undefined && rawItem.price !== null) {
-        const cleanPrice = typeof rawItem.price === 'number' ? rawItem.price : parseFloat(String(rawItem.price).replace(/[^\d.]/g, '')) || 0;
-        parsedSizes = [{ label: 'Regular', price: cleanPrice }];
-      } else if (rawItem.prices && Array.isArray(rawItem.prices)) {
-        parsedSizes = rawItem.prices.map((p: any, pIdx: number) => {
-          const priceStr = typeof p === 'string' ? p : String(p);
-          const price = parseFloat(priceStr.replace(/[^\d.]/g, '')) || 0;
-          return {
-            label: pIdx === 0 ? 'Regular' : `Option ${pIdx + 1}`,
-            price: price
-          };
-        });
-      }
-      if (parsedSizes.length === 0) parsedSizes = [{ label: 'Regular', price: 0 }];
-      return {
-        id: `menu-item-${category}-${idx}-${(rawItem.name || '').replace(/\s+/g, '')}`,
-        name: rawItem.name || 'Unnamed Item', description: rawItem.description || '',
-        category: category, image: rawItem.image, sizes: parsedSizes,
-      };
-    };
-    if (Array.isArray(staticMenuData)) {
-      staticMenuData.forEach((item: any, idx: number) => items.push(parseItem(item, item.category || 'General', idx)));
-    } else if (typeof staticMenuData === 'object' && staticMenuData !== null) {
-      Object.entries(staticMenuData).forEach(([key, value]) => {
-        if (key.startsWith('_')) return;
-        if (Array.isArray(value)) value.forEach((item: any, idx: number) => items.push(parseItem(item, key, idx)));
-        else if (value && typeof value === 'object') items.push(parseItem(value, (value as any).category || key, 0));
-      });
-    }
-    return items;
-  }, []);
+  // `menus` (from context) is the single source of truth — the same data
+  // admin's Meals tab reads and writes. Flatten it into the flat, per-item
+  // shape the rest of this screen (search, filters, grid) already expects.
+  const flattenedStaticMenu = useMemo((): UIReadyItem[] => {
+    return menus.flatMap(cat =>
+      cat.items.map(item => ({
+        id: item.id,
+        name: item.name,
+        description: item.description,
+        category: cat.name,
+        image: item.image,
+        sizes: item.sizes,
+        tags: item.tags,
+      }))
+    );
+  }, [menus]);
 
   const categories = useMemo(() => {
     const cats = Array.from(new Set(flattenedStaticMenu.map(item => item.category)));
@@ -162,27 +229,77 @@ export default function MenuScreen() {
     setSelectedItem(item);
     setSpecialInstructions('');
     setIsCycleItem(false);
+    setModalQuantity(1);
+    setSelectedSizeIndex(0);
+    setSelectedDeliveryDates([]);
+    setSelectedAddOns(new Set());
+  };
+
+  const toggleDeliveryDate = (iso: string) => {
+    setSelectedDeliveryDates(prev =>
+      prev.includes(iso) ? prev.filter(d => d !== iso) : [...prev, iso]
+    );
+  };
+
+  const toggleAddOn = (name: string) => {
+    setSelectedAddOns(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   };
 
   const confirmAddToCart = () => {
     if (!selectedItem) return;
-    const defaultSize = selectedItem.sizes[0];
-    addToCart({
-      id: selectedItem.id,
-      name: selectedItem.name,
-      price: defaultSize.price,
-      category: selectedItem.category,
-      quantity: 1,
-      image: selectedItem.image,
-      selectedSize: defaultSize.label,
-      notes: specialInstructions || undefined
+    const chosenSize = selectedItem.sizes[selectedSizeIndex] || selectedItem.sizes[0];
+
+    const categoryAddOns = menus.find(c => c.name === selectedItem.category)?.addOns;
+    const chosenAddOns = categoryAddOns?.filter(a => selectedAddOns.has(a.name)) ?? [];
+    const addOnsTotal = chosenAddOns.reduce((sum, a) => sum + a.price, 0);
+    // Distinct add-on selections on the same dish must land as separate cart
+    // lines (not silently merge/overwrite each other) — addToCart merges by id.
+    const addOnsIdSuffix = chosenAddOns.length > 0
+      ? `::addons=${chosenAddOns.map(a => a.name).sort().join(',')}`
+      : '';
+
+    // Main Menu items can optionally be pre-scheduled across several weekdays
+    // in one go; cycle items and undated adds just place a single normal order.
+    const datesToApply = !isCycleItem && selectedDeliveryDates.length > 0
+      ? selectedDeliveryDates
+      : [undefined];
+
+    datesToApply.forEach((iso) => {
+      const dateMeta = iso ? upcomingWeekdays.find(w => w.iso === iso) : undefined;
+      for (let i = 0; i < modalQuantity; i++) {
+        addToCart({
+          id: (iso ? `${selectedItem.id}::${iso}` : selectedItem.id) + addOnsIdSuffix,
+          name: selectedItem.name,
+          price: chosenSize.price + addOnsTotal,
+          category: selectedItem.category,
+          quantity: 1,
+          image: selectedItem.image,
+          selectedSize: chosenSize.label,
+          notes: specialInstructions || undefined,
+          deliveryDate: iso,
+          deliveryDateLabel: dateMeta?.label,
+          addOns: chosenAddOns.length > 0 ? chosenAddOns : undefined,
+        });
+      }
     });
+
     setSelectedItem(null);
     setSpecialInstructions('');
     setIsCycleItem(false);
+    setSelectedDeliveryDates([]);
+    setSelectedAddOns(new Set());
   };
 
   const handleAddCycleItem = (mealName: string, mealType: string, day: string, weekName: string) => {
+    if (todayOrderingClosed) {
+      setShowOrderingClosedNotice(true);
+      return;
+    }
     const cycleItem = {
       id: `cycle-${weekName}-${day}-${mealType}-${mealName.replace(/\s+/g, '')}`,
       name: mealName,
@@ -191,15 +308,19 @@ export default function MenuScreen() {
       sizes: [{ label: 'Regular', price: CYCLE_ITEM_PRICE }],
       mealType,
       day,
-      weekName
+      weekName,
     };
     setSelectedItem(cycleItem);
     setSpecialInstructions('');
     setIsCycleItem(true);
+    setModalQuantity(1);
+    setSelectedSizeIndex(0);
+    setSelectedDeliveryDates([]);
+    setSelectedAddOns(new Set());
   };
 
   const renderCategoryFilter = () => {
-    if (!isStaticMenu) return null;
+    if (menuView !== 'main') return null;
 
     return (
       <View style={styles.categoryFilterContainer}>
@@ -217,7 +338,7 @@ export default function MenuScreen() {
               >
                 <Text style={styles.categoryChipIcon}>{categoryIcons[category] || '🍽️'}</Text>
                 <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>
-                  {category}
+                  {formatCategoryLabel(category)}
                 </Text>
               </TouchableOpacity>
             );
@@ -260,6 +381,7 @@ export default function MenuScreen() {
     const displayPrice = item.sizes[0] ? `R${item.sizes[0].price.toFixed(0)}` : 'R0';
     const itemIcon = getItemIcon(item.name, item.category);
     const itemDiscounts = getItemDiscounts(item);
+    const categoryColor = STATIC_CATEGORY_COLORS[item.category] || '#000000';
 
     return (
       <TouchableOpacity
@@ -269,7 +391,7 @@ export default function MenuScreen() {
       >
         {/* Image Section */}
         <View style={styles.uberImageSection}>
-          <View style={[styles.uberImageContainer, itemDiscounts.length > 0 && { backgroundColor: '#2A1A00' }]}>
+          <View style={[styles.uberImageContainer, { backgroundColor: categoryColor + '1F' }, itemDiscounts.length > 0 && { backgroundColor: '#FFF3E0' }]}>
             <Text style={styles.uberItemEmoji}>{itemIcon}</Text>
             {itemDiscounts.length > 0 && (
               <View style={styles.discountChipContainer}>
@@ -282,15 +404,9 @@ export default function MenuScreen() {
             )}
           </View>
           {/* Quick Add Button */}
-          <TouchableOpacity
-            style={[styles.uberQuickAdd, qty > 0 && styles.uberQuickAddActive]}
-            onPress={() => handleAddItem(item)}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={[styles.uberQuickAddText, qty > 0 && styles.uberQuickAddTextActive]}>
-              {qty > 0 ? `${qty}` : '+'}
-            </Text>
-          </TouchableOpacity>
+          <View style={styles.uberQuickAddWrap}>
+            <QuickAddButton quantity={qty} onPress={() => handleAddItem(item)} />
+          </View>
         </View>
 
         {/* Content Section */}
@@ -344,14 +460,15 @@ export default function MenuScreen() {
           <View style={styles.categorySection}>
             <View style={styles.categoryHeader}>
               <Text style={styles.categoryIcon}>{categoryIcons[category] || '🍽️'}</Text>
-              <Text style={styles.categoryTitle}>{category}</Text>
+              <Text style={styles.categoryTitle}>{formatCategoryLabel(category)}</Text>
             </View>
 
-            {/* Properly aligned grid - 2 columns with consistent alignment */}
-            <FlatList
+            {/* 2-column grid - identical layout to Today's Menu */}
+                        <FlatList
+              key={`grid-${numColumns}`}
               data={items}
               keyExtractor={(item) => item.id}
-              numColumns={NUM_COLUMNS}
+              numColumns={numColumns}
               columnWrapperStyle={styles.uberGridColumn}
               scrollEnabled={false}
               nestedScrollEnabled={true}
@@ -364,7 +481,11 @@ export default function MenuScreen() {
     );
   };
 
-  const renderActiveWeekMenu = () => {
+  // Today's cycle menu — shows only today's meals
+  // Customers only ever see today's meals — never a week picker. Which week is
+  // "live" is entirely admin-controlled (see admin.tsx WeeksSection), and which
+  // day is "today" is derived automatically from the system date.
+  const renderCycleMenu = () => {
     if (!cycleMenuData) {
       return (
         <View style={styles.emptyContainer}>
@@ -389,101 +510,100 @@ export default function MenuScreen() {
       );
     }
 
-    // Find today's meals only
+    // Find today's meals
     const todayData = weekData.find((dayObj: any) => dayObj.DAY === todayName);
+    const todayMeals = todayData
+      ? Object.entries(todayData)
+          .filter(([k]) => k !== 'DAY')
+          .map(([mealType, mealDescription]: [string, any]) => ({
+            mealType,
+            mealDescription: typeof mealDescription === 'string' ? mealDescription : String(mealDescription),
+          }))
+      : [];
 
-    if (!todayData) {
+    // Cycle meal card renderer
+    const renderCycleCard = (
+      meal: { mealType: string; mealDescription: string },
+      dayName: string,
+      weekKeyStr: string
+    ) => {
+      const icon = MEAL_TYPE_ICONS[meal.mealType] || '🍽️';
+      const color = MEAL_TYPE_COLORS[meal.mealType] || '#8E8E93';
+      const mealName = meal.mealDescription;
+      const qty = getItemQuantity(`cycle-${weekKeyStr}-${dayName}-${meal.mealType}-${mealName.replace(/\s+/g, '')}`);
+
       return (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16 }}>
-          <View style={styles.cycleHero}>
-            <Text style={styles.cycleHeroEmoji}>📅</Text>
-            <Text style={styles.cycleHeroTitle}>Week {activeWeek} Menu</Text>
-            <Text style={styles.cycleHeroSub}>All items R{CYCLE_ITEM_PRICE}.00 • Freshly prepared</Text>
+        <TouchableOpacity
+          style={[styles.uberCard, { width: CARD_WIDTH }, todayOrderingClosed && styles.uberCardClosed]}
+          activeOpacity={0.7}
+          onPress={() => handleAddCycleItem(mealName, meal.mealType, dayName, weekKeyStr)}
+        >
+          <View style={styles.uberImageSection}>
+            <View style={[styles.cycleCardIconWrapFull, { backgroundColor: color + '18' }]}>
+              <Text style={styles.cycleCardIcon}>{icon}</Text>
+            </View>
+            <View style={styles.uberQuickAddWrap}>
+              {todayOrderingClosed ? (
+                <View style={styles.closedBadge}>
+                  <Text style={styles.closedBadgeText}>Closed</Text>
+                </View>
+              ) : (
+                <QuickAddButton
+                  quantity={qty}
+                  onPress={() => handleAddCycleItem(mealName, meal.mealType, dayName, weekKeyStr)}
+                />
+              )}
+            </View>
           </View>
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyEmoji}>😴</Text>
-            <Text style={styles.emptyTitle}>No meals scheduled for today</Text>
-            <Text style={styles.emptySub}>Today is {todayName}. Check back tomorrow!</Text>
+          <View style={styles.uberContent}>
+            <Text style={[styles.cycleMealType, { color }]}>{meal.mealType.replace(/_/g, ' ')}</Text>
+            <Text style={styles.uberItemName} numberOfLines={2}>{mealName}</Text>
+            <View style={styles.uberMetaRow}>
+              <Text style={styles.uberPrice}>R{CYCLE_ITEM_PRICE}</Text>
+            </View>
           </View>
-        </ScrollView>
+        </TouchableOpacity>
       );
-    }
+    };
 
-    const { DAY, ...meals } = todayData;
-    const todayMeals = Object.entries(meals).map(([mealType, mealDescription]: [string, any]) => ({
-      mealType,
-      mealDescription: typeof mealDescription === 'string' ? mealDescription : String(mealDescription),
-      isToday: true,
-    }));
-
+    // TODAY view — only today's meals
     return (
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}>
-        <View style={styles.cycleHero}>
-          <Text style={styles.cycleHeroEmoji}>📅</Text>
-          <Text style={styles.cycleHeroTitle}>Week {activeWeek} Menu</Text>
-          <Text style={styles.cycleHeroSub}>All items R{CYCLE_ITEM_PRICE}.00 • Freshly prepared</Text>
-          <View style={styles.cycleMetaRow}>
-            <View style={styles.cycleMetaBadge}><Text style={styles.cycleMetaText}>Week {activeWeek}</Text></View>
-            <View style={styles.cycleMetaBadge}><Text style={styles.cycleMetaText}>R{CYCLE_ITEM_PRICE} flat</Text></View>
-          </View>
-        </View>
-        
         <View style={styles.todayIndicator}>
           <Text style={styles.todayIndicatorText}>Today is <Text style={styles.todayIndicatorDay}>{todayName}</Text></Text>
         </View>
 
-        {/* DAY HEADER */}
-        <View style={styles.categorySection}>
-          <View style={styles.dayHeaderBar}>
-            <View style={styles.dayHeaderLeft}>
-              <View style={styles.todayDot} />
-              <Text style={[styles.dayTitle, styles.dayTitleToday]}>{todayName}</Text>
-            </View>
-            <Text style={styles.dayMealCount}>{todayMeals.length} meals</Text>
-          </View>
-
-          {/* GRID LAYOUT - 2 COLUMNS (always grid, never list) */}
-          <View style={styles.uberGridFlex}>
-            {todayMeals.map((meal: any, idx: number) => {
-              const icon = MEAL_TYPE_ICONS[meal.mealType] || '🍽️';
-              const color = MEAL_TYPE_COLORS[meal.mealType] || '#8E8E93';
-              const mealName = meal.mealDescription;
-              const qty = getItemQuantity(`cycle-${weekKey}-${todayName}-${meal.mealType}-${mealName.replace(/\s+/g, '')}`);
-
-              return (
-                <TouchableOpacity
-                  key={`today-${idx}`}
-                  style={[styles.uberCard, { width: CARD_WIDTH }, styles.todayCardBorder]}
-                  activeOpacity={0.7}
-                  onPress={() => handleAddCycleItem(mealName, meal.mealType, todayName, `Week ${activeWeek}`)}
-                >
-                  <View style={styles.uberImageSection}>
-                    <View style={[styles.cycleCardIconWrapFull, { backgroundColor: color + '18' }]}>
-                      <View style={styles.todayBadge}><Text style={styles.todayBadgeText}>TODAY</Text></View>
-                      <Text style={styles.cycleCardIcon}>{icon}</Text>
-                    </View>
-                    <TouchableOpacity
-                      style={[styles.uberQuickAdd, qty > 0 && styles.uberQuickAddActive]}
-                      onPress={() => handleAddCycleItem(mealName, meal.mealType, todayName, `Week ${activeWeek}`)}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Text style={[styles.uberQuickAddText, qty > 0 && styles.uberQuickAddTextActive]}>
-                        {qty > 0 ? `${qty}` : '+'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.uberContent}>
-                    <Text style={[styles.cycleMealType, { color }]}>{meal.mealType.replace(/_/g, ' ')}</Text>
-                    <Text style={styles.uberItemName} numberOfLines={2}>{mealName}</Text>
-                    <View style={styles.uberMetaRow}>
-                      <Text style={styles.uberPrice}>R{CYCLE_ITEM_PRICE}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+        <View style={styles.weekStatusRow}>
+          <CutoffCountdown compact />
         </View>
+
+        {todayMeals.length > 0 ? (
+          <View style={styles.categorySection}>
+            <View style={styles.dayHeaderBar}>
+              <View style={styles.dayHeaderLeft}>
+                <View style={styles.todayDot} />
+                <Text style={[styles.dayTitle, styles.dayTitleToday]}>{todayName}</Text>
+              </View>
+              <Text style={styles.dayMealCount}>{todayMeals.length} meals</Text>
+            </View>
+            <FlatList
+              key={`today-${numColumns}`}
+              data={todayMeals}
+              keyExtractor={(_, idx) => `today-${idx}`}
+              numColumns={numColumns}
+              columnWrapperStyle={styles.uberGridColumn}
+              scrollEnabled={false}
+              nestedScrollEnabled={true}
+              renderItem={({ item: meal }) => renderCycleCard(meal, todayName, weekKey)}
+            />
+          </View>
+        ) : (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyEmoji}>😴</Text>
+            <Text style={styles.emptyTitle}>No meals scheduled for today</Text>
+            <Text style={styles.emptySub}>Today is {todayName}. {getNoMealsMessage()}</Text>
+          </View>
+        )}
       </ScrollView>
     );
   };
@@ -492,6 +612,20 @@ export default function MenuScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle="light-content" backgroundColor={theme.background} />
 
+      {/* Admins land here deliberately (via "Preview App") to see exactly what a
+          customer sees while editing items — not to place personal orders. */}
+      {user?.role === 'admin' && (
+        <View style={styles.previewBanner}>
+          <View style={styles.previewBannerLeft}>
+            <Ionicons name="eye" size={14} color="#000000" />
+            <Text style={styles.previewBannerText}>Previewing as a customer</Text>
+          </View>
+          <TouchableOpacity onPress={() => router.replace('/admin')}>
+            <Text style={styles.previewBannerExit}>Exit Preview</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Search Bar - at the top */}
       <View style={styles.searchSection}>
         <View style={styles.searchWrapper}>
@@ -499,7 +633,7 @@ export default function MenuScreen() {
           <TextInput
             style={styles.searchInput}
             placeholder="Search dishes, meals..."
-            placeholderTextColor="#6B7280"
+            placeholderTextColor="#9E9E9E"
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCapitalize="none"
@@ -514,26 +648,21 @@ export default function MenuScreen() {
         </View>
       </View>
 
-      {/* 48-Hour Cutoff Notice */}
-      <View style={styles.allergyBanner}>
-        <Text style={styles.allergyIcon}>⏰</Text>
-        <Text style={styles.allergyText}>48-hour advance ordering cutoff applies</Text>
-      </View>
-
       <View style={styles.toggleContainer}>
-        <TouchableOpacity style={[styles.toggleBtn, isStaticMenu && styles.toggleBtnActive]} onPress={() => setIsStaticMenu(true)}>
-          <Text style={[styles.toggleBtnText, isStaticMenu && styles.toggleBtnTextActive]}>Main Menu</Text>
+        <TouchableOpacity style={[styles.toggleBtn, menuView === 'main' && styles.toggleBtnActive]} onPress={() => setMenuView('main')}>
+          <Text style={[styles.toggleBtnText, menuView === 'main' && styles.toggleBtnTextActive]}>Main Menu</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.toggleBtn, !isStaticMenu && styles.toggleBtnActive]} onPress={() => setIsStaticMenu(false)}>
-          <Text style={[styles.toggleBtnText, !isStaticMenu && styles.toggleBtnTextActive]}>Today's Menu</Text>
+        <TouchableOpacity style={[styles.toggleBtn, menuView === 'today' && styles.toggleBtnActive]} onPress={() => setMenuView('today')}>
+          <Text style={[styles.toggleBtnText, menuView === 'today' && styles.toggleBtnTextActive]}>Today's Menu</Text>
         </TouchableOpacity>
       </View>
 
-      {isStaticMenu ? renderCategoryFilter() : null}
+      {menuView === 'main' && (
+        <Text style={styles.exploreHeading}>Explore the menu</Text>
+      )}
+      {menuView === 'main' ? renderCategoryFilter() : null}
 
-      {isStaticMenu ? renderStaticMenuGrid() : renderActiveWeekMenu()}
-
-      <FloatingCartBanner />
+      {menuView === 'main' ? renderStaticMenuGrid() : renderCycleMenu()}
 
       {/* Add to Cart Modal with Notes */}
       <Modal
@@ -551,40 +680,200 @@ export default function MenuScreen() {
               </TouchableOpacity>
             </View>
 
-            {selectedItem && (
-              <>
-                <View style={styles.modalItemInfo}>
-                  <Text style={styles.modalItemIcon}>{getItemIcon(selectedItem.name, selectedItem.category)}</Text>
-                  <View style={styles.modalItemDetails}>
-                    <Text style={styles.modalItemName}>{selectedItem.name}</Text>
-                    <Text style={styles.modalItemPrice}>
-                      R{selectedItem.sizes[0] ? selectedItem.sizes[0].price.toFixed(0) : '0'}
-                    </Text>
-                    {isCycleItem && selectedItem.description ? (
-                      <Text style={styles.modalItemMealType}>{selectedItem.description}</Text>
+            {selectedItem && (() => {
+              const activeSize = selectedItem.sizes[selectedSizeIndex] || selectedItem.sizes[0];
+              const dayMultiplier = !isCycleItem && selectedDeliveryDates.length > 0 ? selectedDeliveryDates.length : 1;
+              const categoryAddOns = menus.find(c => c.name === selectedItem.category)?.addOns;
+              const addOnsTotal = (categoryAddOns ?? [])
+                .filter(a => selectedAddOns.has(a.name))
+                .reduce((sum, a) => sum + a.price, 0);
+              const lineTotal = (activeSize.price + addOnsTotal) * modalQuantity * dayMultiplier;
+
+              return (
+                <>
+                  <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                    <View style={styles.modalItemInfo}>
+                      <Text style={styles.modalItemIcon}>{getItemIcon(selectedItem.name, selectedItem.category)}</Text>
+                      <View style={styles.modalItemDetails}>
+                        <Text style={styles.modalItemName}>{selectedItem.name}</Text>
+                        <Text style={styles.modalItemPrice}>R{activeSize.price.toFixed(0)}</Text>
+                        {isCycleItem && selectedItem.description ? (
+                          <Text style={styles.modalItemMealType}>{selectedItem.description}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    {/* Full, untruncated ingredients — shown in full here (unlike the
+                        2-line preview on the browsing card) so anyone with an allergy
+                        can actually check before adding to cart. */}
+                    {!isCycleItem && selectedItem.description ? (
+                      <View style={styles.ingredientsSection}>
+                        <Text style={styles.notesLabel}>INGREDIENTS</Text>
+                        <Text style={styles.ingredientsText}>{selectedItem.description}</Text>
+                      </View>
                     ) : null}
-                  </View>
-                </View>
 
-                <View style={styles.notesSection}>
-                  <Text style={styles.notesLabel}>Special Instructions / Allergies</Text>
-                  <TextInput
-                    style={styles.notesInput}
-                    placeholder="e.g., No onions, allergy to nuts, extra sauce..."
-                    placeholderTextColor="#6B7280"
-                    value={specialInstructions}
-                    onChangeText={setSpecialInstructions}
-                    multiline={true}
-                    numberOfLines={4}
-                    textAlignVertical="top"
-                  />
-                </View>
+                    {selectedItem.sizes.length > 1 && (
+                      <View style={styles.sizeSection}>
+                        <Text style={styles.notesLabel}>SIZE</Text>
+                        <View style={styles.sizeRow}>
+                          {selectedItem.sizes.map((size: SizeOption, idx: number) => (
+                            <TouchableOpacity
+                              key={size.label}
+                              style={[styles.sizeChip, selectedSizeIndex === idx && styles.sizeChipActive]}
+                              onPress={() => setSelectedSizeIndex(idx)}
+                              activeOpacity={0.8}
+                            >
+                              <Text style={[styles.sizeChipLabel, selectedSizeIndex === idx && styles.sizeChipTextActive]}>
+                                {size.label}
+                              </Text>
+                              <Text style={[styles.sizeChipPrice, selectedSizeIndex === idx && styles.sizeChipTextActive]}>
+                                R{size.price.toFixed(0)}
+                              </Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      </View>
+                    )}
 
-                <TouchableOpacity style={styles.modalAddBtn} onPress={confirmAddToCart}>
-                  <Text style={styles.modalAddBtnText}>Add to Cart</Text>
-                </TouchableOpacity>
-              </>
-            )}
+                    {categoryAddOns && categoryAddOns.length > 0 && (
+                      <View style={styles.addOnsSection}>
+                        <Text style={styles.notesLabel}>ADD EXTRAS (OPTIONAL)</Text>
+                        <View style={styles.addOnsList}>
+                          {categoryAddOns.map((addOn, addOnIdx) => {
+                            const isSelected = selectedAddOns.has(addOn.name);
+                            return (
+                              <TouchableOpacity
+                                key={addOn.name}
+                                style={[styles.addOnRow, addOnIdx > 0 && styles.addOnRowDivider]}
+                                onPress={() => toggleAddOn(addOn.name)}
+                                activeOpacity={0.7}
+                              >
+                                <View style={styles.addOnRowLeft}>
+                                  <View style={[styles.addOnCheckbox, isSelected && styles.addOnCheckboxSelected]}>
+                                    {isSelected && <Text style={styles.addOnCheckboxCheck}>✓</Text>}
+                                  </View>
+                                  <Text style={styles.addOnName}>{addOn.name}</Text>
+                                </View>
+                                <Text style={styles.addOnPrice}>+R{addOn.price.toFixed(0)}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    )}
+
+                    {!isCycleItem && (
+                      <View style={styles.deliveryDatesSection}>
+                        <View style={styles.deliverySectionHeader}>
+                          <Text style={styles.notesLabel}>DELIVER ON (OPTIONAL)</Text>
+                          {selectedDeliveryDates.length > 0 && (
+                            <TouchableOpacity onPress={() => setSelectedDeliveryDates([])}>
+                              <Text style={styles.deliveryClearText}>Clear</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                        <Text style={styles.deliveryHint}>
+                          Pick one or more weekdays to pre-order — up to 2 weeks ahead. Leave blank for a normal order.
+                        </Text>
+                        {(['This week', 'Next week', 'In 2 weeks'] as const).map((group) => {
+                          const groupDays = upcomingWeekdays.filter(w => w.weekLabel === group);
+                          if (groupDays.length === 0) return null;
+                          return (
+                            <View key={group} style={styles.deliveryGroup}>
+                              <Text style={styles.deliveryGroupLabel}>{group}</Text>
+                              <View style={styles.deliveryChipRow}>
+                                {groupDays.map((day) => {
+                                  const isSelected = selectedDeliveryDates.includes(day.iso);
+                                  return (
+                                    <TouchableOpacity
+                                      key={day.iso}
+                                      style={[styles.deliveryChip, isSelected && styles.deliveryChipActive]}
+                                      onPress={() => toggleDeliveryDate(day.iso)}
+                                      activeOpacity={0.8}
+                                    >
+                                      <Text style={[styles.deliveryChipText, isSelected && styles.deliveryChipTextActive]}>
+                                        {day.label}
+                                      </Text>
+                                    </TouchableOpacity>
+                                  );
+                                })}
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+
+                    {selectedItem.tags && selectedItem.tags.length > 0 && (
+                      <DietaryTagRow key={selectedItem.id} tags={selectedItem.tags} />
+                    )}
+
+                    <View style={styles.quantitySection}>
+                        <Text style={styles.notesLabel}>QUANTITY</Text>
+                        <View style={styles.quantityStepperRow}>
+                          <TouchableOpacity
+                            style={[styles.stepperBtn, modalQuantity <= 1 && styles.stepperBtnDisabled]}
+                            onPress={() => setModalQuantity(q => Math.max(1, q - 1))}
+                            disabled={modalQuantity <= 1}
+                          >
+                            <Text style={styles.stepperBtnText}>−</Text>
+                          </TouchableOpacity>
+                          <Text style={styles.stepperValue}>{modalQuantity}</Text>
+                          <TouchableOpacity
+                            style={styles.stepperBtn}
+                            onPress={() => setModalQuantity(q => Math.min(20, q + 1))}
+                          >
+                            <Text style={styles.stepperBtnText}>+</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+
+                    <View style={styles.notesSection}>
+                      <Text style={styles.notesLabel}>Special Instructions / Allergies</Text>
+                      <TextInput
+                        style={styles.notesInput}
+                        placeholder="e.g., No onions, allergy to nuts, extra sauce..."
+                        placeholderTextColor="#9E9E9E"
+                        value={specialInstructions}
+                        onChangeText={setSpecialInstructions}
+                        multiline={true}
+                        numberOfLines={4}
+                        textAlignVertical="top"
+                      />
+                    </View>
+                  </ScrollView>
+
+                  <TouchableOpacity style={styles.modalAddBtn} onPress={confirmAddToCart} activeOpacity={0.9}>
+                    <Text style={styles.modalAddBtnText}>
+                      Add to Cart · R{lineTotal.toFixed(2)}
+                      {dayMultiplier > 1 ? ` (${dayMultiplier} days)` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                </>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showOrderingClosedNotice}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setShowOrderingClosedNotice(false)}
+      >
+        <View style={styles.closedDialogOverlay}>
+          <View style={styles.closedDialogCard}>
+            <Text style={styles.closedDialogIcon}>🕒</Text>
+            <Text style={styles.closedDialogTitle}>Today's ordering has closed</Text>
+            <Text style={styles.closedDialogText}>
+              {cutoffInfo.message} Today's Menu items can only be ordered for today, so this one can't be added right now.
+            </Text>
+            <Text style={styles.closedDialogDate}>Next window: {cutoffInfo.formattedEarliest}</Text>
+            <TouchableOpacity style={styles.closedDialogBtn} onPress={() => setShowOrderingClosedNotice(false)}>
+              <Text style={styles.closedDialogBtnText}>Got it</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -592,130 +881,155 @@ export default function MenuScreen() {
   );
 }
 
+// Dietary tag chips fade + scale in with a short stagger when the customizer
+// opens. Purely presentational — tags come straight from menu data and are
+// only rendered when a dish actually has them (none of the bundled items do yet).
+function DietaryTagRow({ tags }: { tags: string[] }) {
+  return (
+    <View style={styles.tagsSection}>
+      <Text style={styles.notesLabel}>DIETARY TAGS</Text>
+      <View style={styles.tagsRow}>
+        {tags.map((tag, idx) => (
+          <AnimatedTagChip key={tag} label={tag} delay={idx * 60} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function AnimatedTagChip({ label, delay }: { label: string; delay: number }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(anim, { toValue: 1, duration: 240, delay, useNativeDriver: true }).start();
+  }, [anim, delay]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.tagChip,
+        {
+          opacity: anim,
+          transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }],
+        },
+      ]}
+    >
+      <Text style={styles.tagChipText}>{label}</Text>
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0F1115' },
+  container: { flex: 1, backgroundColor: '#FFFFFF' },
+  previewBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F6F6F6',
+    borderBottomWidth: 1,
+    borderBottomColor: '#EBEBEB',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  previewBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  previewBannerText: { color: '#000000', fontSize: 12, fontWeight: '800' },
+  previewBannerExit: { color: '#000000', fontSize: 12, fontWeight: '800', textDecorationLine: 'underline' },
   searchSection: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
   searchWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1D24',
+    backgroundColor: '#F6F6F6',
     borderRadius: 14,
     paddingHorizontal: 14,
     height: 44,
     borderWidth: 1,
-    borderColor: '#2E3340',
+    borderColor: '#EBEBEB',
   },
   searchIcon: { fontSize: 15, marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14, color: '#F5F7FA', paddingVertical: 0, height: 44 },
+  searchInput: { flex: 1, fontSize: 14, color: '#000000', paddingVertical: 0, height: 44 },
   searchClear: { padding: 4 },
-  searchClearIcon: { fontSize: 16, color: '#6B7280', fontWeight: '700' },
+  searchClearIcon: { fontSize: 16, color: '#9E9E9E', fontWeight: '700' },
   toggleContainer: {
     flexDirection: 'row',
-    padding: 6,
-    paddingHorizontal: 8,
-    backgroundColor: '#0F1115',
+    padding: 4,
+    paddingHorizontal: 6,
+    backgroundColor: '#F6F6F6',
     marginHorizontal: 16,
-    marginVertical: 12,
-    borderRadius: 14,
+    marginVertical: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2E3340',
+    borderColor: '#EBEBEB',
   },
-  toggleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10, marginHorizontal: 2 },
-  toggleBtnActive: { backgroundColor: '#FF6B35' },
-  toggleBtnText: { color: '#6B7280', fontSize: 14, fontWeight: '700' },
+  toggleBtn: { flex: 1, paddingVertical: 7, alignItems: 'center', borderRadius: 9, marginHorizontal: 2 },
+  toggleBtnActive: { backgroundColor: '#000000' },
+  toggleBtnText: { color: '#9E9E9E', fontSize: 13, fontWeight: '700' },
+  exploreHeading: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#000000',
+    letterSpacing: -0.3,
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 10,
+  },
   toggleBtnTextActive: { color: '#FFFFFF' },
   deliverySection: { marginBottom: 4 },
   listContainer: { paddingHorizontal: 16, paddingBottom: 100 },
   emptyContainer: { padding: 40, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: '#6B7280', textAlign: 'center', fontSize: 14 },
+  emptyText: { color: '#9E9E9E', textAlign: 'center', fontSize: 14 },
   emptyEmoji: { fontSize: 32, marginBottom: 12 },
-  emptyTitle: { color: '#F5F7FA', fontSize: 16, fontWeight: '700', marginBottom: 6 },
-  emptySub: { color: '#6B7280', fontSize: 13, textAlign: 'center' },
+  emptyTitle: { color: '#000000', fontSize: 16, fontWeight: '700', marginBottom: 6 },
+  emptySub: { color: '#9E9E9E', fontSize: 13, textAlign: 'center' },
 
-  allergyBanner: {
-    backgroundColor: '#2A1F00',
-    borderBottomWidth: 1,
-    borderBottomColor: '#4A3F00',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 10,
-  },
-  allergyIcon: {
-    fontSize: 14,
-    marginRight: 8,
-  },
-  allergyText: {
-    color: '#FFD60A',
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-    flex: 1,
-  },
-
-  categoryFilterContainer: { marginBottom: 12 },
+  categoryFilterContainer: { marginBottom: 16 },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1D24',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
+    backgroundColor: '#F6F6F6',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#2E3340',
-    marginRight: 8,
+    borderColor: '#EBEBEB',
+    marginRight: 10,
   },
   categoryChipActive: {
-    backgroundColor: '#FF6B35',
-    borderColor: '#FF6B35',
+    backgroundColor: '#000000',
+    borderColor: '#000000',
   },
-  categoryChipIcon: { fontSize: 16, marginRight: 6 },
-  categoryChipText: { color: '#9AA3B2', fontSize: 13, fontWeight: '700' },
+  categoryChipIcon: { fontSize: 18, marginRight: 7 },
+  categoryChipText: { color: '#6B6B6B', fontSize: 14, fontWeight: '700' },
   categoryChipTextActive: { color: '#FFFFFF' },
 
-  categorySection: { marginBottom: 24 },
-  categoryHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 14, paddingHorizontal: 4 },
-  categoryIcon: { fontSize: 22, marginRight: 8 },
-  categoryTitle: { fontSize: 12, fontWeight: '900', color: '#F5F7FA', textTransform: 'uppercase', letterSpacing: 1.2 },
-  uberGrid: {
-    paddingHorizontal: 16,
-  },
+  categorySection: { marginBottom: 28 },
+  categoryHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, paddingHorizontal: 4 },
+  categoryIcon: { fontSize: 24, marginRight: 10 },
+  categoryTitle: { fontSize: 21, fontWeight: '800', color: '#000000', letterSpacing: -0.4 },
+  uberGrid: {},
   uberGridColumn: {
     justifyContent: 'space-between',
-    marginBottom: CARD_GAP,
-  },
-  uberGridFlex: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    marginBottom: ROW_GAP,
   },
 
   uberCard: {
-    backgroundColor: '#1A1D24',
+    backgroundColor: '#FFFFFF',
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#2E3340',
+    borderColor: '#EBEBEB',
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.08,
     shadowRadius: 12,
-    elevation: 5,
-    marginBottom: CARD_GAP,
-    marginRight: CARD_GAP / 2,
-    marginLeft: CARD_GAP / 2,
+    elevation: 3,
   },
   uberImageSection: {
     position: 'relative',
-    height: 150,
+    height: 110,
   },
   uberImageContainer: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#22262F',
+    backgroundColor: '#F0F0F0',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -744,58 +1058,32 @@ const styles = StyleSheet.create({
     maxWidth: 100,
     textAlign: 'right',
   },
-  uberItemEmoji: { fontSize: 64 },
-  uberQuickAdd: {
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#FF6B35',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.4,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  uberQuickAddActive: { backgroundColor: '#22C55E' },
-  uberQuickAddText: { color: '#FFFFFF', fontSize: 20, fontWeight: '800', lineHeight: 22 },
-  uberQuickAddTextActive: { color: '#FFFFFF' },
-  uberContent: { padding: 14 },
-  uberItemName: { fontSize: 14, fontWeight: '800', color: '#F5F7FA', lineHeight: 20, marginBottom: 4, letterSpacing: -0.2 },
-  uberItemDesc: { fontSize: 12, color: '#9AA3B2', lineHeight: 16, marginBottom: 10 },
+  uberItemEmoji: { fontSize: 48 },
+  uberContent: { padding: 10 },
+  uberItemName: { fontSize: 14, fontWeight: '800', color: '#000000', lineHeight: 18, marginBottom: 3, letterSpacing: -0.2 },
+  uberItemDesc: { fontSize: 11, color: '#6B6B6B', lineHeight: 14, marginBottom: 8 },
   uberMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  uberPrice: { fontSize: 16, fontWeight: '900', color: '#FF6B35', letterSpacing: -0.4 },
+  uberPrice: { fontSize: 15, fontWeight: '900', color: '#000000', letterSpacing: -0.4 },
 
-  cycleHero: { backgroundColor: '#1A1D24', borderRadius: 20, padding: 20, marginBottom: 16, borderWidth: 1, borderColor: '#2E3340', alignItems: 'center' },
-  cycleHeroEmoji: { fontSize: 32, marginBottom: 10 },
-  cycleHeroTitle: { fontSize: 18, fontWeight: '900', color: '#F5F7FA', textAlign: 'center', letterSpacing: -0.3 },
-  cycleHeroSub: { fontSize: 13, color: '#9AA3B2', textAlign: 'center', marginTop: 6 },
-  cycleMetaRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  cycleMetaBadge: { backgroundColor: '#22262F', borderRadius: 20, paddingVertical: 4, paddingHorizontal: 12, borderWidth: 1, borderColor: '#2E3340' },
-  cycleMetaText: { color: '#9AA3B2', fontSize: 11, fontWeight: '600' },
-  todayIndicator: { 
-    backgroundColor: '#22262F', 
-    borderRadius: 16, 
-    paddingVertical: 10, 
-    paddingHorizontal: 16, 
+  todayIndicator: {
+    backgroundColor: '#F6F6F6',
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     marginBottom: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#2E3340',
+    borderColor: '#EBEBEB',
   },
-  todayIndicatorText: { color: '#9AA3B2', fontSize: 14, fontWeight: '600' },
+  todayIndicatorText: { color: '#6B6B6B', fontSize: 14, fontWeight: '600' },
   todayIndicatorDay: { color: '#22C55E', fontWeight: '800' },
-  
+
   dayHeaderBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
   dayHeaderLeft: { flexDirection: 'row', alignItems: 'center' },
   todayDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E', marginRight: 6 },
-  dayTitle: { fontSize: 15, fontWeight: '800', color: '#F5F7FA' },
+  dayTitle: { fontSize: 15, fontWeight: '800', color: '#000000' },
   dayTitleToday: { color: '#22C55E' },
-  dayMealCount: { fontSize: 12, color: '#6B7280', fontWeight: '600' },
+  dayMealCount: { fontSize: 12, color: '#9E9E9E', fontWeight: '600' },
   
   cycleCardIconWrapFull: {
     width: '100%',
@@ -803,7 +1091,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  cycleCardIcon: { fontSize: 48 },
+  cycleCardIcon: { fontSize: 48 }, // matches uberItemEmoji size on Main Menu cards
   todayBadge: {
     position: 'absolute',
     top: 8,
@@ -826,62 +1114,211 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#1A1D24',
+    backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
+    paddingBottom: 16,
     borderTopWidth: 1,
-    borderTopColor: '#2E3340',
-    shadowColor: '#FFFFFF',
+    borderTopColor: '#EBEBEB',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
+    width: '100%',
+    maxWidth: APP_MAX_WIDTH,
+    maxHeight: '86%',
+    alignSelf: 'center',
   },
+  modalScroll: { flexGrow: 0 },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 20,
   },
-  modalTitle: { fontSize: 22, fontWeight: '900', color: '#F5F7FA', letterSpacing: -0.5 },
-  modalClose: { fontSize: 28, color: '#9AA3B2', fontWeight: '600' },
+  modalTitle: { fontSize: 22, fontWeight: '900', color: '#000000', letterSpacing: -0.5 },
+  modalClose: { fontSize: 28, color: '#6B6B6B', fontWeight: '600' },
   modalItemInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#22262F',
+    backgroundColor: '#F6F6F6',
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#2E3340',
+    borderColor: '#EBEBEB',
   },
   modalItemIcon: { fontSize: 40, marginRight: 12 },
   modalItemDetails: { flex: 1 },
-  modalItemName: { fontSize: 16, fontWeight: '800', color: '#F5F7FA', marginBottom: 4 },
-  modalItemPrice: { fontSize: 18, fontWeight: '900', color: '#FF6B35' },
-  modalItemMealType: { fontSize: 13, fontWeight: '600', color: '#9AA3B2', marginTop: 2 },
+  modalItemName: { fontSize: 16, fontWeight: '800', color: '#000000', marginBottom: 4 },
+  modalItemPrice: { fontSize: 18, fontWeight: '900', color: '#000000' },
+  modalItemMealType: { fontSize: 13, fontWeight: '600', color: '#6B6B6B', marginTop: 2 },
   notesSection: { marginBottom: 20 },
-  notesLabel: { fontSize: 13, fontWeight: '700', color: '#9AA3B2', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-  notesInput: {
-    backgroundColor: '#14171C',
+  notesLabel: { fontSize: 13, fontWeight: '700', color: '#6B6B6B', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  ingredientsSection: {
+    backgroundColor: '#F6F6F6',
     borderWidth: 1,
-    borderColor: '#2E3340',
+    borderColor: '#EBEBEB',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 20,
+  },
+  ingredientsText: { fontSize: 13, color: '#000000', lineHeight: 19, fontWeight: '500' },
+  notesInput: {
+    backgroundColor: '#F6F6F6',
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
     borderRadius: 16,
     padding: 16,
     fontSize: 15,
-    color: '#F5F7FA',
+    color: '#000000',
     minHeight: 120,
   },
   modalAddBtn: {
-    backgroundColor: '#FF6B35',
+    backgroundColor: '#000000',
     paddingVertical: 18,
     borderRadius: 16,
     alignItems: 'center',
-    shadowColor: '#FF6B35',
+    shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
     elevation: 6,
   },
   modalAddBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+
+  // Quick-add button positioning wrapper (button itself lives in QuickAddButton.tsx)
+  uberQuickAddWrap: { position: 'absolute', bottom: 10, right: 10 },
+
+  // Today's cycle menu — cutoff status row
+  weekStatusRow: { paddingHorizontal: 16, marginBottom: 12, marginTop: 8 },
+
+  // Cycle card dimmed state once today's ordering window has closed
+  uberCardClosed: { opacity: 0.45 },
+  closedBadge: {
+    backgroundColor: '#000000CC',
+    borderWidth: 1,
+    borderColor: '#000000',
+    borderRadius: 10,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+  },
+  closedBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
+
+  // "Today's ordering has closed" explainer dialog
+  closedDialogOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  closedDialogCard: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    borderRadius: 24,
+    padding: 28,
+    width: '100%',
+    maxWidth: 360,
+    alignItems: 'center',
+  },
+  closedDialogIcon: { fontSize: 36, marginBottom: 12 },
+  closedDialogTitle: { fontSize: 18, fontWeight: '900', color: '#000000', marginBottom: 8, textAlign: 'center' },
+  closedDialogText: { fontSize: 14, color: '#6B6B6B', textAlign: 'center', lineHeight: 20 },
+  closedDialogDate: { fontSize: 12, color: '#000000', fontWeight: '700', marginTop: 10, marginBottom: 20 },
+  closedDialogBtn: { backgroundColor: '#000000', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 14, alignSelf: 'stretch', alignItems: 'center' },
+  closedDialogBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+
+  // Item customizer modal — size picker, quantity stepper, dietary tags
+  sizeSection: { marginBottom: 20 },
+  sizeRow: { flexDirection: 'row', gap: 10 },
+  sizeChip: {
+    flex: 1,
+    backgroundColor: '#F6F6F6',
+    borderWidth: 1.5,
+    borderColor: '#EBEBEB',
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  sizeChipActive: { borderColor: '#000000', backgroundColor: '#F0F0F0' },
+  sizeChipLabel: { color: '#000000', fontSize: 13, fontWeight: '800', marginBottom: 2 },
+  sizeChipPrice: { color: '#6B6B6B', fontSize: 12, fontWeight: '600' },
+  sizeChipTextActive: { color: '#000000' },
+  addOnsSection: { marginBottom: 20 },
+  addOnsList: {
+    backgroundColor: '#F6F6F6',
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  addOnRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  addOnRowDivider: { borderTopWidth: 1, borderTopColor: '#EBEBEB' },
+  addOnRowLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 10 },
+  addOnCheckbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#9E9E9E',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  addOnCheckboxSelected: { backgroundColor: '#000000', borderColor: '#000000' },
+  addOnCheckboxCheck: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
+  addOnName: { color: '#000000', fontSize: 14, fontWeight: '600', flexShrink: 1 },
+  addOnPrice: { color: '#6B6B6B', fontSize: 13, fontWeight: '700' },
+  deliveryDatesSection: { marginBottom: 20 },
+  deliverySectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  deliveryClearText: { color: '#000000', fontSize: 12, fontWeight: '700' },
+  deliveryHint: { color: '#9E9E9E', fontSize: 12, marginBottom: 12, lineHeight: 16 },
+  deliveryGroup: { marginBottom: 12 },
+  deliveryGroupLabel: { color: '#9E9E9E', fontSize: 11, fontWeight: '700', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  deliveryChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  deliveryChip: {
+    backgroundColor: '#F6F6F6',
+    borderWidth: 1.5,
+    borderColor: '#EBEBEB',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  deliveryChipActive: { borderColor: '#000000', backgroundColor: '#F0F0F0' },
+  deliveryChipText: { color: '#6B6B6B', fontSize: 12, fontWeight: '700' },
+  deliveryChipTextActive: { color: '#000000' },
+  tagsSection: { marginBottom: 20 },
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tagChip: {
+    backgroundColor: '#EAF7EE',
+    borderWidth: 1,
+    borderColor: '#22C55E40',
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+  },
+  tagChipText: { color: '#1DA836', fontSize: 12, fontWeight: '800' },
+  quantitySection: { marginBottom: 20 },
+  quantityStepperRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F6F6F6',
+    borderWidth: 1,
+    borderColor: '#EBEBEB',
+    borderRadius: 14,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 6,
+  },
+  stepperBtn: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepperBtnDisabled: { opacity: 0.35 },
+  stepperBtnText: { color: '#000000', fontSize: 20, fontWeight: '800' },
+  stepperValue: { color: '#000000', fontSize: 16, fontWeight: '800', minWidth: 32, textAlign: 'center' },
 });

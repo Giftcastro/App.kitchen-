@@ -12,6 +12,7 @@ node_modules/
 # Expo
 .expo/
 dist/
+dist-proto/
 web-build/
 expo-env.d.ts
 
@@ -26,6 +27,7 @@ expo-env.d.ts
 # Build artifacts
 *.tsbuildinfo
 tsc_output.txt
+qa-*.txt
 
 # Misc
 .env

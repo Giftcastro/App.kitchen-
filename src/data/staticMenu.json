@@ -2,411 +2,222 @@
   "_icons": {
     "SALAD BAR": "🥗",
     "POKE BOWL": "🍱",
-    "STIR-FRY": "🍳",
+    "STIR FRY": "🍳",
     "CIAO ITALY": "🍝",
     "WRAPS": "🌯",
     "SANDWICHES": "🥪",
-    "HOT DOG SALOON": "🌭",
+    "HOT DOGS": "🌭",
     "BURGER BAR": "🍔",
-    "SIDES & SAUCES": "🍟",
     "FITNESS MEALS": "💪",
-    "HOMEMADE WINTER SOUPS": "🍲",
+    "SOUPS": "🍲",
     "RAMEN BOWLS": "🍜",
-    "VEGAN MEALS": "🌱"
+    "VEGAN MEALS": "🌱",
+    "PORK SPECIALITIES": "🥓",
+    "CHEF'S MEAL OF THE DAY": "👨‍🍳"
   },
-  "SALAD BAR": [
-    {
-      "name": "Tuna Salad",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Lettuce / Green Beans / Tomato / Cucumber / Boiled Baby Potato / Olives / Boiled egg / French dressing"
-    },
-    {
-      "name": "Roasted Butternut Salad",
-      "prices": ["R80.00", "R120.00"],
-      "description": "Roasted Butternut / Danish Feta Cheese / Sundry Tomato / Roasted Cashew Nuts / Rocket / Quinoa Sprinkles / Basil / Maple Dressing"
-    },
-    {
-      "name": "Grilled Chicken or Halloumi Chop Salad",
-      "prices": ["R80.00", "R130.00"],
-      "description": "Green and Red Cabbage / Roasted Cherry Tomato / Cucumber / Green Beans / Sweet Corn / Danish Feta Cheese / Chickpeas / Creamy Dressing"
-    },
-    {
-      "name": "Thai Beef Noodle Salad",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Marinated Pan-Fried Beef / Rice Noodles / Stir-fried Vegetables / Basil / Coriander / Sweet Soy Ginger Dressing"
-    },
-    {
-      "name": "Cajun Chicken & Brown Rice Salad",
-      "prices": ["R80.00", "R130.00"],
-      "description": "Cherry tomatoes / Cucumber / Lettuce / Chopped Herbs / White Beans / Parsley Lemon Dressing"
-    },
-    {
-      "name": "Roasted veg and couscous salad",
-      "prices": ["R80.00", "R120.00"],
-      "description": "Roasted Seasonal Vegetables / Wholewheat Couscous / Robiola Cheese / Orange Honey Balsamic Dressing"
-    }
+  "_addOns": {
+    "CIAO ITALY": [
+      { "name": "Extra Parmesan Cheese", "price": 25 },
+      { "name": "Extra Mozzarella", "price": 25 },
+      { "name": "Extra Bacon", "price": 15 },
+      { "name": "Extra Macon", "price": 30 }
+    ],
+    "STIR FRY": [
+      { "name": "Extra Chicken", "price": 30 },
+      { "name": "Extra Beef", "price": 45 },
+      { "name": "Extra Pork", "price": 40 }
+    ],
+    "BURGER BAR": [
+      { "name": "Extra Beef Patty", "price": 40 },
+      { "name": "Extra Chicken Fillet", "price": 35 },
+      { "name": "Extra Halloumi", "price": 45 },
+      { "name": "Extra Cheese", "price": 25 },
+      { "name": "Extra Bacon", "price": 15 },
+      { "name": "Extra Macon", "price": 30 }
+    ]
+  },
+  "CIAO ITALY": [
+    { "name": "Chicken Aglio e Olio Penne", "prices": ["R80.00", "R140.00"], "description": "Fresh Garlic, Olive Oil and Parmesan Cheese with Chicken" },
+    { "name": "Chicken Napolitana Penne", "prices": ["R80.00", "R130.00"], "description": "Chicken cooked in a Tomato-based Sauce, featuring Herbs, Onions and Garlic" },
+    { "name": "Chicken Alfredo Linguini Pasta", "prices": ["R80.00", "R140.00"], "description": "Tender grilled chicken slices paired with long, silky linguine pasta coated in a velvety sauce of butter, heavy cream, parmesan cheese, and garlic" },
+    { "name": "Chicken Pesto Penne", "prices": ["R80.00", "R140.00"], "description": "Grilled Chicken tossed in Basil Pesto with a dash of Cream" },
+    { "name": "Spaghetti Meatballs", "prices": ["R80.00", "R140.00"], "description": "Spaghetti Pasta served with Meatballs in a Rich Tomato Gravy" },
+    { "name": "Spaghetti Bolognaise", "prices": ["R80.00", "R140.00"], "description": "A thick, rich Bolognaise with great depth of flavour" },
+    { "name": "Beef Lasagne", "prices": ["R80.00", "R140.00"], "description": "Layers of Savoury Bolognaise Sauce, Creamy Béchamel Sauce, Pasta Sheets and topped with Bubbling Melted Cheese" },
+    { "name": "Macaroni, Cheese and Macon", "prices": ["R80.00", "R120.00"], "description": "A classic comfort food featuring cooked macaroni pasta covered in a rich, creamy cheese sauce baked until bubbly" },
+    { "name": "Creamy Lemon Prawn & Calamari Spaghetti", "prices": ["R145.00", "R300.00"], "description": "Spaghetti, Prawns and Calamari tossed in a Zesty Lemon Cream Sauce" },
+    { "name": "Traditional Spaghetti Carbonara", "prices": ["R90.00", "R170.00"] },
+    { "name": "Traditional Alfredo Linguini", "prices": ["R80.00", "R140.00"] },
+    { "name": "Mafia Gnocchi", "prices": ["R80.00", "R140.00"], "description": "Creamy Bolognaise with Mushroom and Chilli" },
+    { "name": "Deboned Oxtail Risotto", "prices": ["R120.00", "R200.00"], "description": "A rich, comforting dish combining slow-braised, gelatinous oxtail meat with silky risotto rice" },
+    { "name": "Porcini Mushroom Risotto", "prices": ["R80.00", "R120.00"], "description": "A Traditional, luxurious Italian rice dish known for its intense, nutty, and earthy flavour", "tags": ["Vegetarian"] },
+    { "name": "Spaghetti ala Courgette", "prices": ["R80.00", "R120.00"], "description": "Spaghetti aglio e olio Courgette and Parmesan sprinkled with Chilli Flakes", "tags": ["Vegetarian"] },
+    { "name": "Penne Arrabbiata", "prices": ["R80.00", "R120.00"], "description": "A Spicy Italian pasta dish that packs a punch", "tags": ["Vegetarian"] },
+    { "name": "Roasted Vegetable Penne", "prices": ["R80.00", "R130.00"], "description": "Penne Pasta with Roasted vegetables cooked in a Napolitana Sauce and topped with Ricotta", "tags": ["Vegetarian"] },
+    { "name": "Creamy Spinach and Feta Penne", "prices": ["R80.00", "R130.00"], "description": "Penne Pasta tossed in creamy spinach and topped with Danish Feta Cheese", "tags": ["Vegetarian"] },
+    { "name": "Butternut Napolitana Ravioli", "prices": ["R80.00", "R140.00"], "description": "Butternut Ravioli with a Tomato-based Sauce, featuring Herbs, Onions and Garlic", "tags": ["Vegetarian"] },
+    { "name": "Aubergine & Courgette Lasagne", "prices": ["R80.00", "R140.00"], "description": "Layers of Aubergine and Courgette, Creamy Béchamel Sauce, Pasta Sheets and topped with Bubbling Melted Cheese", "tags": ["Vegetarian"] },
+    { "name": "Spaghetti Cacio e Pepe Carbonara", "prices": ["R80.00", "R140.00"], "description": "A Creamy Sauce made with Parmesan Cheese, Egg Yolk and Pepper", "tags": ["Vegetarian"] }
+  ],
+  "CHEF'S MEAL OF THE DAY": [
+    { "name": "Curry of the Day", "prices": ["R80.00"] },
+    { "name": "Gourmet Sandwich", "prices": ["R80.00"] },
+    { "name": "Main Meal", "prices": ["R80.00"] },
+    { "name": "Health Meal", "prices": ["R80.00"] },
+    { "name": "Vegetarian Meal", "prices": ["R80.00"], "tags": ["Vegetarian"] }
+  ],
+  "STIR FRY": [
+    { "name": "Beef Stir-Fry (Noodles)", "prices": ["R80.00", "R140.00"], "description": "Asian Beef Stir-Fry tossed with Noodles" },
+    { "name": "Beef Stir-Fry (Rice)", "prices": ["R80.00", "R140.00"], "description": "Asian Beef Stir-Fry tossed with Rice" },
+    { "name": "Chicken Stir-Fry (Noodles)", "prices": ["R80.00", "R130.00"], "description": "Asian Chicken Stir-Fry tossed with Noodles" },
+    { "name": "Chicken Stir-Fry (Rice)", "prices": ["R80.00", "R130.00"], "description": "Asian Chicken Stir-Fry tossed with Rice" },
+    { "name": "Pork Stir-Fry (Noodles)", "prices": ["R80.00", "R130.00"] },
+    { "name": "Pork Stir-Fry (Rice)", "prices": ["R80.00", "R130.00"] },
+    { "name": "Vegetarian Stir-Fry (Noodles)", "prices": ["R80.00", "R120.00"], "description": "Vegetable and Tofu Stir-Fry tossed with Noodles", "tags": ["Vegetarian"] },
+    { "name": "Vegetarian Stir-Fry (Rice)", "prices": ["R80.00", "R120.00"], "description": "Vegetable and Tofu Stir-Fry tossed with Rice", "tags": ["Vegetarian"] }
   ],
   "POKE BOWL": [
-    {
-      "name": "Salmon",
-      "prices": ["R140.00", "R280.00"],
-      "description": "Japanese Rice / Raw Salmon / Edamame Beans / Shredded Cabbage / Julienne Carrots / Cucumber / Green Beans / Cherry Tomatoes / Spring Onion / Sweet Wasabi Dressing"
-    },
-    {
-      "name": "Chicken Teriyaki",
-      "prices": ["R80.00", "R160.00"],
-      "description": "Japanese Rice / Teriyaki Chicken / Shredded Cabbage / Cucumber / Edamame Beans / Julienne Carrots / Cherry Tomatoes / Boiled Egg / Teriyaki Dressing"
-    },
-    {
-      "name": "Tinned Tuna",
-      "prices": ["R80.00", "R130.00"],
-      "description": "Japanese Rice / Tinned Tuna / Edamame Beans / Shredded Cabbage / Julienne Carrots / Cucumber / Green Beans / Cherry Tomatoes / Spring Onion / Creamy Soy Dressing"
-    },
-    {
-      "name": "High Protein",
-      "prices": ["R80.00", "R160.00"],
-      "description": "Grilled Chicken Breast / Boiled Egg / Steamed Broccoli / Green Salad / Beans / Lentils / Light Dressing"
-    }
-  ],
-  "STIR-FRY": [
-    {
-      "name": "Beef Stir-Fry",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Asian Beef Stir-Fry tossed with Rice or Noodles"
-    },
-    {
-      "name": "Chicken Stir-Fry",
-      "prices": ["R80.00", "R130.00"],
-      "description": "Asian Chicken Stir-Fry tossed with Rice or Noodles"
-    },
-    {
-      "name": "Vegetarian Stir-Fry",
-      "prices": ["R80.00", "R120.00"],
-      "description": "Vegetable and Tofu Stir-Fry tossed with Rice or Noodles"
-    }
-  ],
-  "CIAO ITALY": [
-    {
-      "name": "Chicken Aglio e Olio Penne",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Fresh Garlic, Olive Oil and Parmesan Cheese with Chicken"
-    },
-    {
-      "name": "Spaghetti ala Courgette",
-      "prices": ["R80.00", "R120.00"],
-      "description": "Spaghetti aglio e olio Courgette and Parmesan sprinkled with Chilli Flakes"
-    },
-    {
-      "name": "Penne Arrabbiata",
-      "prices": ["R80.00", "R120.00"],
-      "description": "A Spicy Italian pasta dish that packs a punch"
-    },
-    {
-      "name": "Roasted Vegetable Penne",
-      "prices": ["R80.00", "R130.00"],
-      "description": "Penne Pasta with Roasted vegetables cooked in a Napolitana Sauce and topped with Ricotta"
-    },
-    {
-      "name": "Chicken Napolitana Penne",
-      "prices": ["R80.00", "R130.00"],
-      "description": "Chicken cooked in a Tomato-based Sauce, featuring Herbs, Onions and Garlic"
-    },
-    {
-      "name": "Spaghetti Meatballs",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Spaghetti Pasta served with Meatballs in a Rich Tomato Gravy"
-    },
-    {
-      "name": "Creamy Spinach and Feta Penne",
-      "prices": ["R80.00", "R130.00"],
-      "description": "Penne Pasta tossed in creamy spinach and topped with Danish Feta Cheese"
-    },
-    {
-      "name": "Chicken Alfredo Linguini Pasta",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Tender grilled chicken slices paired with long, silky linguine pasta coated in a velvety sauce of butter, heavy cream, parmesan cheese, and garlic"
-    },
-    {
-      "name": "Deboned Oxtail Risotto",
-      "prices": ["R120.00", "R200.00"],
-      "description": "A rich, comforting dish combining slow-braised, gelatinous oxtail meat with silky risotto rice"
-    },
-    {
-      "name": "Porcini Mushroom Risotto",
-      "prices": ["R80.00", "R120.00"],
-      "description": "A Traditional, luxurious Italian rice dish known for its intense, nutty, and earthy flavour"
-    },
-    {
-      "name": "Spaghetti Bolognese",
-      "prices": ["R80.00", "R140.00"],
-      "description": "A thick, rich Bolognese with great depth of flavour"
-    },
-    {
-      "name": "Spaghetti Cacio e pepe Carbonara",
-      "prices": ["R80.00", "R140.00"],
-      "description": "A Creamy Sauce made with Parmesan Cheese, Egg Yolk and Pepper"
-    },
-    {
-      "name": "Chicken Pesto Penne",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Grilled Chicken tossed in Basil Pesto with a dash of Cream"
-    },
-    {
-      "name": "Butternut Napolitana Ravioli",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Butternut Ravioli with a Tomato-based Sauce, featuring Herbs, Onions and Garlic"
-    },
-    {
-      "name": "Beef Lasagne",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Layers of Savoury Bolognese Sauce, Creamy Béchamel Sauce, Pasta Sheets and topped with Bubbling Melted Cheese"
-    },
-    {
-      "name": "Macaroni Cheese and Macon",
-      "prices": ["R80.00", "R120.00"],
-      "description": "A classic comfort food featuring cooked macaroni pasta covered in a rich, creamy cheese sauce baked until bubbly"
-    },
-    {
-      "name": "Aubergine and Courgette Lasagne",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Layers of Aubergine and Courgette, Creamy Béchamel Sauce, Pasta Sheets and topped with Bubbling Melted Cheese"
-    },
-    {
-      "name": "Mafia Gnocchi",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Creamy Bolognaise with Mushroom and Chilli"
-    },
-    {
-      "name": "Creamy Lemon Prawn & Calamari Spaghetti",
-      "prices": ["R145.00", "R300.00"],
-      "description": "Spaghetti, Prawns and Calamari tossed in a Zesty Lemon Cream Sauce"
-    }
+    { "name": "Salmon", "prices": ["R140.00", "R280.00"], "description": "Japanese Rice / Raw Salmon / Edamame Beans / Shredded Cabbage / Julienne Carrots / Cucumber / Green Beans / Cherry Tomatoes / Spring Onion / Sweet Wasabi Dressing" },
+    { "name": "Chicken Teriyaki", "prices": ["R80.00", "R160.00"], "description": "Japanese Rice / Teriyaki Chicken / Shredded Cabbage / Cucumber / Edamame Beans / Julienne Carrots / Cherry Tomatoes / Boiled Egg / Teriyaki Dressing" },
+    { "name": "Tinned Tuna", "prices": ["R80.00", "R130.00"], "description": "Japanese Rice / Tinned Tuna / Edamame Beans / Shredded Cabbage / Julienne Carrots / Cucumber / Green Beans / Cherry Tomatoes / Spring Onion / Creamy Soy Dressing" },
+    { "name": "High Protein", "prices": ["R80.00", "R160.00"], "description": "Grilled Chicken Breast / Boiled Egg / Steamed Broccoli / Green Salad / Beans / Lentils / Light Dressing" },
+    { "name": "Mediterranean", "prices": ["R80.00", "R130.00"], "description": "Hummus / Whole Chickpeas / Cucumber / Cherry Tomatoes / Tahini / Pita Bread", "tags": ["Vegetarian"] },
+    { "name": "Grilled Chicken", "prices": ["R30.00"] },
+    { "name": "Grilled Halloumi", "prices": ["R30.00"] },
+    { "name": "Grilled Sirloin Steak 150g", "prices": ["R95.00"] },
+    { "name": "Danish Feta", "prices": ["R20.00"] }
   ],
   "WRAPS": [
-    {
-      "name": "Middle Eastern",
-      "prices": ["R80.00"],
-      "description": "Chicken / Hummus / Herb salad / Tahini / Lentils"
-    },
-    {
-      "name": "Mexican Grilled Chicken",
-      "prices": ["R80.00"],
-      "description": "Grilled Chicken / Honey Mustard Aioli / Lettuce / Cucumber / Spring onion / Spicy Beans"
-    },
-    {
-      "name": "BBQ Beef Wrap",
-      "prices": ["R80.00"],
-      "description": "BBQ Beef Strips / Roasted Garlic Aioli / Gherkins / Coleslaw / Roasted Sweet Potato"
-    },
-    {
-      "name": "Salmon Wholewheat Wrap",
-      "prices": ["R80.00"],
-      "description": "Smoked Salmon / Cream Cheese / Onion / Capers / Herb Salad"
-    },
-    {
-      "name": "Halloumi Wrap",
-      "prices": ["R80.00"],
-      "description": "Halloumi / Roasted Vegetables / Herbs / Honey Mustard Aioli / Spicy Beans"
-    }
+    { "name": "Middle Eastern", "prices": ["R80.00"], "description": "Chicken / Hummus / Herb salad / Tahini / Lentils" },
+    { "name": "Mexican Grilled Chicken", "prices": ["R80.00"], "description": "Grilled Chicken / Honey Mustard Aioli / Lettuce / Cucumber / Spring onion / Spicy Beans" },
+    { "name": "BBQ Beef", "prices": ["R80.00"], "description": "BBQ Beef Strips / Roasted Garlic Aioli / Gherkins / Coleslaw / Roasted Sweet Potato" },
+    { "name": "Salmon", "prices": ["R80.00"], "description": "Smoked Salmon / Cream Cheese / Onion / Capers / Herb Salad" },
+    { "name": "Halloumi", "prices": ["R80.00"], "description": "Halloumi / Roasted Vegetables / Herbs / Honey Mustard Aioli / Spicy Beans", "tags": ["Vegetarian"] },
+    { "name": "Japanese BBQ Roast Pork", "prices": ["R80.00"] },
+    { "name": "Potato Wedges", "prices": ["R35.00"] },
+    { "name": "Sweet Potato Wedges", "prices": ["R35.00"] },
+    { "name": "Asian Slaw", "prices": ["R20.00"] },
+    { "name": "Coleslaw", "prices": ["R20.00"] },
+    { "name": "Village Greek Salad", "prices": ["R25.00"] },
+    { "name": "Green Salad", "prices": ["R20.00"] },
+    { "name": "Potato Salad", "prices": ["R25.00"] },
+    { "name": "Grilled Chicken", "prices": ["R30.00"] },
+    { "name": "Grilled Halloumi", "prices": ["R30.00"] },
+    { "name": "Beef", "prices": ["R45.00"] }
   ],
-  "SANDWICHES": [
-    {
-      "name": "Grilled Chicken",
-      "prices": ["R80.00"],
-      "description": "Grilled Chicken / Honey Mustard Aioli / Lettuce / Cucumber / Spring onion"
-    },
-    {
-      "name": "Egg Mayonnaise",
-      "prices": ["R80.00"],
-      "description": "Egg Mayonnaise / Lettuce / Gherkins / Roasted Peppers"
-    },
-    {
-      "name": "Roast Beef",
-      "prices": ["R80.00"],
-      "description": "Roast Beef / Roasted Garlic Aioli / Tomato Jam / Rocket"
-    },
-    {
-      "name": "Napoli",
-      "prices": ["R80.00"],
-      "description": "Napoli Salami / Sweet Provolone / Grilled Marinated Vegetables"
-    },
-    {
-      "name": "Wafer Thin Chicken Roll",
-      "prices": ["R80.00"],
-      "description": "Wafer thin Chicken Roll / Aioli / Cheddar Cheese / Sundried Tomato / Salad"
-    },
-    {
-      "name": "Goat Cheese",
-      "prices": ["R80.00"],
-      "description": "Goat Cheese / Tomato / Parsley Pesto / Cucumber"
-    },
-    {
-      "name": "Middle Eastern",
-      "prices": ["R80.00"],
-      "description": "Chicken / Tahini butter / hummus / grilled veg / herb salad"
-    },
-    {
-      "name": "Jersey Milk Lamb Prosciutto",
-      "prices": ["R90.00"],
-      "description": "Jersey Milk Cheese / Lamb Prosciutto / Wild Rocket / Mature Balsamic Drizzle"
-    },
-    {
-      "name": "Chicken Mayonnaise",
-      "prices": ["R80.00"],
-      "description": "Chicken Mayonnaise"
-    },
-    {
-      "name": "Macon, Egg, Cheese & Tomato",
-      "prices": ["R80.00"],
-      "description": "Macon, Egg, Cheese & Tomato"
-    },
-    {
-      "name": "Macon, Cheese and Tomato",
-      "prices": ["R80.00"],
-      "description": "Macon, Cheese and Tomato"
-    },
-    {
-      "name": "Cheese and Tomato",
-      "prices": ["R80.00"],
-      "description": "Cheese and Tomato"
-    }
-  ],
-  "HOT DOG SALOON": [
-    {
-      "name": "Mexican Beef Hot Dog",
-      "prices": ["R80.00"],
-      "description": "Chorizo Beef Hot Dog / Mexican Salsa / Chimichurri Sauce / Cheese"
-    },
-    {
-      "name": "Beef Hot Dog",
-      "prices": ["R80.00"],
-      "description": "Beef Hot Dog / Honey Mustard Aioli / Fried Onion / Tomato Sauce"
-    },
-    {
-      "name": "French Beef Hot Dog",
-      "prices": ["R80.00"],
-      "description": "Beef Hot Dog / Aioli / Mustard / Homemade pickled Gherkins in a Baguette"
-    }
+  "HOT DOGS": [
+    { "name": "Mexican Beef", "prices": ["R80.00"], "description": "Chorizo Beef Hot Dog / Mexican Salsa / Chimichurri Sauce / Cheese" },
+    { "name": "Classic Beef", "prices": ["R80.00"], "description": "Beef Hot Dog / Honey Mustard Aioli / Fried Onion / Tomato Sauce" },
+    { "name": "French Beef", "prices": ["R80.00"], "description": "Beef Hot Dog / Aioli / Mustard / Homemade pickled Gherkins in a Baguette" },
+    { "name": "Potato Wedges", "prices": ["R35.00"] },
+    { "name": "Sweet Potato Wedges", "prices": ["R35.00"] },
+    { "name": "Asian Slaw", "prices": ["R20.00"] },
+    { "name": "Coleslaw", "prices": ["R20.00"] },
+    { "name": "Village Greek Salad", "prices": ["R25.00"] },
+    { "name": "Green Salad", "prices": ["R20.00"] },
+    { "name": "Potato Salad", "prices": ["R25.00"] }
   ],
   "BURGER BAR": [
-    {
-      "name": "Classic Burger",
-      "prices": ["R80.00"],
-      "description": "150g Beef Patty or 150g Grilled Chicken Fillet Burger or Halloumi. Topped with Aioli Special Sauce / Sliced Tomato / Gherkins / Lettuce"
-    },
-    {
-      "name": "Cheese Burger",
-      "prices": ["R80.00"],
-      "description": "150g Beef Patty or 150g Grilled Chicken Fillet Burger or Halloumi. Topped with Cheese / Aioli Special Sauce / Sliced Tomato / Gherkins / Lettuce"
-    }
+    { "name": "Classic Burger - Beef", "prices": ["R80.00"], "description": "150g Beef Patty topped with Aioli Special Sauce / Sliced Tomato / Gherkins / Lettuce" },
+    { "name": "Classic Burger - Chicken", "prices": ["R80.00"], "description": "150g Grilled Chicken Fillet topped with Aioli Special Sauce / Sliced Tomato / Gherkins / Lettuce" },
+    { "name": "Classic Burger - Halloumi", "prices": ["R80.00"], "description": "Grilled Halloumi topped with Aioli Special Sauce / Sliced Tomato / Gherkins / Lettuce", "tags": ["Vegetarian"] },
+    { "name": "Cheese Burger - Beef", "prices": ["R80.00"], "description": "150g Beef Patty topped with Cheese / Aioli Special Sauce / Sliced Tomato / Gherkins / Lettuce" },
+    { "name": "Cheese Burger - Chicken", "prices": ["R80.00"], "description": "150g Grilled Chicken Fillet topped with Cheese / Aioli Special Sauce / Sliced Tomato / Gherkins / Lettuce" },
+    { "name": "Cheese Burger - Halloumi", "prices": ["R80.00"], "description": "Grilled Halloumi topped with Cheese / Aioli Special Sauce / Sliced Tomato / Gherkins / Lettuce", "tags": ["Vegetarian"] },
+    { "name": "Cheese Sauce", "prices": ["R35.00"] },
+    { "name": "Cheesy Jalapeno Sauce", "prices": ["R35.00"] },
+    { "name": "Mushroom Sauce", "prices": ["R35.00"] },
+    { "name": "Potato Wedges", "prices": ["R35.00"] },
+    { "name": "Sweet Potato Wedges", "prices": ["R35.00"] },
+    { "name": "Asian Slaw", "prices": ["R20.00"] },
+    { "name": "Coleslaw", "prices": ["R20.00"] },
+    { "name": "Village Greek Salad", "prices": ["R25.00"] },
+    { "name": "Green Salad", "prices": ["R20.00"] },
+    { "name": "Potato Salad", "prices": ["R25.00"] }
   ],
-  "SIDES & SAUCES": [
-    { "name": "Cheese Sauce", "price": "R35.00" },
-    { "name": "Cheesy Jalapeno Sauce", "price": "R35.00" },
-    { "name": "Mushroom Sauce", "price": "R35.00" },
-    { "name": "Potato Wedges", "price": "R35.00" },
-    { "name": "Sweet Potato Wedges", "price": "R35.00" },
-    { "name": "Asian Slaw", "price": "R20.00" },
-    { "name": "Coleslaw", "price": "R20.00" },
-    { "name": "Village Greek Salad", "price": "R25.00" },
-    { "name": "Green Salad", "price": "R20.00" },
-    { "name": "Potato Salad", "price": "R25.00" }
+  "SALAD BAR": [
+    { "name": "Tuna Salad", "prices": ["R80.00", "R140.00"], "description": "Lettuce / Green Beans / Tomato / Cucumber / Boiled Baby Potato / Olives / Boiled egg / French dressing" },
+    { "name": "Roasted Butternut Salad", "prices": ["R80.00", "R120.00"], "description": "Roasted Butternut / Danish Feta Cheese / Sundry Tomato / Roasted Cashew Nuts / Rocket / Quinoa Sprinkles / Basil / Maple Dressing", "tags": ["Vegetarian"] },
+    { "name": "Grilled Chicken Salad", "prices": ["R80.00", "R130.00"], "description": "Green and Red Cabbage / Roasted Cherry Tomato / Cucumber / Green Beans / Sweet Corn / Danish Feta Cheese / Chickpeas / Creamy Dressing" },
+    { "name": "Grilled Haloumi Salad", "prices": ["R80.00", "R130.00"], "description": "Green and Red Cabbage / Roasted Cherry Tomato / Cucumber / Green Beans / Sweet Corn / Danish Feta Cheese / Chickpeas / Creamy Dressing", "tags": ["Vegetarian"] },
+    { "name": "Thai Beef Noodle Salad", "prices": ["R80.00", "R140.00"], "description": "Marinated Pan-Fried Beef / Rice Noodles / Stir-fried Vegetables / Basil / Coriander / Sweet Soy Ginger Dressing" },
+    { "name": "Cajun Chicken & Brown Rice Salad", "prices": ["R80.00", "R130.00"], "description": "Cherry tomatoes / Cucumber / Lettuce / Chopped Herbs / White Beans / Parsley Lemon Dressing" },
+    { "name": "Roasted Vegetable and Couscous Salad", "prices": ["R80.00", "R120.00"], "description": "Roasted Seasonal Vegetables / Wholewheat Couscous / Robiola Cheese / Orange Honey Balsamic Dressing", "tags": ["Vegetarian"] },
+    { "name": "Chicken Greek Village Salad", "prices": ["R80.00", "R120.00"] },
+    { "name": "Grilled Chicken", "prices": ["R30.00"] },
+    { "name": "Grilled Halloumi", "prices": ["R30.00"] },
+    { "name": "Grilled Sirloin Steak 150g", "prices": ["R95.00"] },
+    { "name": "Danish Feta", "prices": ["R20.00"] }
+  ],
+  "SANDWICHES": [
+    { "name": "Grilled Chicken", "prices": ["R80.00"], "description": "Grilled Chicken / Honey Mustard Aioli / Lettuce / Cucumber / Spring onion" },
+    { "name": "Egg Mayonnaise", "prices": ["R80.00"], "description": "Egg Mayonnaise / Lettuce / Gherkins / Roasted Peppers", "tags": ["Vegetarian"] },
+    { "name": "Roast Beef", "prices": ["R80.00"], "description": "Roast Beef / Roasted Garlic Aioli / Tomato Jam / Rocket" },
+    { "name": "Napoli", "prices": ["R80.00"], "description": "Napoli Salami / Sweet Provolone / Grilled Marinated Vegetables" },
+    { "name": "Water Thin Chicken Roll", "prices": ["R80.00"], "description": "Wafer thin Chicken Roll / Aioli / Cheddar Cheese / Sundried Tomato / Salad" },
+    { "name": "Goat Cheese", "prices": ["R80.00"], "description": "Goat Cheese / Tomato / Parsley Pesto / Cucumber", "tags": ["Vegetarian"] },
+    { "name": "Middle Eastern", "prices": ["R80.00"], "description": "Chicken / Tahini butter / hummus / grilled veg / herb salad" },
+    { "name": "Ham & Cheese", "prices": ["R80.00"] },
+    { "name": "Ham & Cheese Omelette", "prices": ["R80.00"] },
+    { "name": "Chicken Mayonnaise", "prices": ["R80.00"] },
+    { "name": "Macon, Egg, Cheese & Tomato", "prices": ["R80.00"] },
+    { "name": "Macon, Cheese & Tomato", "prices": ["R80.00"] },
+    { "name": "Cheese & Tomato", "prices": ["R80.00"], "tags": ["Vegetarian"] },
+    { "name": "Bacon, Egg, Cheese & Tomato", "prices": ["R80.00"] },
+    { "name": "Bacon, Cheese & Tomato", "prices": ["R80.00"] },
+    { "name": "Potato Wedges", "prices": ["R35.00"] },
+    { "name": "Sweet Potato Wedges", "prices": ["R35.00"] },
+    { "name": "Asian Slaw", "prices": ["R20.00"] },
+    { "name": "Coleslaw", "prices": ["R20.00"] },
+    { "name": "Village Greek Salad", "prices": ["R25.00"] },
+    { "name": "Green Salad", "prices": ["R20.00"] },
+    { "name": "Potato Salad", "prices": ["R25.00"] }
   ],
   "FITNESS MEALS": [
-    { "name": "Grilled Chicken Fillet served with Sweet Potato and Broccoli", "price": "R80.00" },
-    { "name": "Grilled Chicken Fillet served with Brown Rice and Broccoli", "price": "R80.00" },
-    { "name": "Grilled Chicken Fillet served with Broccoli and Seasonal Vegetables", "price": "R80.00" },
-    { "name": "Grilled Beef Fillet served with Sweet Potato and Broccoli", "price": "R130.00" },
-    { "name": "Grilled Beef Fillet served with Brown Rice and Broccoli", "price": "R130.00" },
-    { "name": "Grilled Beef Fillet served with Broccoli and Seasonal Vegetables", "price": "R130.00" }
+    { "name": "Grilled Chicken Fillet | Sweet Potato | Broccoli", "prices": ["R80.00"] },
+    { "name": "Grilled Chicken Fillet | Brown Rice | Broccoli", "prices": ["R80.00"] },
+    { "name": "Grilled Chicken Fillet | Seasonal Vegetables | Broccoli", "prices": ["R80.00"] },
+    { "name": "Grilled Beef Fillet | Sweet Potato | Broccoli", "prices": ["R130.00"] },
+    { "name": "Grilled Beef Fillet | Brown Rice | Broccoli", "prices": ["R130.00"] },
+    { "name": "Grilled Beef Fillet | Seasonal Vegetables | Broccoli", "prices": ["R130.00"] }
   ],
-  "HOMEMADE WINTER SOUPS": [
+  "VEGAN MEALS": [
+    { "name": "SALAD - Roasted Butternut", "prices": ["R80.00", "R120.00"], "description": "Roasted Butternut / Sundry Tomato / Roasted Cashew Nuts / Rocket / Quinoa Sprinkles / Basil / Maple Dressing" },
+    { "name": "SALAD - Vegetable and Couscous Salad", "prices": ["R80.00", "R120.00"], "description": "Roasted Seasonal Vegetables / Wholewheat Couscous / Orange Honey Balsamic Dressing" },
+    { "name": "SALAD - Green Salad", "prices": ["R80.00", "R120.00"] },
+    { "name": "SALAD - Potato Salad tossed in a Vinaigrette dressing", "prices": ["R80.00", "R120.00"] },
+    { "name": "PASTA - Spaghetti ala Courgette", "prices": ["R80.00", "R120.00"], "description": "Spaghetti aglio e olio Courgette sprinkled with Chilli Flakes" },
+    { "name": "PASTA - Penne Arrabiata", "prices": ["R80.00", "R120.00"], "description": "A Spicy Italian pasta dish that packs a punch" },
+    { "name": "PASTA - Roasted Vegetable Penne", "prices": ["R80.00", "R130.00"], "description": "Penne Pasta with Roasted vegetables cooked in a Napolitana Sauce" },
+    { "name": "PASTA - Butternut Napolitana Ravioli", "prices": ["R80.00", "R140.00"], "description": "Butternut Ravioli with a Tomato-based Sauce featuring Herbs, Onions and Garlic" },
+    { "name": "PASTA - Aubergine and Courgette Lasagne", "prices": ["R80.00", "R140.00"], "description": "Layers of Aubergine, Courgette, Tomato-based sauce and Pasta Sheets" },
+    { "name": "STIR-FRY - Vegetarian Stir-Fry", "prices": ["R80.00", "R120.00"], "description": "Vegetable and Tofu Stir-Fry tossed with Rice Noodles" },
+    { "name": "POKE BOWL - Mediterranean", "prices": ["R80.00", "R130.00"], "description": "Hummus / Whole Chickpeas / Cucumber / Cherry Tomatoes / Tahini / Pita Bread" },
+    { "name": "SANDWICH - Mediterranean", "prices": ["R80.00"], "description": "Tomato / Basil / Cucumber / Roasted Peppers" },
+    { "name": "SANDWICH - Humus & Roasted Vegetable", "prices": ["R80.00"], "description": "Hummus / Roasted Vegetables / Cherry Tomato" }
+  ],
+  "SOUPS": [
     { "name": "Ginger & Honey Butternut Soup", "prices": ["R80.00", "R120.00"] },
     { "name": "Pea, Tomato & Lentil Soup", "prices": ["R80.00", "R120.00"] },
     { "name": "Barley and Vegetable Soup", "prices": ["R80.00", "R120.00"] }
   ],
   "RAMEN BOWLS": [
-    {
-      "name": "Pulled Chicken",
-      "prices": ["R80.00", "R160.00"],
-      "description": "Pulled Chicken / Noodles / Vegetables / Chicken Broth / Chilli Oil on the side"
-    },
-    {
-      "name": "Slow Cooked Brisket",
-      "prices": ["R80.00", "R160.00"],
-      "description": "Slow Cooked Brisket / Noodles / Vegetables / Marrow Bone Broth / Chilli Oil on the side"
-    },
-    {
-      "name": "Tofu and Vegetable",
-      "prices": ["R80.00", "R160.00"],
-      "description": "Tofu / Noodles / Vegetables / Vegetable Broth / Chilli Oil on the side"
-    }
+    { "name": "Pulled Chicken", "prices": ["R80.00", "R160.00"], "description": "Pulled Chicken / Noodles / Vegetables / Chicken Broth / Chilli Oil on the side" },
+    { "name": "Slow Cooked Brisket", "prices": ["R80.00", "R160.00"], "description": "Slow Cooked Brisket / Noodles / Vegetables / Marrow Bone Broth / Chilli Oil on the side" },
+    { "name": "Tofu and Vegetable", "prices": ["R80.00", "R160.00"], "description": "Tofu / Noodles / Vegetables / Vegetable Broth / Chilli Oil on the side", "tags": ["Vegetarian"] },
+    { "name": "Roasted Pork Belly", "prices": ["R80.00", "R160.00"] }
   ],
-  "VEGAN MEALS": [
-    {
-      "name": "Roasted Butternut Salad",
-      "prices": ["R80.00", "R120.00"],
-      "description": "Roasted Butternut / Sundry Tomato / Roasted Cashew Nuts / Rocket / Quinoa Sprinkles / Basil / Maple Dressing"
-    },
-    {
-      "name": "Roasted Vegetable and Couscous Salad",
-      "prices": ["R80.00", "R120.00"],
-      "description": "Roasted Seasonal Vegetables / Wholewheat Couscous / Orange Honey Balsamic Dressing"
-    },
-    {
-      "name": "Green Salad",
-      "prices": ["R80.00", "R120.00"],
-      "description": "Green Salad"
-    },
-    {
-      "name": "Potato Salad",
-      "prices": ["R80.00", "R120.00"],
-      "description": "Potato Salad tossed in a Vinaigrette Dressing"
-    },
-    {
-      "name": "Spaghetti ala Courgette Pasta",
-      "prices": ["R80.00", "R120.00"],
-      "description": "Spaghetti aglio e alio Courgette sprinkled with Chilli Flakes"
-    },
-    {
-      "name": "Penne Arrabbiata Pasta",
-      "prices": ["R80.00", "R120.00"],
-      "description": "A Spicy Italian pasta dish that packs a punch"
-    },
-    {
-      "name": "Roasted Vegetable Penne",
-      "prices": ["R80.00", "R130.00"],
-      "description": "Penne Pasta with Roasted vegetables cooked in a Napolitana Sauce"
-    },
-    {
-      "name": "Butternut Napolitana Ravioli",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Butternut Ravioli with a Tomato-based Sauce featuring Herbs, Onions and Garlic"
-    },
-    {
-      "name": "Aubergine and Courgette Lasagne",
-      "prices": ["R80.00", "R140.00"],
-      "description": "Layers of Aubergine, Courgette, Tomato-based sauce and Pasta Sheets"
-    },
-    {
-      "name": "Vegetarian Stir-Fry",
-      "prices": ["R80.00", "R120.00"],
-      "description": "Vegetable and Tofu Stir-Fry tossed with Rice Noodles"
-    },
-    {
-      "name": "Mediterranean Poke Bowl",
-      "prices": ["R80.00", "R130.00"],
-      "description": "Hummus / Whole Chickpeas / Cucumber / Cherry Tomatoes / Tahini / Pita Bread"
-    },
-    {
-      "name": "Mediterranean Vegan Sandwich",
-      "prices": ["R80.00"],
-      "description": "Tomato / Basil / Cucumber / Roasted Peppers"
-    },
-    {
-      "name": "Hummus & Roasted Vegetable Vegan Sandwich",
-      "prices": ["R80.00"],
-      "description": "Hummus / Roasted Vegetables / Cherry Tomato"
-    }
+  "PORK SPECIALITIES": [
+    { "name": "Slow Cooked Pork Belly", "prices": ["R120.00", "R200.00"] },
+    { "name": "Pork Bangers & Mash", "prices": ["R80.00", "R140.00"] },
+    { "name": "Sweet & Sour Pork", "prices": ["R80.00", "R140.00"] },
+    { "name": "Flame Grilled Pork Rashers", "prices": ["R80.00", "R140.00"] },
+    { "name": "Potato Wedges", "prices": ["R35.00"] },
+    { "name": "Sweet Potato Wedges", "prices": ["R35.00"] },
+    { "name": "Asian Slaw", "prices": ["R20.00"] },
+    { "name": "Coleslaw", "prices": ["R20.00"] },
+    { "name": "Village Greek Salad", "prices": ["R25.00"] },
+    { "name": "Green Salad", "prices": ["R20.00"] },
+    { "name": "Potato Salad", "prices": ["R25.00"] }
   ]
 }
