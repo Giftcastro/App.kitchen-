@@ -1,10 +1,16 @@
-import React, { createContext, useContext, useState, Dispatch, SetStateAction, useMemo, useEffect } from 'react';
-import { ThemeColors, getThemeColors } from '../utils/theme';
+import React, { createContext, useContext, useState, Dispatch, SetStateAction, useMemo, useEffect, useRef } from 'react';
+import { useColorScheme } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ThemeColors, ThemeMode, ResolvedScheme, getThemeColors } from '../utils/theme';
 import { buildMenuFromStaticData, NormalizedMenuItem, AddOnOption } from '../utils/menuNormalize';
-export type { AddOnOption };
 import { syncOrderReminder, cancelOrderReminder } from '../utils/orderReminders';
 import { calculateDeliveryFee } from '../utils/deliveryHelpers';
+import { haptics } from '../utils/haptics';
 import staticMenuData from '../data/staticMenu.json';
+
+export type { AddOnOption };
+
+const THEME_MODE_STORAGE_KEY = 'kitchenco_theme_mode';
 
 export type AccountType = 'individual' | 'company';
 
@@ -168,6 +174,15 @@ interface KitchenContextType {
   saveCard: (card: Omit<SavedCard, 'id' | 'createdAt'>) => void;
   removeCard: (cardId: string) => void;
   theme: ThemeColors;
+  themeMode: ThemeMode;
+  setThemeMode: (mode: ThemeMode) => void;
+  isDark: boolean;
+  /** Bumped on every addToCart — screens that want a "something was added" pulse (e.g. the header cart badge) watch this. */
+  cartPulseSignal: number;
+  /** Animates a small icon from (fromX, fromY) to the header cart button, if a handler is currently registered (Menu tab only — see (tabs)/_layout.tsx). No-ops elsewhere. */
+  triggerCartFly: (fromX: number, fromY: number) => void;
+  /** Registers the fly-to-cart animation implementation — called once by (tabs)/_layout.tsx, which is the only screen that knows where the cart icon actually is. */
+  registerCartFlyHandler: (handler: ((fromX: number, fromY: number) => void) | null) => void;
   isItemEligibleForDiscount: (item: CartItem, discount: Discount | null) => boolean;
   calculateDiscountAmount: (cartItems: CartItem[], discount: Discount | null) => number;
   remindersEnabled: boolean;
@@ -231,7 +246,38 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [savedCards, setSavedCards] = useState<SavedCard[]>([]);
   const [orderNote, setOrderNote] = useState<string>('');
   const [remindersEnabled, setRemindersEnabled] = useState<boolean>(true);
-  const theme = useMemo(() => getThemeColors(), []);
+
+  // Theme: defaults to light (matching the reference Uber-style design) until
+  // the user picks an explicit override in Profile, which is then persisted
+  // so it survives an app restart.
+  const systemScheme = useColorScheme();
+  const [themeMode, setThemeModeState] = useState<ThemeMode>('light');
+  useEffect(() => {
+    AsyncStorage.getItem(THEME_MODE_STORAGE_KEY).then(stored => {
+      if (stored === 'light' || stored === 'dark' || stored === 'system') {
+        setThemeModeState(stored);
+      }
+    }).catch(() => {});
+  }, []);
+  const setThemeMode = (mode: ThemeMode) => {
+    setThemeModeState(mode);
+    AsyncStorage.setItem(THEME_MODE_STORAGE_KEY, mode).catch(() => {});
+  };
+  const resolvedScheme: ResolvedScheme = themeMode === 'system' ? (systemScheme ?? 'light') : themeMode;
+  const isDark = resolvedScheme === 'dark';
+  const theme = useMemo(() => getThemeColors(resolvedScheme), [resolvedScheme]);
+
+  // Fly-to-cart: the Menu tab's header owns the actual cart icon position,
+  // so it registers the real animation here; every other screen just calls
+  // triggerCartFly and gets a safe no-op if nothing is registered.
+  const cartFlyHandlerRef = useRef<((fromX: number, fromY: number) => void) | null>(null);
+  const registerCartFlyHandler = (handler: ((fromX: number, fromY: number) => void) | null) => {
+    cartFlyHandlerRef.current = handler;
+  };
+  const triggerCartFly = (fromX: number, fromY: number) => {
+    cartFlyHandlerRef.current?.(fromX, fromY);
+  };
+  const [cartPulseSignal, setCartPulseSignal] = useState(0);
 
   // Keep the single daily "don't forget to order" reminder in sync with
   // cart/order state — re-evaluated (and re-scheduled/cancelled) whenever
@@ -545,6 +591,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   }, [cart, discounts, user, discountAutoApplyPaused]);
 
   const addToCart = (newItem: CartItem) => {
+    haptics.light();
+    setCartPulseSignal(n => n + 1);
     setCart(prevCart => {
       const existing = prevCart.find(item => item.id === newItem.id);
       if (existing) {
@@ -557,6 +605,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeFromCart = (itemId: string) => {
+    haptics.light();
     setCart(prevCart =>
       prevCart
         .map(item => (item.id === itemId ? { ...item, quantity: item.quantity - 1 } : item))
@@ -863,6 +912,12 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         appliedDiscount,
         setAppliedDiscount,
         theme,
+        themeMode,
+        setThemeMode,
+        isDark,
+        cartPulseSignal,
+        triggerCartFly,
+        registerCartFlyHandler,
         isItemEligibleForDiscount,
         calculateDiscountAmount,
         remindersEnabled,

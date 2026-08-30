@@ -1,22 +1,56 @@
-import React from 'react';
-import { StyleSheet, Text, View, ScrollView, StatusBar } from 'react-native';
+import React, { useMemo } from 'react';
+import { StyleSheet, Text, View, ScrollView, StatusBar, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen, CartItem } from '../../context/KitchenCoContext';
 import { Ionicons } from '@expo/vector-icons';
+import { Skeleton } from '../../components/Skeleton';
+import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
+import { ThemeColors } from '../../utils/theme';
 
 export default function TrackerScreen() {
   const { orders, theme } = useKitchen();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { isLoading, refreshing, refresh } = useSimulatedLoad();
   // Find the most recent active order (pending, preparing, or on_the_way) or fallback to most recent
   const currentOrder = orders.find(o => o.status === 'pending' || o.status === 'preparing' || o.status === 'on_the_way') || orders[0] || null;
+
+  // Brief shimmer shown for the useSimulatedLoad() initial-load window — a
+  // stand-in for the real fetch this screen will eventually make.
+  const renderTrackerSkeleton = () => (
+    <>
+      <Skeleton theme={theme} style={{ width: 140, height: 12, borderRadius: 6, marginBottom: 12, marginTop: 4 }} />
+      <Skeleton theme={theme} style={{ height: 180, borderRadius: 24, marginBottom: 28 }} />
+      <Skeleton theme={theme} style={{ width: 120, height: 14, borderRadius: 6, marginBottom: 12 }} />
+      <Skeleton theme={theme} style={{ height: 72, borderRadius: 16, marginBottom: 10 }} />
+      <Skeleton theme={theme} style={{ height: 72, borderRadius: 16, marginBottom: 10 }} />
+      <Skeleton theme={theme} style={{ height: 140, borderRadius: 20 }} />
+    </>
+  );
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+        <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          {renderTrackerSkeleton()}
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   if (!currentOrder) {
     return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
-                <ScrollView contentContainerStyle={styles.scrollContent}>
+                <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />
+          }
+        >
           <View style={styles.emptyCard}>
             <View style={styles.emptyIconWrap}>
-              <Ionicons name="receipt-outline" size={48} color="#6B6B6B" />
+              <Ionicons name="receipt-outline" size={48} color={theme.textSecondary} />
             </View>
             <Text style={styles.emptyTitle}>No active order</Text>
             <Text style={styles.emptySubtitle}>
@@ -79,14 +113,19 @@ export default function TrackerScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
-            <ScrollView contentContainerStyle={styles.scrollContent}>
+            <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />
+        }
+      >
         <Text style={styles.orderIdCaption}>ORDER · {currentOrder.id}</Text>
 
         {/* Modern Order Tracker Card */}
         <View style={styles.trackerCard}>
           <View style={styles.trackerHeader}>
             <View style={[styles.trackerIconWrap, isDelivered && styles.trackerIconWrapDelivered]}>
-              <Ionicons name={trackerHeader.icon as any} size={24} color="#000000" />
+              <Ionicons name={trackerHeader.icon as any} size={24} color={theme.text} />
             </View>
             <View style={styles.trackerHeaderText}>
               <Text style={styles.trackerTitle}>{trackerHeader.title}</Text>
@@ -109,10 +148,10 @@ export default function TrackerScreen() {
               return (
                 <View key={status} style={[styles.step, (isCompleted || isActive) && styles.stepCompleted]}>
                   <View style={[styles.stepIconWrap, isActive && styles.stepActiveWrap, isCompleted && styles.stepCompletedWrap, isDelivered && index === statusFlow.length - 1 && styles.stepDeliveredWrap]}>
-                    <Ionicons 
-                      name={getStepIcon(index) as any} 
-                      size={16} 
-                      color={isInactive ? '#6B6B6B' : '#000000'} 
+                    <Ionicons
+                      name={getStepIcon(index) as any}
+                      size={16}
+                      color={isInactive ? theme.textSecondary : theme.text}
                     />
                   </View>
                                     <Text style={[styles.stepLabel, isInactive && styles.stepLabelInactive]} numberOfLines={1}>
@@ -193,13 +232,13 @@ export default function TrackerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' }, // Fallback, theme applied inline
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   scrollContent: { padding: 16, paddingBottom: 32 },
 
-  headerSection: { marginBottom: 24 },
-  title: { fontSize: 28, fontWeight: '900', color: '#000000', marginBottom: 6 },
-  subtitle: { fontSize: 14, color: '#6B6B6B', fontWeight: '500' },
+  // Delivered/active/completed step colors are semantic order-status hues
+  // (same distinct-per-status scheme as activity.tsx's getStatusColor) —
+  // left literal in both light and dark mode.
   trackerIconWrapDelivered: { backgroundColor: '#EAF7EE', borderColor: '#22C55E' },
   progressFillDelivered: { backgroundColor: '#22C55E' },
   stepActiveWrap: { backgroundColor: '#5AC8FA' },
@@ -207,9 +246,9 @@ const styles = StyleSheet.create({
   stepDeliveredWrap: { backgroundColor: '#22C55E' },
 
   emptyCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 24,
     padding: 40,
     alignItems: 'center',
@@ -224,21 +263,21 @@ const styles = StyleSheet.create({
     width: 90,
     height: 90,
     borderRadius: 45,
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
-  emptyTitle: { fontSize: 18, fontWeight: '800', color: '#000000', marginTop: 16, marginBottom: 8, letterSpacing: -0.3 },
-  emptySubtitle: { fontSize: 14, color: '#6B6B6B', textAlign: 'center', lineHeight: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '800', color: theme.text, marginTop: 16, marginBottom: 8, letterSpacing: -0.3 },
+  emptySubtitle: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', lineHeight: 20 },
 
   // Tracker Card
   trackerCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 24,
     padding: 24,
     marginBottom: 28,
@@ -253,76 +292,75 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   trackerHeaderText: { flex: 1 },
-  trackerTitle: { fontSize: 18, fontWeight: '900', color: '#000000', marginBottom: 3, letterSpacing: -0.3 },
-  trackerSub: { fontSize: 13, color: '#6B6B6B', fontWeight: '500' },
+  trackerTitle: { fontSize: 18, fontWeight: '900', color: theme.text, marginBottom: 3, letterSpacing: -0.3 },
+  trackerSub: { fontSize: 13, color: theme.textSecondary, fontWeight: '500' },
 
   progressContainer: { marginBottom: 28 },
-  progressBar: { height: 8, backgroundColor: '#EBEBEB', borderRadius: 4, overflow: 'hidden' },
-  progressFill: { width: '60%', height: '100%', backgroundColor: '#000000', borderRadius: 4 },
+  progressBar: { height: 8, backgroundColor: theme.border, borderRadius: 4, overflow: 'hidden' },
+  progressFill: { width: '60%', height: '100%', backgroundColor: theme.accent, borderRadius: 4 },
 
   stepsContainer: { flexDirection: 'row', justifyContent: 'space-between' },
   step: { alignItems: 'center', flex: 1 },
   stepCompleted: { opacity: 1 },
-  stepActive: { opacity: 1 },
   stepIconWrap: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
-    orderIdCaption: { fontSize: 11, fontWeight: '800', color: '#6B6B6B', letterSpacing: 1.2, marginBottom: 12, marginTop: 4 },
-  stepLabel: { fontSize: 11, fontWeight: '700', color: '#000000', textAlign: 'center' },
-  stepLabelInactive: { color: '#6B6B6B' },
+    orderIdCaption: { fontSize: 11, fontWeight: '800', color: theme.textSecondary, letterSpacing: 1.2, marginBottom: 12, marginTop: 4 },
+  stepLabel: { fontSize: 11, fontWeight: '700', color: theme.text, textAlign: 'center' },
+  stepLabelInactive: { color: theme.textSecondary },
 
   // Section Headers
   sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 8 },
-  sectionTitle: { fontSize: 13, fontWeight: '800', color: '#6B6B6B', textTransform: 'uppercase', letterSpacing: 0.8 },
-  sectionCount: { fontSize: 12, color: '#6B6B6B', fontWeight: '600' },
+  sectionTitle: { fontSize: 13, fontWeight: '800', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8 },
+  sectionCount: { fontSize: 12, color: theme.textSecondary, fontWeight: '600' },
 
   // Items
   itemsContainer: { marginBottom: 20 },
   itemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 16,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 1,
   },
-  itemIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F6F6F6', justifyContent: 'center', alignItems: 'center', marginRight: 14, borderWidth: 1, borderColor: '#EBEBEB' },
+  itemIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.surfaceSecondary, justifyContent: 'center', alignItems: 'center', marginRight: 14, borderWidth: 1, borderColor: theme.border },
   itemEmoji: { fontSize: 20 },
   itemInfo: { flex: 1 },
-  itemName: { fontSize: 14, fontWeight: '700', color: '#000000', marginBottom: 3 },
-  itemMeta: { fontSize: 12, color: '#6B6B6B', fontWeight: '500' },
+  itemName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 3 },
+  itemMeta: { fontSize: 12, color: theme.textSecondary, fontWeight: '500' },
   itemRight: { alignItems: 'flex-end' },
-  itemQty: { fontSize: 13, color: '#6B6B6B', fontWeight: '600' },
-  itemPrice: { fontSize: 14, fontWeight: '800', color: '#000000', marginTop: 2 },
+  itemQty: { fontSize: 13, color: theme.textSecondary, fontWeight: '600' },
+  itemPrice: { fontSize: 14, fontWeight: '800', color: theme.text, marginTop: 2 },
 
   // Summary
   summaryCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 20,
     padding: 20,
     shadowColor: '#000000',
@@ -332,10 +370,10 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  summaryLabel: { fontSize: 14, color: '#6B6B6B', fontWeight: '500' },
-  summaryValue: { fontSize: 14, color: '#000000', fontWeight: '600', letterSpacing: -0.2 },
-  summaryFree: { color: '#00C853', fontWeight: '700' },
-  summaryDivider: { height: 1, backgroundColor: '#EBEBEB', marginVertical: 14 },
-  summaryTotalLabel: { fontSize: 15, fontWeight: '800', color: '#000000', letterSpacing: -0.3 },
-  summaryTotalValue: { fontSize: 18, fontWeight: '900', color: '#000000', letterSpacing: -0.4 },
+  summaryLabel: { fontSize: 14, color: theme.textSecondary, fontWeight: '500' },
+  summaryValue: { fontSize: 14, color: theme.text, fontWeight: '600', letterSpacing: -0.2 },
+  summaryFree: { color: theme.success, fontWeight: '700' },
+  summaryDivider: { height: 1, backgroundColor: theme.border, marginVertical: 14 },
+  summaryTotalLabel: { fontSize: 15, fontWeight: '800', color: theme.text, letterSpacing: -0.3 },
+  summaryTotalValue: { fontSize: 18, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
 });

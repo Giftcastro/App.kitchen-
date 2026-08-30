@@ -1,20 +1,22 @@
-import React, { useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, Text } from 'react-native';
+import { ThemeColors } from '../utils/theme';
 
 interface QuickAddButtonProps {
   quantity: number;
   onPress: () => void;
   disabled?: boolean;
-  activeColor?: string;
+  theme: ThemeColors;
 }
 
 export const QuickAddButton: React.FC<QuickAddButtonProps> = ({
   quantity,
   onPress,
   disabled,
-  activeColor = '#000000',
+  theme,
 }) => {
   const scale = useRef(new Animated.Value(1)).current;
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   const handlePress = () => {
     if (disabled) return;
@@ -26,11 +28,16 @@ export const QuickAddButton: React.FC<QuickAddButtonProps> = ({
   };
 
   return (
-    <Pressable onPress={handlePress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+    <Pressable
+      onPress={handlePress}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      accessibilityRole="button"
+      accessibilityLabel={disabled ? 'Ordering closed' : quantity > 0 ? `${quantity} in cart, add another` : 'Add to cart'}
+    >
       <Animated.View
         style={[
           styles.btn,
-          quantity > 0 && { backgroundColor: activeColor },
+          quantity > 0 && styles.btnActive,
           disabled && styles.btnDisabled,
           { transform: [{ scale }] },
         ]}
@@ -41,12 +48,12 @@ export const QuickAddButton: React.FC<QuickAddButtonProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
   btn: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000000',
@@ -55,7 +62,8 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
-  btnDisabled: { backgroundColor: '#EBEBEB' },
-  text: { color: '#000000', fontSize: 16, fontWeight: '800', lineHeight: 20 },
-  textActive: { color: '#FFFFFF' },
+  btnActive: { backgroundColor: theme.accent },
+  btnDisabled: { backgroundColor: theme.border },
+  text: { color: theme.text, fontSize: 16, fontWeight: '800', lineHeight: 20 },
+  textActive: { color: theme.onAccent },
 });

@@ -1,10 +1,12 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { View, StyleSheet, ActivityIndicator, Text, TouchableOpacity, Platform, StatusBar, TextInput, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { useKitchen } from '../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import { haptics } from '../utils/haptics';
+import { ThemeColors } from '../utils/theme';
 
 // Configure how notifications should behave when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -18,7 +20,8 @@ Notifications.setNotificationHandler({
 });
 
 export default function PayFastSandboxScreen() {
-  const { cart, placeOrder, user, savedCards, saveCard, orderNote, appliedDiscount, calculateDiscountAmount, deliveryInfo } = useKitchen();
+  const { cart, placeOrder, user, savedCards, saveCard, orderNote, appliedDiscount, calculateDiscountAmount, deliveryInfo, theme } = useKitchen();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
   const webViewRef = useRef<WebView>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -150,6 +153,7 @@ export default function PayFastSandboxScreen() {
   };
 
   const handleCardSubmit = () => {
+    haptics.light();
     if (validateCardForm()) {
       // Only save a *new* card — a previously-saved one is already on file.
       if (!selectedSavedCardId && saveCardEnabled && user) {
@@ -162,6 +166,8 @@ export default function PayFastSandboxScreen() {
       }
       setShowCardForm(false);
       setIsLoading(true);
+    } else {
+      haptics.warning();
     }
   };
 
@@ -283,6 +289,7 @@ export default function PayFastSandboxScreen() {
       placeOrder();
 
       // 4. Show success screen
+      haptics.success();
       setShowSuccess(true);
     } else if (url.startsWith(CANCEL_URL)) {
       router.replace('/cart');
@@ -293,7 +300,7 @@ export default function PayFastSandboxScreen() {
   if (showSuccess) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
         <View style={styles.successContainer}>
           <View style={styles.successIconWrap}>
             <Text style={styles.successIcon}>✅</Text>
@@ -317,20 +324,24 @@ export default function PayFastSandboxScreen() {
               {emailSent ? (
                 <Text style={styles.emailCheckmark}>✅</Text>
               ) : (
-                <ActivityIndicator size="small" color="#22C55E" />
+                <ActivityIndicator size="small" color={theme.success} />
               )}
             </View>
           </View>
 
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.continueShoppingBtn}
             onPress={() => router.replace('/activity')}
+            accessibilityRole="button"
+            accessibilityLabel="View my orders"
           >
             <Text style={styles.continueShoppingBtnText}>View My Orders</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.backToMenuBtn}
             onPress={() => router.replace('/')}
+            accessibilityRole="button"
+            accessibilityLabel="Back to menu"
           >
             <Text style={styles.backToMenuBtnText}>Back to Menu</Text>
           </TouchableOpacity>
@@ -343,9 +354,14 @@ export default function PayFastSandboxScreen() {
   if (showCardForm) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+        <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.replace('/cart')} style={styles.closeButton}>
+          <TouchableOpacity
+            onPress={() => router.replace('/cart')}
+            style={styles.closeButton}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel"
+          >
             <Text style={styles.closeButtonText}>Cancel</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Card Details</Text>
@@ -421,11 +437,14 @@ export default function PayFastSandboxScreen() {
                       style={[styles.savedCardChip, isSelected && styles.savedCardChipSelected]}
                       onPress={() => handleSelectSavedCard(card.id)}
                       activeOpacity={0.8}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isSelected }}
+                      accessibilityLabel={`${card.cardType.toUpperCase()} card, ${card.cardNumber}`}
                     >
                       <Text style={styles.savedCardChipIcon}>💳</Text>
                       <View>
-                        <Text style={styles.savedCardChipType}>{card.cardType.toUpperCase()}</Text>
-                        <Text style={styles.savedCardChipNumber}>{card.cardNumber}</Text>
+                        <Text style={[styles.savedCardChipType, isSelected && styles.savedCardChipTextSelected]}>{card.cardType.toUpperCase()}</Text>
+                        <Text style={[styles.savedCardChipNumber, isSelected && styles.savedCardChipTextSelected]}>{card.cardNumber}</Text>
                       </View>
                     </TouchableOpacity>
                   );
@@ -434,9 +453,12 @@ export default function PayFastSandboxScreen() {
                   style={[styles.savedCardChip, styles.newCardChip, !selectedSavedCardId && styles.savedCardChipSelected]}
                   onPress={handleUseDifferentCard}
                   activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: !selectedSavedCardId }}
+                  accessibilityLabel="Use a new card"
                 >
                   <Text style={styles.savedCardChipIcon}>➕</Text>
-                  <Text style={styles.savedCardChipType}>New Card</Text>
+                  <Text style={[styles.savedCardChipType, !selectedSavedCardId && styles.savedCardChipTextSelected]}>New Card</Text>
                 </TouchableOpacity>
               </ScrollView>
             </View>
@@ -462,7 +484,11 @@ export default function PayFastSandboxScreen() {
                     {savedCards.find((c) => c.id === selectedSavedCardId)?.cardNumber}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={handleUseDifferentCard}>
+                <TouchableOpacity
+                  onPress={handleUseDifferentCard}
+                  accessibilityRole="button"
+                  accessibilityLabel="Change card"
+                >
                   <Text style={styles.selectedCardSummaryChange}>Change</Text>
                 </TouchableOpacity>
               </View>
@@ -475,11 +501,12 @@ export default function PayFastSandboxScreen() {
                     <TextInput
                       style={styles.cardInput}
                       placeholder="John Doe"
-                      placeholderTextColor="#6B6B6B"
+                      placeholderTextColor={theme.textTertiary}
                       value={cardholderName}
                       onChangeText={(val) => { setCardholderName(val); setFormErrors({...formErrors, cardholderName: undefined}); }}
                       autoCapitalize="words"
                       autoCorrect={false}
+                      accessibilityLabel="John Doe"
                     />
                   </View>
                   {formErrors.cardholderName && <Text style={styles.cardFieldError}>{formErrors.cardholderName}</Text>}
@@ -493,11 +520,12 @@ export default function PayFastSandboxScreen() {
                     <TextInput
                       style={styles.cardInput}
                       placeholder="1234 5678 9012 3456"
-                      placeholderTextColor="#6B6B6B"
+                      placeholderTextColor={theme.textTertiary}
                       value={cardNumber}
                       onChangeText={(val) => { setCardNumber(val.replace(/\D/g, '').slice(0, 16)); setFormErrors({...formErrors, cardNumber: undefined}); }}
                       keyboardType="number-pad"
                       maxLength={16}
+                      accessibilityLabel="1234 5678 9012 3456"
                     />
                   </View>
                   {formErrors.cardNumber && <Text style={styles.cardFieldError}>{formErrors.cardNumber}</Text>}
@@ -509,11 +537,12 @@ export default function PayFastSandboxScreen() {
                     <TextInput
                       style={styles.cardInput}
                       placeholder="MM/YY"
-                      placeholderTextColor="#6B6B6B"
+                      placeholderTextColor={theme.textTertiary}
                       value={expiryDate}
                       onChangeText={(val) => { setExpiryDate(val.replace(/\D/g, '').slice(0, 4)); setFormErrors({...formErrors, expiryDate: undefined}); }}
                       keyboardType="number-pad"
                       maxLength={4}
+                      accessibilityLabel="MM/YY"
                     />
                   </View>
                   {formErrors.expiryDate && <Text style={styles.cardFieldError}>{formErrors.expiryDate}</Text>}
@@ -528,12 +557,13 @@ export default function PayFastSandboxScreen() {
                 <TextInput
                   style={styles.cardInput}
                   placeholder="123"
-                  placeholderTextColor="#6B6B6B"
+                  placeholderTextColor={theme.textTertiary}
                   value={cvv}
                   onChangeText={(val) => { setCvv(val.replace(/\D/g, '').slice(0, 4)); setFormErrors({...formErrors, cvv: undefined}); }}
                   keyboardType="number-pad"
                   maxLength={4}
                   secureTextEntry
+                  accessibilityLabel="123"
                 />
               </View>
               {formErrors.cvv && <Text style={styles.cardFieldError}>{formErrors.cvv}</Text>}
@@ -545,6 +575,9 @@ export default function PayFastSandboxScreen() {
                 style={styles.saveCardRow}
                 onPress={() => setSaveCardEnabled(!saveCardEnabled)}
                 activeOpacity={0.7}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: saveCardEnabled }}
+                accessibilityLabel="Save card for future purchases"
               >
                 <View style={[styles.checkbox, saveCardEnabled && styles.checkboxSelected]}>
                   {saveCardEnabled && <Text style={styles.checkboxCheck}>✓</Text>}
@@ -568,7 +601,12 @@ export default function PayFastSandboxScreen() {
 
         {/* Pay button */}
         <View style={styles.cardFooter}>
-          <TouchableOpacity style={styles.payNowBtn} onPress={handleCardSubmit}>
+          <TouchableOpacity
+            style={styles.payNowBtn}
+            onPress={handleCardSubmit}
+            accessibilityRole="button"
+            accessibilityLabel={`Pay R${finalTotal.toFixed(2)}`}
+          >
             <Text style={styles.payNowBtnText}>Pay R{finalTotal.toFixed(2)}</Text>
           </TouchableOpacity>
         </View>
@@ -579,9 +617,14 @@ export default function PayFastSandboxScreen() {
   // PayFast WebView (payment processing)
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.replace('/cart')} style={styles.closeButton}>
+        <TouchableOpacity
+          onPress={() => router.replace('/cart')}
+          style={styles.closeButton}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+        >
           <Text style={styles.closeButtonText}>Cancel</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Processing Payment</Text>
@@ -648,6 +691,8 @@ export default function PayFastSandboxScreen() {
               style={[styles.webFallbackBtn, styles.webFallbackBtnSuccess]}
               onPress={() => handleNavigationStateChange({ url: RETURN_URL })}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Simulate payment success"
             >
               <Text style={styles.webFallbackBtnText}>Simulate Payment Success</Text>
             </TouchableOpacity>
@@ -655,6 +700,8 @@ export default function PayFastSandboxScreen() {
               style={[styles.webFallbackBtn, styles.webFallbackBtnCancel]}
               onPress={() => handleNavigationStateChange({ url: CANCEL_URL })}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Simulate payment cancelled"
             >
               <Text style={styles.webFallbackBtnText}>Simulate Payment Cancelled</Text>
             </TouchableOpacity>
@@ -673,7 +720,7 @@ export default function PayFastSandboxScreen() {
 
       {isLoading && Platform.OS !== 'web' && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color="#FFFFFF" />
+          <ActivityIndicator size="large" color={theme.white} />
           <Text style={styles.loadingText}>Processing payment securely...</Text>
         </View>
       )}
@@ -681,23 +728,23 @@ export default function PayFastSandboxScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#EBEBEB',
+    borderBottomColor: theme.border,
   },
   closeButton: { padding: 4 },
-  closeButtonText: { color: '#E0393E', fontWeight: '700', fontSize: 15 },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#000000' },
-  headerTotal: { backgroundColor: '#F6F6F6', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8 },
-  headerTotalText: { color: '#000000', fontWeight: '800', fontSize: 14 },
+  closeButtonText: { color: theme.error, fontWeight: '700', fontSize: 15 },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: theme.text },
+  headerTotal: { backgroundColor: theme.surfaceSecondary, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8 },
+  headerTotalText: { color: theme.text, fontWeight: '800', fontSize: 14 },
   webview: { flex: 1, opacity: 0, height: 0 },
   processingScroll: { flex: 1 },
   processingScrollContent: { paddingBottom: 24 },
@@ -709,10 +756,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   webFallbackIcon: { fontSize: 44, marginBottom: 12 },
-  webFallbackTitle: { fontSize: 18, fontWeight: '800', color: '#000000', marginBottom: 8 },
+  webFallbackTitle: { fontSize: 18, fontWeight: '800', color: theme.text, marginBottom: 8 },
   webFallbackText: {
     fontSize: 13,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 19,
     marginBottom: 20,
@@ -724,99 +771,99 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  webFallbackBtnSuccess: { backgroundColor: '#1DA836' },
-  webFallbackBtnCancel: { backgroundColor: '#E0393E' },
-  webFallbackBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  webFallbackBtnSuccess: { backgroundColor: theme.success },
+  webFallbackBtnCancel: { backgroundColor: theme.error },
+  webFallbackBtnText: { color: theme.white, fontSize: 15, fontWeight: '800' },
 
   // Summary card
-  summaryCard: { backgroundColor: '#FFFFFF', margin: 16, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#EBEBEB' },
-  summaryTitle: { fontSize: 14, fontWeight: '800', color: '#000000', marginBottom: 12 },
+  summaryCard: { backgroundColor: theme.surface, margin: 16, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: theme.border },
+  summaryTitle: { fontSize: 14, fontWeight: '800', color: theme.text, marginBottom: 12 },
   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 4 },
-  summaryItem: { fontSize: 13, color: '#6B6B6B' },
-  summaryItemDate: { fontSize: 11, color: '#000000', fontWeight: '600', marginTop: 2 },
-  summaryItemAddOns: { fontSize: 11, color: '#6B6B6B', marginTop: 2 },
-  summaryPrice: { fontSize: 13, color: '#000000', fontWeight: '600' },
-  summaryDivider: { height: 1, backgroundColor: '#EBEBEB', marginVertical: 10 },
+  summaryItem: { fontSize: 13, color: theme.textSecondary },
+  summaryItemDate: { fontSize: 11, color: theme.text, fontWeight: '600', marginTop: 2 },
+  summaryItemAddOns: { fontSize: 11, color: theme.textSecondary, marginTop: 2 },
+  summaryPrice: { fontSize: 13, color: theme.text, fontWeight: '600' },
+  summaryDivider: { height: 1, backgroundColor: theme.border, marginVertical: 10 },
   summaryTotalRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  summaryTotalLabel: { fontSize: 14, color: '#6B6B6B' },
-  summaryTotalValue: { fontSize: 16, fontWeight: '800', color: '#000000' },
-  summaryOriginalPrice: { textDecorationLine: 'line-through', color: '#9E9E9E', fontSize: 14 },
+  summaryTotalLabel: { fontSize: 14, color: theme.textSecondary },
+  summaryTotalValue: { fontSize: 16, fontWeight: '800', color: theme.text },
+  summaryOriginalPrice: { textDecorationLine: 'line-through', color: theme.textTertiary, fontSize: 14 },
   summaryDiscountRow: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 4 },
-  summaryDiscountLabel: { fontSize: 13, color: '#6B6B6B' },
-  summaryDiscountValue: { fontSize: 13, color: '#1DA836', fontWeight: '600' },
+  summaryDiscountLabel: { fontSize: 13, color: theme.textSecondary },
+  summaryDiscountValue: { fontSize: 13, color: theme.success, fontWeight: '600' },
   summaryNoteRow: { marginTop: 6, marginBottom: 4 },
-  summaryNoteLabel: { fontSize: 12, fontWeight: '700', color: '#6B6B6B' },
-  summaryNote: { fontSize: 12, color: '#6B6B6B', lineHeight: 16, marginTop: 2 },
-  successOriginalPrice: { textDecorationLine: 'line-through', color: '#9E9E9E', fontSize: 24 },
+  summaryNoteLabel: { fontSize: 12, fontWeight: '700', color: theme.textSecondary },
+  summaryNote: { fontSize: 12, color: theme.textSecondary, lineHeight: 16, marginTop: 2 },
+  successOriginalPrice: { textDecorationLine: 'line-through', color: theme.textTertiary, fontSize: 24 },
 
   loadingOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: theme.modalOverlay,
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 10,
   },
-  loadingText: { marginTop: 15, fontSize: 15, color: '#FFFFFF', fontWeight: '500' },
+  loadingText: { marginTop: 15, fontSize: 15, color: theme.white, fontWeight: '500' },
 
   // Card Form Styles
   cardFormScroll: { flex: 1 },
   cardFormContent: { paddingBottom: 20 },
   cardFormSection: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     marginHorizontal: 16,
     marginTop: 0,
     marginBottom: 16,
     borderRadius: 14,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
-  cardFormTitle: { fontSize: 16, fontWeight: '800', color: '#000000', marginBottom: 4 },
-  cardFormSubtitle: { fontSize: 12, color: '#6B6B6B', marginBottom: 20, lineHeight: 16 },
+  cardFormTitle: { fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 4 },
+  cardFormSubtitle: { fontSize: 12, color: theme.textSecondary, marginBottom: 20, lineHeight: 16 },
   cardInputGroup: { marginBottom: 16 },
-  cardLabel: { fontSize: 11, fontWeight: '700', color: '#6B6B6B', marginBottom: 6, letterSpacing: 0.5 },
+  cardLabel: { fontSize: 11, fontWeight: '700', color: theme.textSecondary, marginBottom: 6, letterSpacing: 0.5 },
   cardInputWrapper: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.inputBg,
     borderWidth: 1.5,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 12,
     paddingHorizontal: 14,
     height: 50,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  cardInputError: { borderColor: '#E0393E' },
+  cardInputError: { borderColor: theme.error },
   cardInputIcon: { fontSize: 16, marginRight: 10 },
-  cardInput: { flex: 1, fontSize: 16, color: '#000000', paddingVertical: 0, height: 50 },
-  cardFieldError: { color: '#E0393E', fontSize: 11, fontWeight: '600', marginTop: 4, marginLeft: 4 },
+  cardInput: { flex: 1, fontSize: 16, color: theme.text, paddingVertical: 0, height: 50 },
+  cardFieldError: { color: theme.error, fontSize: 11, fontWeight: '600', marginTop: 4, marginLeft: 4 },
   cardRow: { flexDirection: 'row' },
   securityNote: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     marginTop: 4,
   },
   securityIcon: { fontSize: 16, marginRight: 10 },
-  securityText: { fontSize: 12, color: '#6B6B6B', flex: 1, lineHeight: 16 },
+  securityText: { fontSize: 12, color: theme.textSecondary, flex: 1, lineHeight: 16 },
   cardFooter: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderTopWidth: 1,
-    borderTopColor: '#EBEBEB',
+    borderTopColor: theme.border,
     padding: 16,
     paddingBottom: Platform.OS === 'ios' ? 34 : 16,
   },
   payNowBtn: {
-    backgroundColor: '#1DA836',
+    backgroundColor: theme.success,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
   },
-  payNowBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  payNowBtnText: { color: theme.white, fontSize: 16, fontWeight: '800' },
 
   // Success Screen Styles
   successContainer: {
@@ -824,7 +871,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.background,
   },
   successIconWrap: {
     width: 80,
@@ -835,23 +882,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     borderWidth: 2,
-    borderColor: '#22C55E',
+    borderColor: theme.success,
   },
   successIcon: { fontSize: 40 },
-  successTitle: { fontSize: 24, fontWeight: '900', color: '#000000', marginBottom: 8 },
-  successAmount: { fontSize: 36, fontWeight: '900', color: '#000000', marginBottom: 12 },
+  successTitle: { fontSize: 24, fontWeight: '900', color: theme.text, marginBottom: 8 },
+  successAmount: { fontSize: 36, fontWeight: '900', color: theme.text, marginBottom: 12 },
   successSubtext: {
     fontSize: 14,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 20,
     marginBottom: 24,
     paddingHorizontal: 20,
   },
   emailStatusCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 14,
     padding: 16,
     width: '100%',
@@ -860,38 +907,38 @@ const styles = StyleSheet.create({
   emailStatusRow: { flexDirection: 'row', alignItems: 'center' },
   emailIcon: { fontSize: 24, marginRight: 12 },
   emailStatusContent: { flex: 1 },
-  emailStatusTitle: { fontSize: 14, fontWeight: '800', color: '#000000', marginBottom: 2 },
-  emailStatusText: { fontSize: 12, color: '#6B6B6B', lineHeight: 16 },
+  emailStatusTitle: { fontSize: 14, fontWeight: '800', color: theme.text, marginBottom: 2 },
+  emailStatusText: { fontSize: 12, color: theme.textSecondary, lineHeight: 16 },
   emailCheckmark: { fontSize: 20 },
   continueShoppingBtn: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.accent,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     width: '100%',
     marginBottom: 12,
   },
-  continueShoppingBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  continueShoppingBtnText: { color: theme.onAccent, fontSize: 16, fontWeight: '800' },
   backToMenuBtn: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     width: '100%',
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
-  backToMenuBtnText: { color: '#000000', fontSize: 16, fontWeight: '800' },
+  backToMenuBtnText: { color: theme.text, fontSize: 16, fontWeight: '800' },
 
   // Save Card Checkbox Styles
   saveCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderRadius: 10,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     marginBottom: 16,
   },
   checkbox: {
@@ -899,17 +946,17 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 4,
     borderWidth: 1.5,
-    borderColor: '#6B6B6B',
+    borderColor: theme.textSecondary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 10,
   },
   checkboxSelected: {
-    backgroundColor: '#1DA836',
-    borderColor: '#1DA836',
+    backgroundColor: theme.success,
+    borderColor: theme.success,
   },
   checkboxCheck: {
-    color: '#FFFFFF',
+    color: theme.white,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -919,49 +966,52 @@ const styles = StyleSheet.create({
   saveCardTitle: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.text,
     marginBottom: 2,
   },
   saveCardSubtitle: {
     fontSize: 11,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     lineHeight: 14,
   },
 
   // Saved card quick-select
   savedCardsSection: { marginHorizontal: 16, marginTop: 16, marginBottom: 0 },
-  savedCardsTitle: { fontSize: 11, fontWeight: '700', color: '#6B6B6B', marginBottom: 10, letterSpacing: 0.5 },
+  savedCardsTitle: { fontSize: 11, fontWeight: '700', color: theme.textSecondary, marginBottom: 10, letterSpacing: 0.5 },
   savedCardsRow: { gap: 10, paddingRight: 4 },
   savedCardChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderWidth: 1.5,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 14,
     gap: 10,
     minWidth: 160,
   },
-  savedCardChipSelected: { borderColor: '#1DA836', backgroundColor: '#EAF7EE' },
+  savedCardChipSelected: { borderColor: theme.success, backgroundColor: '#EAF7EE' },
   newCardChip: { justifyContent: 'center', minWidth: 110 },
   savedCardChipIcon: { fontSize: 18 },
-  savedCardChipType: { color: '#000000', fontSize: 12, fontWeight: '800' },
-  savedCardChipNumber: { color: '#6B6B6B', fontSize: 11, marginTop: 1 },
+  savedCardChipType: { color: theme.text, fontSize: 12, fontWeight: '800' },
+  savedCardChipNumber: { color: theme.textSecondary, fontSize: 11, marginTop: 1 },
+  // savedCardChipSelected's tint is a fixed light green in both themes — its
+  // text must stay literal dark too, or it goes invisible in dark mode.
+  savedCardChipTextSelected: { color: '#1A1A1A' },
   selectedCardSummary: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     marginBottom: 16,
     gap: 12,
   },
   selectedCardSummaryIcon: { fontSize: 24 },
-  selectedCardSummaryName: { color: '#000000', fontSize: 14, fontWeight: '700' },
-  selectedCardSummaryNumber: { color: '#6B6B6B', fontSize: 12, marginTop: 2 },
-  selectedCardSummaryChange: { color: '#000000', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
+  selectedCardSummaryName: { color: theme.text, fontSize: 14, fontWeight: '700' },
+  selectedCardSummaryNumber: { color: theme.textSecondary, fontSize: 12, marginTop: 2 },
+  selectedCardSummaryChange: { color: theme.text, fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' },
 });

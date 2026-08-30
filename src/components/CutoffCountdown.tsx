@@ -1,14 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { getOrderCutoffInfo } from '../utils/deliveryHelpers';
+import { ThemeColors } from '../utils/theme';
 
 interface CutoffCountdownProps {
+  theme: ThemeColors;
   compact?: boolean;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-export const CutoffCountdown: React.FC<CutoffCountdownProps> = ({ compact }) => {
+export const CutoffCountdown: React.FC<CutoffCountdownProps> = ({ theme, compact }) => {
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [info, setInfo] = useState(() => getOrderCutoffInfo());
 
   useEffect(() => {
@@ -44,14 +47,14 @@ export const CutoffCountdown: React.FC<CutoffCountdownProps> = ({ compact }) => 
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 12,
@@ -59,12 +62,12 @@ const styles = StyleSheet.create({
   pillCompact: { paddingVertical: 6, paddingHorizontal: 10 },
   pillOpen: { borderColor: '#22C55E40', backgroundColor: '#EAF7EE' },
   pillUrgent: { borderColor: '#F0DFA0', backgroundColor: '#FFF8E1' },
-  pillClosed: { borderColor: '#EBEBEB', backgroundColor: '#F6F6F6' },
+  pillClosed: { borderColor: theme.border, backgroundColor: theme.surfaceSecondary },
   dot: { width: 7, height: 7, borderRadius: 4, marginRight: 8 },
   dotOpen: { backgroundColor: '#1DA836' },
   dotUrgent: { backgroundColor: '#E8A100' },
-  dotClosed: { backgroundColor: '#9E9E9E' },
+  dotClosed: { backgroundColor: theme.textTertiary },
   label: { fontSize: 12, fontWeight: '800', color: '#1DA836', letterSpacing: 0.2 },
   labelUrgent: { color: '#8A6D00' },
-  closedText: { fontSize: 12, fontWeight: '700', color: '#6B6B6B', flexShrink: 1 },
+  closedText: { fontSize: 12, fontWeight: '700', color: theme.textSecondary, flexShrink: 1 },
 });

@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useKitchen } from '../context/KitchenCoContext';
+import { ThemeColors } from '../utils/theme';
 
 export default function FloatingCartBanner() {
-  const { cart, appliedDiscount, calculateDiscountAmount } = useKitchen();
+  const { cart, appliedDiscount, calculateDiscountAmount, theme } = useKitchen();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
   const [dismissed, setDismissed] = useState(false);
 
@@ -17,10 +19,12 @@ export default function FloatingCartBanner() {
 
   return (
     <View style={styles.floatingContainer}>
-      <TouchableOpacity 
-        style={styles.banner} 
+      <TouchableOpacity
+        style={styles.banner}
         activeOpacity={0.9}
         onPress={() => router.push('/cart')}
+        accessibilityRole="button"
+        accessibilityLabel={`View cart, ${totalItems} item${totalItems === 1 ? '' : 's'}, total R${finalTotal.toFixed(2)}`}
       >
         <View style={styles.leftSection}>
           <View style={styles.badge}>
@@ -28,7 +32,7 @@ export default function FloatingCartBanner() {
           </View>
           <Text style={styles.bannerText}>View Cart</Text>
         </View>
-        
+
         <Text style={styles.totalText}>
           {appliedDiscount ? (
             <>
@@ -40,10 +44,12 @@ export default function FloatingCartBanner() {
           )} ➔
         </Text>
       </TouchableOpacity>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.dismissBtn}
         onPress={() => setDismissed(true)}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss cart banner"
       >
         <Text style={styles.dismissText}>✕</Text>
       </TouchableOpacity>
@@ -51,7 +57,7 @@ export default function FloatingCartBanner() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
   floatingContainer: {
     position: 'absolute',
     bottom: 25,
@@ -60,7 +66,7 @@ const styles = StyleSheet.create({
     zIndex: 999,
   },
   banner: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.accent,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -78,7 +84,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   badge: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.onAccent,
     borderRadius: 16,
     minWidth: 28,
     height: 28,
@@ -88,25 +94,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   badgeText: {
-    color: '#000000',
+    color: theme.accent,
     fontWeight: '900',
     fontSize: 14,
   },
   bannerText: {
-    color: '#FFFFFF',
+    color: theme.onAccent,
     fontWeight: '800',
     fontSize: 15,
     letterSpacing: -0.3,
   },
   totalText: {
-    color: '#FFFFFF',
+    color: theme.onAccent,
     fontWeight: '900',
     fontSize: 15,
     letterSpacing: -0.3,
   },
   originalPrice: {
     textDecorationLine: 'line-through',
-    color: 'rgba(255,255,255,0.6)',
+    color: theme.onAccent + '99',
     fontSize: 13,
     fontWeight: 'normal',
   },
@@ -117,14 +123,14 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#000000',
+    backgroundColor: theme.accent,
     borderWidth: 1.5,
-    borderColor: '#FFFFFF',
+    borderColor: theme.onAccent,
     justifyContent: 'center',
     alignItems: 'center',
   },
   dismissText: {
-    color: '#FFFFFF',
+    color: theme.onAccent,
     fontSize: 12,
     fontWeight: '700',
   },

@@ -4,7 +4,7 @@
  * Displays user profile information, addresses, saved cards, and quick actions.
  * Uses consistent black/grey/white color palette.
  */
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -23,6 +23,8 @@ import {
 } from "../../context/KitchenCoContext";
 import { useRouter } from "expo-router";
 import { calculateDeliveryFee } from "../../utils/deliveryHelpers";
+import { ThemeColors } from "../../utils/theme";
+import { haptics } from "../../utils/haptics";
 
 export default function TabProfileScreen() {
   const {
@@ -40,8 +42,12 @@ export default function TabProfileScreen() {
     deliveryInfo,
     remindersEnabled,
     setRemindersEnabled,
+    theme,
+    themeMode,
+    setThemeMode,
   } = useKitchen();
   const router = useRouter();
+  const styles = useMemo(() => createStyles(theme), [theme]);
 
   // Corporate accounts have a registered company address on top of any
   // personal addresses — shown as a selectable entry rather than hidden,
@@ -64,6 +70,7 @@ export default function TabProfileScreen() {
   >(null);
 
   const handleSignOut = () => {
+    haptics.medium();
     logout();
     router.replace("/login");
   };
@@ -96,6 +103,7 @@ export default function TabProfileScreen() {
   };
 
   const handleDeleteAddress = (addressId: string) => {
+    haptics.warning();
     removeAddress(addressId);
     setShowDeleteConfirm(null);
   };
@@ -128,7 +136,7 @@ export default function TabProfileScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Status bar */}
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {/* Profile Card — compact identity + stats */}
         <View style={styles.profileCard}>
@@ -189,10 +197,69 @@ export default function TabProfileScreen() {
                 </View>
               </View>
               <View style={[styles.badge, isAdmin ? styles.badgeAdmin : styles.badgeUser]}>
-                <Text style={styles.badgeText}>
+                <Text style={[styles.badgeText, isAdmin && styles.badgeTextAdmin]}>
                   {isAdmin ? "Admin" : "User"}
                 </Text>
               </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Appearance Section — theme preference, available to every account type */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Appearance</Text>
+          <View style={styles.menuCard}>
+            <View style={styles.menuItem}>
+              <View style={styles.menuItemLeft}>
+                <View style={styles.menuIcon}>
+                  <Text style={styles.menuIconText}>🌗</Text>
+                </View>
+                <View>
+                  <Text style={styles.menuItemTitle}>Theme</Text>
+                  <Text style={styles.menuItemSubtitle}>
+                    Choose how KitchenCo looks
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.menuDivider} />
+
+            <View style={styles.themeToggleRow} accessibilityRole="radiogroup">
+              {(
+                [
+                  { mode: "light" as const, label: "Light" },
+                  { mode: "dark" as const, label: "Dark" },
+                  { mode: "system" as const, label: "Match device" },
+                ]
+              ).map(({ mode, label }) => {
+                const isActive = themeMode === mode;
+                return (
+                  <TouchableOpacity
+                    key={mode}
+                    style={[
+                      styles.themeToggleOption,
+                      isActive && styles.themeToggleOptionActive,
+                    ]}
+                    onPress={() => {
+                      haptics.selection();
+                      setThemeMode(mode);
+                    }}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: isActive }}
+                    accessibilityLabel={`${label} theme`}
+                  >
+                    <Text
+                      style={[
+                        styles.themeToggleOptionText,
+                        isActive && styles.themeToggleOptionTextActive,
+                      ]}
+                    >
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
         </View>
@@ -217,9 +284,15 @@ export default function TabProfileScreen() {
                 </View>
                 <Switch
                   value={remindersEnabled}
-                  onValueChange={setRemindersEnabled}
-                  trackColor={{ false: "#D1D1D1", true: "#00C853" }}
-                  thumbColor="#FFFFFF"
+                  onValueChange={(value) => {
+                    haptics.selection();
+                    setRemindersEnabled(value);
+                  }}
+                  trackColor={{ false: theme.border, true: theme.success }}
+                  thumbColor={theme.surface}
+                  accessibilityRole="switch"
+                  accessibilityState={{ checked: remindersEnabled }}
+                  accessibilityLabel="Order reminders"
                 />
               </View>
             </View>
@@ -337,6 +410,8 @@ export default function TabProfileScreen() {
                     <TouchableOpacity
                       style={styles.addressDeleteBtn}
                       onPress={() => setShowDeleteConfirm(address.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete address: ${address.label}`}
                     >
                       <Text style={styles.addressDeleteIcon}>🗑️</Text>
                     </TouchableOpacity>
@@ -396,6 +471,8 @@ export default function TabProfileScreen() {
                     <TouchableOpacity
                       style={styles.cardDeleteBtn}
                       onPress={() => setShowDeleteCardConfirm(card.id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete card ending in ${card.cardNumber}`}
                     >
                       <Text style={styles.cardDeleteIcon}>🗑️</Text>
                     </TouchableOpacity>
@@ -508,6 +585,8 @@ export default function TabProfileScreen() {
           <TouchableOpacity
             style={styles.logoutButton}
             onPress={handleSignOut}
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
           >
             <Text style={styles.logoutIcon}>🚪</Text>
             <Text style={styles.logoutText}>Sign Out</Text>
@@ -527,7 +606,11 @@ export default function TabProfileScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Delivery Address</Text>
-              <TouchableOpacity onPress={() => setShowAddressModal(false)}>
+              <TouchableOpacity
+                onPress={() => setShowAddressModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -537,7 +620,7 @@ export default function TabProfileScreen() {
               <TextInput
                 style={styles.formInput}
                 placeholder="e.g. Home, Work, etc."
-                placeholderTextColor="#6B6B6B"
+                placeholderTextColor={theme.textTertiary}
                 value={addressLabel}
                 onChangeText={setAddressLabel}
               />
@@ -546,7 +629,7 @@ export default function TabProfileScreen() {
               <TextInput
                 style={styles.formInput}
                 placeholder="Street name and number"
-                placeholderTextColor="#6B6B6B"
+                placeholderTextColor={theme.textTertiary}
                 value={addressStreet}
                 onChangeText={setAddressStreet}
               />
@@ -557,7 +640,7 @@ export default function TabProfileScreen() {
                   <TextInput
                     style={styles.formInput}
                     placeholder="Suburb"
-                    placeholderTextColor="#6B6B6B"
+                    placeholderTextColor={theme.textTertiary}
                     value={addressSuburb}
                     onChangeText={setAddressSuburb}
                   />
@@ -567,7 +650,7 @@ export default function TabProfileScreen() {
                   <TextInput
                     style={styles.formInput}
                     placeholder="City"
-                    placeholderTextColor="#6B6B6B"
+                    placeholderTextColor={theme.textTertiary}
                     value={addressCity}
                     onChangeText={setAddressCity}
                   />
@@ -580,7 +663,7 @@ export default function TabProfileScreen() {
                   <TextInput
                     style={styles.formInput}
                     placeholder="e.g. 2128"
-                    placeholderTextColor="#6B6B6B"
+                    placeholderTextColor={theme.textTertiary}
                     value={addressCode}
                     onChangeText={setAddressCode}
                     keyboardType="numeric"
@@ -591,7 +674,7 @@ export default function TabProfileScreen() {
                   <TextInput
                     style={styles.formInput}
                     placeholder="e.g. 14"
-                    placeholderTextColor="#6B6B6B"
+                    placeholderTextColor={theme.textTertiary}
                     value={addressDistance}
                     onChangeText={setAddressDistance}
                     keyboardType="numeric"
@@ -642,6 +725,8 @@ export default function TabProfileScreen() {
               <TouchableOpacity
                 style={styles.deleteCancelBtn}
                 onPress={() => setShowDeleteConfirm(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.deleteCancelText}>Cancel</Text>
               </TouchableOpacity>
@@ -650,6 +735,8 @@ export default function TabProfileScreen() {
                 onPress={() =>
                   showDeleteConfirm && handleDeleteAddress(showDeleteConfirm)
                 }
+                accessibilityRole="button"
+                accessibilityLabel="Confirm remove address"
               >
                 <Text style={styles.deleteConfirmBtnText}>Remove</Text>
               </TouchableOpacity>
@@ -676,15 +763,21 @@ export default function TabProfileScreen() {
               <TouchableOpacity
                 style={styles.deleteCancelBtn}
                 onPress={() => setShowDeleteCardConfirm(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel"
               >
                 <Text style={styles.deleteCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.deleteConfirmBtn}
-                onPress={() =>
-                  showDeleteCardConfirm &&
-                  removeCard(showDeleteCardConfirm)
-                }
+                onPress={() => {
+                  if (showDeleteCardConfirm) {
+                    haptics.warning();
+                    removeCard(showDeleteCardConfirm);
+                  }
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Confirm remove card"
               >
                 <Text style={styles.deleteConfirmBtnText}>Remove</Text>
               </TouchableOpacity>
@@ -698,9 +791,9 @@ export default function TabProfileScreen() {
   );
 }
 
-// Base styles with consistent black/grey/white color palette
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFFFF" },
+// Theme-driven styles — see src/utils/theme.ts for the ThemeColors palette.
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
     scrollContent: {
     paddingBottom: 32,
     // Keep cards at a readable width on tablet-sized frames instead of
@@ -711,7 +804,7 @@ const styles = StyleSheet.create({
   },
 
   header: { padding: 20, paddingBottom: 16 },
-  headerTitle: { fontSize: 28, fontWeight: "900", color: "#000000", marginBottom: 4 },
+  headerTitle: { fontSize: 28, fontWeight: "900", color: theme.text, marginBottom: 4 },
 
   welcomeCard: {
     flex: 1,
@@ -724,30 +817,30 @@ const styles = StyleSheet.create({
   welcomeTitle: {
     fontSize: 24,
     fontWeight: "900",
-    color: "#000000",
+    color: theme.text,
     marginBottom: 12,
     textAlign: "center",
   },
   welcomeSubtitle: {
     fontSize: 15,
-    color: "#6B6B6B",
+    color: theme.textSecondary,
     marginBottom: 32,
     textAlign: "center",
     lineHeight: 22,
     paddingHorizontal: 20,
   },
   signInButton: {
-    backgroundColor: "#000000",
+    backgroundColor: theme.accent,
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 14,
   },
-  signInButtonText: { color: "#FFFFFF", fontWeight: "800", fontSize: 16 },
+  signInButtonText: { color: theme.onAccent, fontWeight: "800", fontSize: 16 },
 
     profileCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
     borderRadius: 20,
     padding: 20,
     marginHorizontal: 16,
@@ -764,11 +857,11 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: "#000000",
+    backgroundColor: theme.accent,
     justifyContent: "center",
     alignItems: "center",
   },
-  avatarText: { fontSize: 24, fontWeight: "900", color: "#FFFFFF" },
+  avatarText: { fontSize: 24, fontWeight: "900", color: theme.onAccent },
   onlineDot: {
     position: "absolute",
     bottom: 1,
@@ -776,20 +869,20 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: "#00C853",
+    backgroundColor: theme.success,
     borderWidth: 2.5,
-    borderColor: "#FFFFFF",
+    borderColor: theme.surface,
   },
-  profileName: { fontSize: 18, fontWeight: "800", color: "#000000", marginBottom: 2 },
-  profileEmail: { fontSize: 13, color: "#6B6B6B", marginBottom: 8 },
+  profileName: { fontSize: 18, fontWeight: "800", color: theme.text, marginBottom: 2 },
+  profileEmail: { fontSize: 13, color: theme.textSecondary, marginBottom: 8 },
   roleChip: {
     alignSelf: "flex-start",
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: "#EBEBEB",
+    backgroundColor: theme.border,
   },
-  roleChipText: { fontSize: 11, fontWeight: "700", color: "#6B6B6B" },
+  roleChipText: { fontSize: 11, fontWeight: "700", color: theme.textSecondary },
   roleChipAdmin: { backgroundColor: "#FFF3C4" },
   roleChipTextAdmin: { color: "#8A6D00" },
 
@@ -798,18 +891,18 @@ const styles = StyleSheet.create({
     width: "100%",
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: "#EBEBEB",
+    borderTopColor: theme.border,
   },
   statBox: { flex: 1, alignItems: "center" },
-  statValue: { fontSize: 20, fontWeight: "900", color: "#000000", marginBottom: 4 },
+  statValue: { fontSize: 20, fontWeight: "900", color: theme.text, marginBottom: 4 },
   statLabel: {
     fontSize: 12,
-    color: "#6B6B6B",
+    color: theme.textSecondary,
     fontWeight: "600",
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  statDivider: { width: 1, backgroundColor: "#EBEBEB", marginHorizontal: 16 },
+  statDivider: { width: 1, backgroundColor: theme.border, marginHorizontal: 16 },
 
   section: { marginBottom: 24, paddingHorizontal: 16 },
   sectionHeader: {
@@ -822,26 +915,26 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: "800",
-    color: "#6B6B6B",
+    color: theme.textSecondary,
     textTransform: "uppercase",
     letterSpacing: 0.8,
     marginBottom: 12,
     paddingHorizontal: 4,
   },
-  addAddressBtn: { backgroundColor: "#000000", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
-  addAddressBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
+  addAddressBtn: { backgroundColor: theme.accent, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
+  addAddressBtnText: { color: theme.onAccent, fontSize: 13, fontWeight: "800" },
   companyAddressHint: {
     fontSize: 12,
-    color: "#6B6B6B",
+    color: theme.textSecondary,
     lineHeight: 16,
     marginBottom: 10,
     paddingHorizontal: 4,
   },
 
   menuCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
     borderRadius: 20,
     overflow: "hidden",
     shadowColor: "#000000",
@@ -861,51 +954,81 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#F6F6F6",
+    backgroundColor: theme.surfaceSecondary,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 16,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
   },
   menuIconText: { fontSize: 22 },
   menuIconAdmin: { backgroundColor: "#FFF3C4" },
-  menuIconUser: { backgroundColor: "#F6F6F6" },
+  menuIconUser: { backgroundColor: theme.surfaceSecondary },
   menuItemTitle: {
     fontSize: 15,
     fontWeight: "800",
-    color: "#000000",
+    color: theme.text,
     marginBottom: 3,
     letterSpacing: -0.2,
   },
-  menuItemSubtitle: { fontSize: 13, color: "#6B6B6B", fontWeight: "500" },
-  menuArrow: { fontSize: 28, color: "#6B6B6B", fontWeight: "300" },
-  menuDivider: { height: 1, backgroundColor: "#EBEBEB", marginHorizontal: 16 },
+  menuItemSubtitle: { fontSize: 13, color: theme.textSecondary, fontWeight: "500" },
+  menuArrow: { fontSize: 28, color: theme.textSecondary, fontWeight: "300" },
+  menuDivider: { height: 1, backgroundColor: theme.border, marginHorizontal: 16 },
 
   badge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
   },
-  badgeUser: { backgroundColor: "#F6F6F6" },
+  badgeUser: { backgroundColor: theme.surfaceSecondary },
   badgeAdmin: { backgroundColor: "#FFF3C4" },
-  badgeText: { color: "#000000", fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
+  badgeText: { color: theme.text, fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
+  badgeTextAdmin: { color: "#8A6D00" },
+
+  // Theme toggle (Light / Dark / Match device) — same active/inactive pill
+  // language as the badge/role-chip components above.
+  themeToggleRow: {
+    flexDirection: "row",
+    gap: 8,
+    padding: 16,
+  },
+  themeToggleOption: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surfaceSecondary,
+  },
+  themeToggleOptionActive: {
+    backgroundColor: theme.accent,
+    borderColor: theme.accent,
+  },
+  themeToggleOptionText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: theme.textSecondary,
+  },
+  themeToggleOptionTextActive: {
+    color: theme.onAccent,
+  },
 
   // Address Styles
   emptyAddressCard: {
-    backgroundColor: "#F6F6F6",
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
     borderRadius: 20,
     padding: 28,
     alignItems: "center",
     borderStyle: "dashed",
   },
   emptyAddressIcon: { fontSize: 32, marginBottom: 12 },
-  emptyAddressText: { fontSize: 15, fontWeight: "700", color: "#6B6B6B", marginBottom: 6 },
-  emptyAddressSubtext: { fontSize: 12, color: "#6B6B6B", textAlign: "center" },
+  emptyAddressText: { fontSize: 15, fontWeight: "700", color: theme.textSecondary, marginBottom: 6 },
+  emptyAddressSubtext: { fontSize: 12, color: theme.textSecondary, textAlign: "center" },
   addressItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -914,7 +1037,7 @@ const styles = StyleSheet.create({
   },
   addressItemLeft: { flex: 1 },
   defaultBadge: {
-    backgroundColor: "#00C853",
+    backgroundColor: theme.success,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -928,19 +1051,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 4,
   },
-  addressLabel: { fontSize: 15, fontWeight: "800", color: "#000000", marginRight: 10 },
+  addressLabel: { fontSize: 15, fontWeight: "800", color: theme.text, marginRight: 10 },
   setDefaultLink: {
     paddingVertical: 2,
     paddingHorizontal: 6,
-    backgroundColor: "#F6F6F6",
+    backgroundColor: theme.surfaceSecondary,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
   },
-  setDefaultText: { fontSize: 10, color: "#000000", fontWeight: "700", textDecorationLine: "underline" },
-  addressLine1: { fontSize: 13, color: "#6B6B6B", fontWeight: "500", marginBottom: 2 },
-  addressLine2: { fontSize: 12, color: "#6B6B6B", fontWeight: "500" },
-  addressFee: { fontSize: 11.5, color: "#000000", fontWeight: "600", marginTop: 3 },
+  setDefaultText: { fontSize: 10, color: theme.text, fontWeight: "700", textDecorationLine: "underline" },
+  addressLine1: { fontSize: 13, color: theme.textSecondary, fontWeight: "500", marginBottom: 2 },
+  addressLine2: { fontSize: 12, color: theme.textSecondary, fontWeight: "500" },
+  addressFee: { fontSize: 11.5, color: theme.text, fontWeight: "600", marginTop: 3 },
   addressDeleteBtn: { padding: 8, marginLeft: 10 },
   addressDeleteIcon: { fontSize: 18 },
 
@@ -948,9 +1071,9 @@ const styles = StyleSheet.create({
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
     paddingVertical: 16,
     borderRadius: 16,
     alignSelf: "stretch",
@@ -958,22 +1081,22 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   logoutIcon: { fontSize: 18, marginRight: 10 },
-  logoutText: { color: "#E0393E", fontSize: 16, fontWeight: "800" },
-  version: { fontSize: 12, color: "#6B6B6B", fontWeight: "600" },
+  logoutText: { color: theme.error, fontSize: 16, fontWeight: "800" },
+  version: { fontSize: 12, color: theme.textSecondary, fontWeight: "600" },
 
   // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    backgroundColor: theme.modalOverlay,
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.surface,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
     borderTopWidth: 1,
-    borderTopColor: "#EBEBEB",
+    borderTopColor: theme.border,
     shadowColor: "#000000",
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
@@ -985,18 +1108,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 20,
   },
-  modalTitle: { fontSize: 22, fontWeight: "900", color: "#000000", letterSpacing: -0.5 },
-  modalClose: { fontSize: 28, color: "#6B6B6B", fontWeight: "600" },
+  modalTitle: { fontSize: 22, fontWeight: "900", color: theme.text, letterSpacing: -0.5 },
+  modalClose: { fontSize: 28, color: theme.textSecondary, fontWeight: "600" },
   addressForm: {},
   formHint: {
     fontSize: 11.5,
-    color: "#6B6B6B",
+    color: theme.textSecondary,
     marginTop: 6,
     lineHeight: 16,
   },
   formLabel: {
     fontSize: 12,
-    color: "#6B6B6B",
+    color: theme.textSecondary,
     fontWeight: "700",
     marginBottom: 6,
     marginTop: 14,
@@ -1004,18 +1127,18 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   formInput: {
-    backgroundColor: "#F6F6F6",
+    backgroundColor: theme.inputBg,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
     borderRadius: 14,
     padding: 14,
     fontSize: 15,
-    color: "#000000",
+    color: theme.text,
   },
   formRow: { flexDirection: "row", gap: 12 },
   formRowHalf: { flex: 1 },
   saveAddressBtn: {
-    backgroundColor: "#000000",
+    backgroundColor: theme.accent,
     paddingVertical: 18,
     borderRadius: 16,
     alignItems: "center",
@@ -1027,13 +1150,13 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   saveAddressBtnDisabled: { opacity: 0.4 },
-  saveAddressBtnText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" },
+  saveAddressBtnText: { color: theme.onAccent, fontSize: 16, fontWeight: "800" },
 
   // Delete Confirm Modal
   deleteConfirmCard: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
     borderRadius: 24,
     padding: 28,
     marginHorizontal: 32,
@@ -1046,43 +1169,43 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   deleteConfirmIcon: { fontSize: 40, marginBottom: 12 },
-  deleteConfirmTitle: { fontSize: 20, fontWeight: "900", color: "#000000", marginBottom: 6 },
-  deleteConfirmText: { fontSize: 14, color: "#6B6B6B", marginBottom: 24, textAlign: "center" },
+  deleteConfirmTitle: { fontSize: 20, fontWeight: "900", color: theme.text, marginBottom: 6 },
+  deleteConfirmText: { fontSize: 14, color: theme.textSecondary, marginBottom: 24, textAlign: "center" },
   deleteConfirmButtons: { flexDirection: "row", gap: 12 },
   deleteCancelBtn: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
     alignItems: "center",
-    backgroundColor: "#F6F6F6",
+    backgroundColor: theme.surfaceSecondary,
   },
-  deleteCancelText: { color: "#6B6B6B", fontSize: 15, fontWeight: "800" },
+  deleteCancelText: { color: theme.textSecondary, fontSize: 15, fontWeight: "800" },
   deleteConfirmBtn: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 14,
-    backgroundColor: "#E0393E",
+    backgroundColor: theme.error,
     alignItems: "center",
   },
   deleteConfirmBtnText: { color: "#FFFFFF", fontSize: 15, fontWeight: "800" },
 
   // Saved Cards Styles
-  addCardBtn: { backgroundColor: "#000000", paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
-  addCardBtnText: { color: "#FFFFFF", fontSize: 13, fontWeight: "800" },
+  addCardBtn: { backgroundColor: theme.accent, paddingHorizontal: 14, paddingVertical: 6, borderRadius: 10 },
+  addCardBtnText: { color: theme.onAccent, fontSize: 13, fontWeight: "800" },
   emptyCardCard: {
-    backgroundColor: "#F6F6F6",
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
     borderRadius: 20,
     padding: 28,
     alignItems: "center",
     borderStyle: "dashed",
   },
   emptyCardIcon: { fontSize: 32, marginBottom: 12 },
-  emptyCardText: { fontSize: 15, fontWeight: "700", color: "#6B6B6B", marginBottom: 6 },
-  emptyCardSubtext: { fontSize: 12, color: "#6B6B6B", textAlign: "center" },
+  emptyCardText: { fontSize: 15, fontWeight: "700", color: theme.textSecondary, marginBottom: 6 },
+  emptyCardSubtext: { fontSize: 12, color: theme.textSecondary, textAlign: "center" },
   cardItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -1094,18 +1217,18 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: "#F6F6F6",
+    backgroundColor: theme.surfaceSecondary,
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
     borderWidth: 1,
-    borderColor: "#EBEBEB",
+    borderColor: theme.border,
   },
   cardIconText: { fontSize: 16 },
   cardInfo: { flex: 1 },
-  cardLabel: { fontSize: 14, fontWeight: "700", color: "#000000", marginBottom: 2 },
-  cardNumber: { fontSize: 13, color: "#6B6B6B", fontWeight: "500", marginBottom: 2 },
-  cardExpiry: { fontSize: 12, color: "#6B6B6B" },
+  cardLabel: { fontSize: 14, fontWeight: "700", color: theme.text, marginBottom: 2 },
+  cardNumber: { fontSize: 13, color: theme.textSecondary, fontWeight: "500", marginBottom: 2 },
+  cardExpiry: { fontSize: 12, color: theme.textSecondary },
   cardDeleteBtn: { padding: 8, marginLeft: 10 },
   cardDeleteIcon: { fontSize: 18 },
 });

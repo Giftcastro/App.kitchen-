@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, FlatList, StatusBar, TouchableOpacity, Modal } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, StyleSheet, FlatList, StatusBar, TouchableOpacity, Modal, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen } from '../../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
+import { Skeleton } from '../../components/Skeleton';
+import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
+import { ThemeColors } from '../../utils/theme';
 
 /** Weekly (cycle) menu items are id-prefixed "cycle-<week>-<day>-..." — see
  * handleAddCycleItem in (tabs)/index.tsx. That menu only ever shows *today's*
@@ -14,7 +17,9 @@ import { useRouter } from 'expo-router';
 const isCycleMenuItemId = (id: string) => id.startsWith('cycle-');
 
 export default function TabActivityScreen() {
-  const { orders, addToCart } = useKitchen();
+  const { orders, addToCart, theme } = useKitchen();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { isLoading, refreshing, refresh } = useSimulatedLoad();
   const router = useRouter();
   // In-app modal instead of Alert.alert — Alert is a documented no-op on
   // React Native Web with no polyfill in this project, so it would render
@@ -36,6 +41,8 @@ export default function TabActivityScreen() {
     return date.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
+  // Order-status colors are semantic content colors (a distinct hue per
+  // status), not theme chrome — they stay literal in both light and dark mode.
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'pending': return '#FF9500';
@@ -58,18 +65,35 @@ export default function TabActivityScreen() {
     }
   };
 
-  return (
-        <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+  // Brief shimmer shown for the useSimulatedLoad() initial-load window — a
+  // stand-in for the real fetch this screen will eventually make.
+  const renderActivitySkeleton = () => (
+    <View style={styles.list}>
+      {[0, 1, 2].map(i => (
+        <Skeleton key={`activity-skel-${i}`} theme={theme} style={{ height: 160, borderRadius: 20, marginBottom: 12 }} />
+      ))}
+    </View>
+  );
 
-      {orders.length === 0 ? (
+  return (
+        <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+
+      {isLoading ? (
+        renderActivitySkeleton()
+      ) : orders.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyIcon}>📋</Text>
           <Text style={styles.emptyTitle}>No orders yet</Text>
           <Text style={styles.emptySubtitle}>
             Start ordering delicious meals and they'll appear here
           </Text>
-          <TouchableOpacity style={styles.menuBtn} onPress={() => router.push('/')}>
+          <TouchableOpacity
+            style={styles.menuBtn}
+            onPress={() => router.push('/')}
+            accessibilityRole="button"
+            accessibilityLabel="Browse Menu"
+          >
             <Text style={styles.menuBtnText}>Browse Menu</Text>
           </TouchableOpacity>
         </View>
@@ -78,6 +102,9 @@ export default function TabActivityScreen() {
           data={pastOrders.length > 0 ? pastOrders : orders}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyIcon}>✨</Text>
@@ -175,11 +202,19 @@ export default function TabActivityScreen() {
                       router.push('/');
                     };
 
+                    const itemCountTotal = item.items.reduce((sum, dish) => sum + dish.quantity, 0);
+                    const reorderLabel = hasWeeklyMenuItems
+                      ? `Reorder unavailable for order ${item.id}, includes Weekly Menu items`
+                      : `Reorder ${itemCountTotal} item${itemCountTotal !== 1 ? 's' : ''} from order ${item.id}`;
+
                     return (
                       <TouchableOpacity
                         style={[styles.reorderBtn, hasWeeklyMenuItems && styles.reorderBtnDisabled]}
                         onPress={handlePress}
                         activeOpacity={hasWeeklyMenuItems ? 1 : 0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={reorderLabel}
+                        accessibilityState={{ disabled: hasWeeklyMenuItems }}
                       >
                         <Text style={[styles.reorderBtnText, hasWeeklyMenuItems && styles.reorderBtnTextDisabled]}>
                           Reorder
@@ -208,7 +243,12 @@ export default function TabActivityScreen() {
               This order includes items from the Weekly Menu, which changes every day.
               Visit Today's Menu to order today's equivalent instead.
             </Text>
-            <TouchableOpacity style={styles.explainBtn} onPress={() => setShowCantReorder(false)}>
+            <TouchableOpacity
+              style={styles.explainBtn}
+              onPress={() => setShowCantReorder(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Got it, dismiss"
+            >
               <Text style={styles.explainBtnText}>Got it</Text>
             </TouchableOpacity>
           </View>
@@ -218,25 +258,25 @@ export default function TabActivityScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   header: { padding: 20, paddingBottom: 16 },
-  title: { fontSize: 28, fontWeight: '900', color: '#000000', marginBottom: 4 },
-  subtitle: { fontSize: 14, color: '#6B6B6B', fontWeight: '500' },
+  title: { fontSize: 28, fontWeight: '900', color: theme.text, marginBottom: 4 },
+  subtitle: { fontSize: 14, color: theme.textSecondary, fontWeight: '500' },
 
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   emptyIcon: { fontSize: 56, marginBottom: 16 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#000000', marginBottom: 8 },
-  emptySubtitle: { fontSize: 14, color: '#6B6B6B', textAlign: 'center', marginBottom: 24, lineHeight: 20 },
-  menuBtn: { backgroundColor: '#000000', paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14 },
-  menuBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: theme.text, marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  menuBtn: { backgroundColor: theme.accent, paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14 },
+  menuBtnText: { color: theme.onAccent, fontWeight: '800', fontSize: 15 },
 
   list: { padding: 16, paddingBottom: 20 },
 
   orderCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 20,
     padding: 16,
     marginBottom: 12,
@@ -248,38 +288,38 @@ const styles = StyleSheet.create({
   },
   orderHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   orderIdContainer: { flex: 1 },
-  orderId: { fontSize: 16, fontWeight: '800', color: '#000000', marginBottom: 4, letterSpacing: -0.3 },
-  orderDate: { fontSize: 12, color: '#6B6B6B', fontWeight: '500' },
+  orderId: { fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 4, letterSpacing: -0.3 },
+  orderDate: { fontSize: 12, color: theme.textSecondary, fontWeight: '500' },
   orderTotalContainer: { alignItems: 'flex-end' },
-  orderTotal: { fontSize: 18, fontWeight: '900', color: '#000000', marginBottom: 4, letterSpacing: -0.3 },
-  itemCount: { backgroundColor: '#F6F6F6', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: '#EBEBEB' },
-  itemCountText: { fontSize: 11, color: '#6B6B6B', fontWeight: '600' },
+  orderTotal: { fontSize: 18, fontWeight: '900', color: theme.text, marginBottom: 4, letterSpacing: -0.3 },
+  itemCount: { backgroundColor: theme.surfaceSecondary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: theme.border },
+  itemCountText: { fontSize: 11, color: theme.textSecondary, fontWeight: '600' },
 
   itemsPreview: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   itemChip: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#EBEBEB'
+    borderColor: theme.border
   },
-  itemChipText: { fontSize: 12, color: '#6B6B6B', fontWeight: '500' },
+  itemChipText: { fontSize: 12, color: theme.textSecondary, fontWeight: '500' },
   moreChip: {
-    backgroundColor: '#EBEBEB',
+    backgroundColor: theme.border,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8
   },
-  moreChipText: { fontSize: 12, color: '#6B6B6B', fontWeight: '600' },
+  moreChipText: { fontSize: 12, color: theme.textSecondary, fontWeight: '600' },
 
   // Address Section
   addressSection: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
@@ -288,32 +328,32 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   addressIcon: { fontSize: 18 },
   addressDetails: { flex: 1 },
-  addressLabel: { fontSize: 13, fontWeight: '800', color: '#000000', marginBottom: 3 },
-  addressText: { fontSize: 12, color: '#6B6B6B', fontWeight: '500', lineHeight: 16 },
+  addressLabel: { fontSize: 13, fontWeight: '800', color: theme.text, marginBottom: 3 },
+  addressText: { fontSize: 12, color: theme.textSecondary, fontWeight: '500', lineHeight: 16 },
 
-  orderFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: '#EBEBEB' },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F6F6F6', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: '#EBEBEB' },
+  orderFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.border },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surfaceSecondary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: theme.border },
   statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00C853', marginRight: 6 },
-  statusText: { fontSize: 12, color: '#000000', fontWeight: '700', textTransform: 'capitalize' },
-  reorderBtn: { backgroundColor: '#000000', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, shadowColor: '#000000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3 },
-  reorderBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
-  reorderBtnDisabled: { backgroundColor: '#EBEBEB', shadowOpacity: 0, elevation: 0 },
-  reorderBtnTextDisabled: { color: '#6B6B6B' },
+  statusText: { fontSize: 12, color: theme.text, fontWeight: '700', textTransform: 'capitalize' },
+  reorderBtn: { backgroundColor: theme.accent, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, shadowColor: '#000000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3 },
+  reorderBtnText: { color: theme.onAccent, fontSize: 13, fontWeight: '800' },
+  reorderBtnDisabled: { backgroundColor: theme.border, shadowOpacity: 0, elevation: 0 },
+  reorderBtnTextDisabled: { color: theme.textSecondary },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  modalOverlay: { flex: 1, backgroundColor: theme.modalOverlay, justifyContent: 'center', alignItems: 'center' },
   explainCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 24,
     padding: 28,
     marginHorizontal: 32,
@@ -325,8 +365,8 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   explainIcon: { fontSize: 36, marginBottom: 12 },
-  explainTitle: { fontSize: 18, fontWeight: '900', color: '#000000', marginBottom: 8, textAlign: 'center' },
-  explainText: { fontSize: 14, color: '#6B6B6B', textAlign: 'center', lineHeight: 20, marginBottom: 24 },
-  explainBtn: { backgroundColor: '#000000', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 14, alignSelf: 'stretch', alignItems: 'center' },
-  explainBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  explainTitle: { fontSize: 18, fontWeight: '900', color: theme.text, marginBottom: 8, textAlign: 'center' },
+  explainText: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  explainBtn: { backgroundColor: theme.accent, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 14, alignSelf: 'stretch', alignItems: 'center' },
+  explainBtnText: { color: theme.onAccent, fontSize: 15, fontWeight: '800' },
 });

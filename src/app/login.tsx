@@ -10,12 +10,15 @@ import { useRouter } from 'expo-router';
 import KitchenLogo from '../components/KitchenLogo';
 import { Ionicons } from '@expo/vector-icons';
 import { findCompanyForEmail } from '../utils/companyMatch';
+import { ThemeColors } from '../utils/theme';
+import { haptics } from '../utils/haptics';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ADMIN_EMAIL = 'admin@gmail.com';
 
 export default function LoginScreen() {
-  const { login, companies } = useKitchen();
+  const { login, companies, theme, isDark } = useKitchen();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
 
   // Form states
@@ -30,7 +33,7 @@ export default function LoginScreen() {
 
   // Mode states
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
-  
+
   // UI states
   const [errors, setErrors] = useState<{ email?: string; password?: string; name?: string; confirmPassword?: string }>({});
   const [showPassword, setShowPassword] = useState(false);
@@ -58,7 +61,10 @@ export default function LoginScreen() {
   const brandMarginBottom = isCompactHeight ? 20 : 32;
   const sectionMarginBottom = isCompactHeight ? 10 : 14;
 
-  const pressIn = () => Animated.spring(btnScale, { toValue: 0.97, useNativeDriver: true, speed: 40 }).start();
+  const pressIn = () => {
+    haptics.light();
+    Animated.spring(btnScale, { toValue: 0.97, useNativeDriver: true, speed: 40 }).start();
+  };
   const pressOut = () => Animated.spring(btnScale, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
 
   const isAdminEmail = email.trim().toLowerCase() === ADMIN_EMAIL;
@@ -66,17 +72,17 @@ export default function LoginScreen() {
   const validateSignin = () => {
     const newErrors: { email?: string; password?: string } = {};
     const trimmedEmail = email.trim();
-    
+
     if (!trimmedEmail) {
       newErrors.email = 'Please enter your email';
     } else if (!EMAIL_REGEX.test(trimmedEmail)) {
       newErrors.email = 'Please enter a valid email';
     }
-    
+
     if (!password) {
       newErrors.password = 'Please enter your password';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -84,29 +90,29 @@ export default function LoginScreen() {
   const validateSignup = () => {
     const newErrors: { email?: string; password?: string; name?: string; confirmPassword?: string } = {};
     const trimmedEmail = email.trim();
-    
+
     if (!name.trim()) {
       newErrors.name = 'Please enter your name';
     } else if (name.trim().length < 2) {
       newErrors.name = 'Name must be at least 2 characters';
     }
-    
+
     if (!trimmedEmail) {
       newErrors.email = 'Please enter your email';
     } else if (!EMAIL_REGEX.test(trimmedEmail)) {
       newErrors.email = 'Please enter a valid email';
     }
-    
+
     if (!password) {
       newErrors.password = 'Please enter your password';
     } else if (password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
     }
-    
+
     if (password !== confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -119,6 +125,8 @@ export default function LoginScreen() {
       login(email.trim(), role, undefined, matchedCompany ? 'company' : undefined, matchedCompany?.name);
       // Admins land on Kitchen Controls — the customer Menu tab isn't part of their account.
       router.replace(role === 'admin' ? '/admin' : '/');
+    } else {
+      haptics.warning();
     }
   };
 
@@ -127,6 +135,8 @@ export default function LoginScreen() {
       const role = isAdminEmail ? 'admin' : 'customer';
       login(email.trim(), role, name.trim(), matchedCompany ? 'company' : 'individual', matchedCompany?.name);
       router.replace(role === 'admin' ? '/admin' : '/');
+    } else {
+      haptics.warning();
     }
   };
 
@@ -135,6 +145,7 @@ export default function LoginScreen() {
       // Simulate password reset
       router.replace('/');
     } else {
+      haptics.warning();
       setErrors({ email: 'Please enter your email to reset password' });
     }
   };
@@ -151,11 +162,11 @@ export default function LoginScreen() {
       <View style={styles.inputGroup}>
         <Text style={styles.label}>EMAIL ADDRESS</Text>
         <View style={[styles.inputWrapper, focusedField === 'signinEmail' && styles.inputWrapperFocused, errors.email ? styles.inputWrapperError : null]}>
-          <Ionicons name="mail-outline" size={16} color={focusedField === 'signinEmail' ? '#000000' : '#6B6B6B'} style={{ marginRight: 10 }} />
+          <Ionicons name="mail-outline" size={16} color={focusedField === 'signinEmail' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
             placeholder="name@gmail.com"
-            placeholderTextColor="#6B6B6B"
+            placeholderTextColor={theme.textTertiary}
             value={email}
             onChangeText={(val) => { setEmail(val); if (errors.email) setErrors({ ...errors, email: undefined }); }}
             onFocus={() => setFocusedField('signinEmail')}
@@ -165,6 +176,7 @@ export default function LoginScreen() {
             autoCorrect={false}
             autoComplete="email"
             returnKeyType="next"
+            accessibilityLabel="Email address"
           />
         </View>
         {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
@@ -173,11 +185,11 @@ export default function LoginScreen() {
       <View style={styles.inputGroup}>
         <Text style={styles.label}>PASSWORD</Text>
         <View style={[styles.inputWrapper, focusedField === 'signinPassword' && styles.inputWrapperFocused, errors.password ? styles.inputWrapperError : null]}>
-          <Ionicons name="lock-closed-outline" size={16} color={focusedField === 'signinPassword' ? '#000000' : '#6B6B6B'} style={{ marginRight: 10 }} />
+          <Ionicons name="lock-closed-outline" size={16} color={focusedField === 'signinPassword' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
             placeholder="Your password"
-            placeholderTextColor="#6B6B6B"
+            placeholderTextColor={theme.textTertiary}
             value={password}
             onChangeText={(val) => { setPassword(val); if (errors.password) setErrors({ ...errors, password: undefined }); }}
             onFocus={() => setFocusedField('signinPassword')}
@@ -188,9 +200,14 @@ export default function LoginScreen() {
             autoComplete="password"
             returnKeyType="go"
             onSubmitEditing={handleSignin}
+            accessibilityLabel="Password"
           />
-                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-            <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={18} color="#8E8E93" style={{ paddingHorizontal: 6 }} />
+                    <TouchableOpacity
+            onPress={() => setShowPassword(!showPassword)}
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+          >
+            <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={18} color={theme.textTertiary} style={{ paddingHorizontal: 6 }} />
           </TouchableOpacity>
         </View>
         {errors.password && <Text style={styles.fieldError}>{errors.password}</Text>}
@@ -201,6 +218,9 @@ export default function LoginScreen() {
           style={styles.rememberContainer}
           onPress={() => setRememberMe(!rememberMe)}
           hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityState={{ selected: rememberMe }}
+          accessibilityLabel="Remember me"
         >
           <View style={[styles.checkbox, rememberMe && styles.checkboxSelected]}>
             {rememberMe && <Text style={styles.checkmark}>✓</Text>}
@@ -208,7 +228,12 @@ export default function LoginScreen() {
           <Text style={styles.rememberText}>Remember me</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity onPress={() => handleModeChange('forgot')} hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
+        <TouchableOpacity
+          onPress={() => handleModeChange('forgot')}
+          hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Forgot password?"
+        >
           <Text style={styles.forgotLink}>Forgot password?</Text>
         </TouchableOpacity>
       </View>
@@ -220,11 +245,11 @@ export default function LoginScreen() {
       <View style={styles.inputGroup}>
         <Text style={styles.label}>FULL NAME</Text>
         <View style={[styles.inputWrapper, focusedField === 'name' && styles.inputWrapperFocused, errors.name ? styles.inputWrapperError : null]}>
-          <Ionicons name="person-outline" size={16} color={focusedField === 'name' ? '#000000' : '#6B6B6B'} style={{ marginRight: 10 }} />
+          <Ionicons name="person-outline" size={16} color={focusedField === 'name' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
             placeholder="John Doe"
-            placeholderTextColor="#6B6B6B"
+            placeholderTextColor={theme.textTertiary}
             value={name}
             onChangeText={(val) => { setName(val); if (errors.name) setErrors({ ...errors, name: undefined }); }}
             onFocus={() => setFocusedField('name')}
@@ -232,6 +257,7 @@ export default function LoginScreen() {
             autoCorrect={false}
             autoComplete="name"
             returnKeyType="next"
+            accessibilityLabel="Full name"
           />
         </View>
         {errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
@@ -240,11 +266,11 @@ export default function LoginScreen() {
       <View style={styles.inputGroup}>
         <Text style={styles.label}>EMAIL ADDRESS</Text>
         <View style={[styles.inputWrapper, focusedField === 'signupEmail' && styles.inputWrapperFocused, errors.email ? styles.inputWrapperError : null]}>
-          <Ionicons name="mail-outline" size={16} color={focusedField === 'signupEmail' ? '#000000' : '#6B6B6B'} style={{ marginRight: 10 }} />
+          <Ionicons name="mail-outline" size={16} color={focusedField === 'signupEmail' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
             placeholder="name@gmail.com"
-            placeholderTextColor="#6B6B6B"
+            placeholderTextColor={theme.textTertiary}
             value={email}
             onChangeText={(val) => { setEmail(val); if (errors.email) setErrors({ ...errors, email: undefined }); }}
             onFocus={() => setFocusedField('signupEmail')}
@@ -254,6 +280,7 @@ export default function LoginScreen() {
             autoCorrect={false}
             autoComplete="email"
             returnKeyType="next"
+            accessibilityLabel="Email address"
           />
         </View>
         {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
@@ -261,7 +288,7 @@ export default function LoginScreen() {
             company" entry. Individuals (gmail.com etc.) just sign up normally. */}
         {matchedCompany && (
           <View style={styles.companyDetectedRow}>
-            <Ionicons name="business" size={14} color="#22C55E" />
+            <Ionicons name="business" size={14} color={theme.success} />
             <Text style={styles.companyDetectedText}>
               Joining as <Text style={styles.companyDetectedName}>{matchedCompany.name}</Text>
             </Text>
@@ -272,11 +299,11 @@ export default function LoginScreen() {
       <View style={styles.inputGroup}>
         <Text style={styles.label}>PASSWORD</Text>
         <View style={[styles.inputWrapper, focusedField === 'signupPassword' && styles.inputWrapperFocused, errors.password ? styles.inputWrapperError : null]}>
-          <Ionicons name="lock-closed-outline" size={16} color={focusedField === 'signupPassword' ? '#000000' : '#6B6B6B'} style={{ marginRight: 10 }} />
+          <Ionicons name="lock-closed-outline" size={16} color={focusedField === 'signupPassword' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
             placeholder="Create a password"
-            placeholderTextColor="#6B6B6B"
+            placeholderTextColor={theme.textTertiary}
             value={password}
             onChangeText={(val) => { setPassword(val); if (errors.password) setErrors({ ...errors, password: undefined }); }}
             onFocus={() => setFocusedField('signupPassword')}
@@ -286,9 +313,14 @@ export default function LoginScreen() {
             autoCorrect={false}
             autoComplete="new-password"
                         returnKeyType="next"
+            accessibilityLabel="Password"
           />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-            <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={18} color="#8E8E93" style={{ paddingHorizontal: 6 }} />
+          <TouchableOpacity
+            onPress={() => setShowPassword(!showPassword)}
+            accessibilityRole="button"
+            accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}
+          >
+            <Ionicons name={showPassword ? 'eye-off' : 'eye'} size={18} color={theme.textTertiary} style={{ paddingHorizontal: 6 }} />
           </TouchableOpacity>
         </View>
         {errors.password && <Text style={styles.fieldError}>{errors.password}</Text>}
@@ -297,11 +329,11 @@ export default function LoginScreen() {
       <View style={styles.inputGroup}>
         <Text style={styles.label}>CONFIRM PASSWORD</Text>
         <View style={[styles.inputWrapper, focusedField === 'confirmPassword' && styles.inputWrapperFocused, errors.confirmPassword ? styles.inputWrapperError : null]}>
-          <Ionicons name="lock-closed-outline" size={16} color={focusedField === 'confirmPassword' ? '#000000' : '#6B6B6B'} style={{ marginRight: 10 }} />
+          <Ionicons name="lock-closed-outline" size={16} color={focusedField === 'confirmPassword' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
             placeholder="Confirm your password"
-            placeholderTextColor="#6B6B6B"
+            placeholderTextColor={theme.textTertiary}
             value={confirmPassword}
             onChangeText={(val) => { setConfirmPassword(val); if (errors.confirmPassword) setErrors({ ...errors, confirmPassword: undefined }); }}
             onFocus={() => setFocusedField('confirmPassword')}
@@ -312,6 +344,7 @@ export default function LoginScreen() {
             autoComplete="new-password"
             returnKeyType="go"
             onSubmitEditing={handleSignup}
+            accessibilityLabel="Confirm password"
           />
         </View>
         {errors.confirmPassword && <Text style={styles.fieldError}>{errors.confirmPassword}</Text>}
@@ -322,17 +355,17 @@ export default function LoginScreen() {
   const renderForgotForm = () => (
     <>
       <View style={styles.lockIconContainer}>
-        <Ionicons name="lock-closed" size={24} color="#000000" />
+        <Ionicons name="lock-closed" size={24} color={theme.text} />
       </View>
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>EMAIL ADDRESS</Text>
         <View style={[styles.inputWrapper, focusedField === 'forgotEmail' && styles.inputWrapperFocused, errors.email ? styles.inputWrapperError : null]}>
-          <Ionicons name="mail-outline" size={16} color={focusedField === 'forgotEmail' ? '#000000' : '#6B6B6B'} style={{ marginRight: 10 }} />
+          <Ionicons name="mail-outline" size={16} color={focusedField === 'forgotEmail' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
             placeholder="Enter your email"
-            placeholderTextColor="#6B6B6B"
+            placeholderTextColor={theme.textTertiary}
             value={email}
             onChangeText={(val) => { setEmail(val); if (errors.email) setErrors({ ...errors, email: undefined }); }}
             onFocus={() => setFocusedField('forgotEmail')}
@@ -343,6 +376,7 @@ export default function LoginScreen() {
             autoComplete="email"
             returnKeyType="go"
             onSubmitEditing={handleForgotPassword}
+            accessibilityLabel="Email address"
           />
         </View>
         {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
@@ -380,7 +414,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
       <KeyboardAvoidingView
         // Android already resizes the window for the keyboard (adjustResize,
         // Expo's default). KeyboardAvoidingView still registers its own
@@ -394,8 +428,8 @@ export default function LoginScreen() {
         enabled={Platform.OS === 'ios'}
         style={styles.container}
       >
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent} 
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -412,22 +446,26 @@ export default function LoginScreen() {
                 <View style={[styles.glowRing, styles.glowRingOuter, { width: glowSize, height: glowSize }]} />
                 <View style={[styles.glowRing, styles.glowRingInner, { width: glowInnerSize, height: glowInnerSize }]} />
               </View>
-              <KitchenLogo compact variant="onLight" />
+              <KitchenLogo compact variant={isDark ? 'onDark' : 'onLight'} />
             </View>
 
             {/* Mode Selector */}
             <View style={[styles.modeSelector, { marginBottom: sectionMarginBottom }]}>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.modeBtn, mode === 'signin' && styles.modeBtnActive]}
                 onPress={() => handleModeChange('signin')}
+                accessibilityRole="button"
+                accessibilityState={{ selected: mode === 'signin' }}
               >
                 <Text style={[styles.modeBtnText, mode === 'signin' && styles.modeBtnTextActive]}>
                   Sign In
                 </Text>
               </TouchableOpacity>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={[styles.modeBtn, mode === 'signup' && styles.modeBtnActive]}
                 onPress={() => handleModeChange('signup')}
+                accessibilityRole="button"
+                accessibilityState={{ selected: mode === 'signup' }}
               >
                 <Text style={[styles.modeBtnText, mode === 'signup' && styles.modeBtnTextActive]}>
                   Sign Up
@@ -466,6 +504,13 @@ export default function LoginScreen() {
                   onPressOut={pressOut}
                   activeOpacity={0.9}
                   disabled={isButtonDisabled()}
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    mode === 'signin' ? (isAdminEmail ? 'Sign in as Admin' : 'Sign In')
+                      : mode === 'signup' ? 'Create Account'
+                      : 'Send Reset Link'
+                  }
+                  accessibilityState={{ disabled: isButtonDisabled() }}
                 >
                   <Text style={[styles.continueBtnText, isButtonDisabled() && styles.continueBtnTextDisabled]}>
                     {mode === 'signin' && (isAdminEmail ? 'Sign in as Admin' : 'Sign In')}
@@ -473,7 +518,7 @@ export default function LoginScreen() {
                     {mode === 'forgot' && 'Send Reset Link'}
                   </Text>
                   {!isButtonDisabled() && (
-                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={styles.continueBtnIcon} />
+                    <Ionicons name="arrow-forward" size={18} color={theme.onAccent} style={styles.continueBtnIcon} />
                   )}
                 </TouchableOpacity>
               </Animated.View>
@@ -485,6 +530,8 @@ export default function LoginScreen() {
                     login('dev-bypass@example.com', 'customer', 'Dev Bypass', 'individual');
                     router.replace('/');
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Developer: skip login"
                 >
                   <Text style={styles.devBypassBtnText}>DEV: Skip Login</Text>
                 </TouchableOpacity>
@@ -495,10 +542,10 @@ export default function LoginScreen() {
             {/* Mode Switcher */}
             <View style={styles.switchSection}>
               <Text style={styles.switchText}>
-                {mode === 'forgot' 
-                  ? 'Remember your password?' 
-                  : mode === 'signin' 
-                    ? "Don't have an account?" 
+                {mode === 'forgot'
+                  ? 'Remember your password?'
+                  : mode === 'signin'
+                    ? "Don't have an account?"
                     : 'Already have an account?'
                 }
               </Text>
@@ -511,6 +558,8 @@ export default function LoginScreen() {
                   }
                 }}
                 hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
+                accessibilityRole="button"
+                accessibilityLabel={mode === 'forgot' ? 'Sign In' : mode === 'signin' ? 'Sign Up' : 'Sign In'}
               >
                 <Text style={styles.switchLink}>
                   {mode === 'forgot' ? 'Sign In' : mode === 'signin' ? 'Sign Up' : 'Sign In'}
@@ -532,8 +581,8 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
+  safeArea: { flex: 1, backgroundColor: theme.background },
   container: { flex: 1 },
   scrollContent: { flexGrow: 1, justifyContent: 'center', paddingVertical: 14 },
   contentContainer: { paddingHorizontal: 20 },
@@ -563,12 +612,12 @@ const styles = StyleSheet.create({
   // Mode Selector
   modeSelector: {
     flexDirection: 'row',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderRadius: 14,
     padding: 3,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   modeBtn: {
     flex: 1,
@@ -576,25 +625,25 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: 'center',
   },
-    modeBtnActive: { backgroundColor: '#000000' },
+    modeBtnActive: { backgroundColor: theme.accent },
   modeBtnText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#6B6B6B',
+    color: theme.textSecondary,
   },
-    modeBtnTextActive: { color: '#FFFFFF' },
+    modeBtnTextActive: { color: theme.onAccent },
 
   // Form
   formSection: { marginBottom: 14 },
-  heading: { fontSize: 19, fontWeight: '800', color: '#000000', marginBottom: 3 },
-  subtext: { fontSize: 13, color: '#6B6B6B', marginBottom: 12 },
+  heading: { fontSize: 19, fontWeight: '800', color: theme.text, marginBottom: 3 },
+  subtext: { fontSize: 13, color: theme.textSecondary, marginBottom: 12 },
 
   inputGroup: { marginBottom: 10 },
-  label: { fontSize: 11, fontWeight: '700', color: '#6B6B6B', marginBottom: 5, letterSpacing: 0.5 },
+  label: { fontSize: 11, fontWeight: '700', color: theme.textSecondary, marginBottom: 5, letterSpacing: 0.5 },
   inputWrapper: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.inputBg,
     borderWidth: 1.5,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 12,
     paddingHorizontal: 14,
     height: 46,
@@ -602,18 +651,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   inputWrapperFocused: {
-    borderColor: '#000000',
-    backgroundColor: '#F6F6F6',
+    borderColor: theme.text,
+    backgroundColor: theme.inputBg,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 2,
   },
-  inputWrapperError: { borderColor: '#E0393E' },
-  input: { flex: 1, fontSize: 15, color: '#000000', paddingVertical: 0, height: 46 },
-  fieldError: { color: '#E0393E', fontSize: 12, fontWeight: '600', marginTop: 5, marginLeft: 4 },
-  helpText: { color: '#6B6B6B', fontSize: 12, marginTop: 6, marginLeft: 4 },
+  inputWrapperError: { borderColor: theme.error },
+  input: { flex: 1, fontSize: 15, color: theme.text, paddingVertical: 0, height: 46 },
+  fieldError: { color: theme.error, fontSize: 12, fontWeight: '600', marginTop: 5, marginLeft: 4 },
+  helpText: { color: theme.textSecondary, fontSize: 12, marginTop: 6, marginLeft: 4 },
 
   // Auto-detected company banner (signup, work-email domain match)
   companyDetectedRow: {
@@ -623,8 +672,8 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     gap: 6,
   },
-  companyDetectedText: { color: '#6B6B6B', fontSize: 12, fontWeight: '600' },
-  companyDetectedName: { color: '#1DA836', fontWeight: '800' },
+  companyDetectedText: { color: theme.textSecondary, fontSize: 12, fontWeight: '600' },
+  companyDetectedName: { color: theme.success, fontWeight: '800' },
 
   // Admin hint
   adminHint: {
@@ -655,15 +704,15 @@ const styles = StyleSheet.create({
     height: 18,
     borderRadius: 5,
     borderWidth: 2,
-    borderColor: '#B0B0B0',
+    borderColor: theme.textTertiary,
     marginRight: 7,
     justifyContent: 'center',
     alignItems: 'center',
   },
-    checkboxSelected: { backgroundColor: '#000000', borderColor: '#000000' },
-  checkmark: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
-  rememberText: { fontSize: 13, color: '#6B6B6B' },
-    forgotLink: { fontSize: 13, color: '#000000', fontWeight: '700', textDecorationLine: 'underline' },
+    checkboxSelected: { backgroundColor: theme.accent, borderColor: theme.accent },
+  checkmark: { color: theme.onAccent, fontSize: 11, fontWeight: '700' },
+  rememberText: { fontSize: 13, color: theme.textSecondary },
+    forgotLink: { fontSize: 13, color: theme.text, fontWeight: '700', textDecorationLine: 'underline' },
 
   // Lock icon
   lockIconContainer: {
@@ -673,16 +722,16 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     alignSelf: 'center',
   },
 
   // Buttons
   continueBtn: {
     flexDirection: 'row',
-    backgroundColor: '#000000',
+    backgroundColor: theme.accent,
     paddingVertical: 13,
     borderRadius: 12,
     alignItems: 'center',
@@ -694,28 +743,28 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 5,
   },
-  continueBtnDisabled: { backgroundColor: '#E0E0E0', shadowOpacity: 0 },
-  continueBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  continueBtnTextDisabled: { color: '#9E9E9E' },
+  continueBtnDisabled: { backgroundColor: theme.border, shadowOpacity: 0 },
+  continueBtnText: { color: theme.onAccent, fontSize: 15, fontWeight: '800' },
+  continueBtnTextDisabled: { color: theme.textTertiary },
   continueBtnIcon: { marginLeft: 8 },
   devBypassBtn: {
     marginTop: 10,
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#E0393E',
+    borderColor: theme.error,
     borderStyle: 'dashed',
     alignItems: 'center',
   },
-  devBypassBtnText: { color: '#E0393E', fontSize: 12, fontWeight: '700' },
+  devBypassBtnText: { color: theme.error, fontSize: 12, fontWeight: '700' },
 
   // Switch
   switchSection: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  switchText: { fontSize: 13, color: '#6B6B6B' },
-    switchLink: { fontSize: 13, color: '#000000', fontWeight: '700', marginLeft: 6, textDecorationLine: 'underline' },
+  switchText: { fontSize: 13, color: theme.textSecondary },
+    switchLink: { fontSize: 13, color: theme.text, fontWeight: '700', marginLeft: 6, textDecorationLine: 'underline' },
 
   // Footer
   footer: { alignItems: 'center' },
-  footerText: { color: '#6B6B6B', fontSize: 12, textAlign: 'center', lineHeight: 18 },
+  footerText: { color: theme.textSecondary, fontSize: 12, textAlign: 'center', lineHeight: 18 },
 
 });

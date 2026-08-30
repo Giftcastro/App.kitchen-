@@ -1,9 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getEstimatedDelivery } from '../utils/deliveryHelpers';
+import { ThemeColors } from '../utils/theme';
 
-export const DeliveryEstimator: React.FC = () => {
+interface DeliveryEstimatorProps {
+  theme: ThemeColors;
+}
+
+export const DeliveryEstimator: React.FC<DeliveryEstimatorProps> = ({ theme }) => {
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [deliveryInfo, setDeliveryInfo] = useState(() => getEstimatedDelivery());
 
   useEffect(() => {
@@ -46,7 +52,7 @@ export const DeliveryEstimator: React.FC = () => {
   return (
     <View style={[styles.row, isUrgent && styles.rowUrgent]}>
       <View style={[styles.iconWrapper, isUrgent && styles.iconWrapperUrgent]}>
-        <Ionicons name="bicycle" size={16} color={isUrgent ? '#8A6D00' : '#FFFFFF'} />
+        <Ionicons name="bicycle" size={16} color={isUrgent ? '#8A6D00' : theme.onAccent} />
       </View>
       <Text style={[styles.text, isUrgent && styles.textUrgent]} numberOfLines={2}>
         {isUrgent ? '⚠️ ' : ''}{text}
@@ -55,21 +61,21 @@ export const DeliveryEstimator: React.FC = () => {
   );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderRadius: 14,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     marginBottom: 12,
   },
   rowUrgent: { backgroundColor: '#FFF8E1', borderColor: '#F0DFA0' },
   iconWrapper: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.accent,
     width: 30,
     height: 30,
     borderRadius: 10,
@@ -78,6 +84,6 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   iconWrapperUrgent: { backgroundColor: '#FFFFFF' },
-  text: { flex: 1, fontSize: 12.5, fontWeight: '700', color: '#000000' },
+  text: { flex: 1, fontSize: 12.5, fontWeight: '700', color: theme.text },
   textUrgent: { color: '#8A6D00' },
 });

@@ -3,7 +3,6 @@ import { Slot, Redirect, useSegments } from 'expo-router';
 import { View, StyleSheet, LogBox } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { KitchenProvider, useKitchen } from '../context/KitchenCoContext';
-import { theme as appTheme } from '../utils/theme';
 import { useResponsive } from '../utils/responsive';
 
 // This app only ever schedules LOCAL notifications (order reminders / payment
@@ -17,7 +16,7 @@ LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 // router.replace() in a useEffect — the latter can fire before the root
 // navigator has finished mounting and throws.
 function RootLayoutNavigation() {
-  const { user } = useKitchen();
+  const { user, theme } = useKitchen();
   const segments = useSegments();
 
   // Determine if the user is currently looking at the login page
@@ -28,7 +27,7 @@ function RootLayoutNavigation() {
   // so multi-column layouts have room.
   const { contentMaxWidth } = useResponsive();
   return (
-    <View style={[styles.root, { backgroundColor: appTheme.background }]}>
+    <View style={[styles.root, { backgroundColor: theme.background }]}>
       <View style={[styles.frame, { maxWidth: contentMaxWidth }]}>
         {/* <Redirect> renders alongside <Slot>, never instead of it — Slot is
             what keeps the file-based route tree (including the (tabs) group)

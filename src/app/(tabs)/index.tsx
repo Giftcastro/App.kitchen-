@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity, StatusBar, Modal, TextInput, ScrollView, useWindowDimensions, Animated } from 'react-native';
+import { StyleSheet, Text, View, FlatList, TouchableOpacity, StatusBar, Modal, TextInput, ScrollView, useWindowDimensions, Animated, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,9 +7,11 @@ import { useKitchen } from '../../context/KitchenCoContext';
 import { DeliveryEstimator } from '../../components/DeliveryEstimator';
 import { CutoffCountdown } from '../../components/CutoffCountdown';
 import { QuickAddButton } from '../../components/QuickAddButton';
+import { Skeleton } from '../../components/Skeleton';
 import { getUpcomingOrderableWeekdays, getOrderCutoffInfo } from '../../utils/deliveryHelpers';
 import { useResponsive } from '../../utils/responsive';
-import { APP_MAX_WIDTH } from '../../utils/theme';
+import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
+import { APP_MAX_WIDTH, ThemeColors } from '../../utils/theme';
 
 import staticMenuData from '../../data/staticMenu.json';
 import cycleMenuData from '../../data/cycleMenu.json';
@@ -69,7 +71,10 @@ function formatCategoryLabel(name: string): string {
 }
 
 export default function MenuScreen() {
-  const { addToCart, cart, activeWeek, theme, discounts, menus, user } = useKitchen();
+  const { addToCart, cart, activeWeek, theme, discounts, menus, user, triggerCartFly } = useKitchen();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { isLoading, refreshing, refresh } = useSimulatedLoad();
+  const addToCartBtnRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
   const router = useRouter();
   const [menuView, setMenuView] = useState<'main' | 'today'>('main');
   const [searchQuery, setSearchQuery] = useState('');
@@ -335,6 +340,9 @@ export default function MenuScreen() {
               <TouchableOpacity
                 style={[styles.categoryChip, isActive && styles.categoryChipActive]}
                 onPress={() => setSelectedCategory(isActive ? null : category)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={`${formatCategoryLabel(category)} category`}
               >
                 <Text style={styles.categoryChipIcon}>{categoryIcons[category] || '🍽️'}</Text>
                 <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>
@@ -347,6 +355,9 @@ export default function MenuScreen() {
             <TouchableOpacity
               style={[styles.categoryChip, selectedCategory === null && styles.categoryChipActive]}
               onPress={() => setSelectedCategory(null)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: selectedCategory === null }}
+              accessibilityLabel="All categories"
             >
               <Text style={[styles.categoryChipText, selectedCategory === null && styles.categoryChipTextActive]}>
                 All
@@ -378,16 +389,22 @@ export default function MenuScreen() {
   // Extract grid item renderer for reusability
   const renderGridItem = ({ item }: { item: UIReadyItem }) => {
     const qty = getItemQuantity(item.id);
-    const displayPrice = item.sizes[0] ? `R${item.sizes[0].price.toFixed(0)}` : 'R0';
+    const rawPrice = item.sizes[0] ? item.sizes[0].price : 0;
     const itemIcon = getItemIcon(item.name, item.category);
     const itemDiscounts = getItemDiscounts(item);
-    const categoryColor = STATIC_CATEGORY_COLORS[item.category] || '#000000';
+    const hasDiscount = itemDiscounts.length > 0;
+    const discountedPrice = hasDiscount ? rawPrice * (1 - itemDiscounts[0].percentage / 100) : rawPrice;
+    const displayPrice = `R${discountedPrice.toFixed(0)}`;
+    const originalDisplayPrice = `R${rawPrice.toFixed(0)}`;
+    const categoryColor = STATIC_CATEGORY_COLORS[item.category] || theme.textSecondary;
 
     return (
       <TouchableOpacity
         style={[styles.uberCard, { width: CARD_WIDTH }]}
         activeOpacity={0.9}
         onPress={() => handleAddItem(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.name}, ${displayPrice}`}
       >
         {/* Image Section */}
         <View style={styles.uberImageSection}>
@@ -405,7 +422,7 @@ export default function MenuScreen() {
           </View>
           {/* Quick Add Button */}
           <View style={styles.uberQuickAddWrap}>
-            <QuickAddButton quantity={qty} onPress={() => handleAddItem(item)} />
+            <QuickAddButton quantity={qty} onPress={() => handleAddItem(item)} theme={theme} />
           </View>
         </View>
 
@@ -416,8 +433,11 @@ export default function MenuScreen() {
             <Text style={styles.uberItemDesc} numberOfLines={2}>{item.description}</Text>
           ) : null}
           <View style={styles.uberMetaRow}>
-            <Text style={styles.uberPrice}>{displayPrice}</Text>
-            {itemDiscounts.length > 0 && (
+            <View style={styles.uberPriceRow}>
+              <Text style={styles.uberPrice}>{displayPrice}</Text>
+              {hasDiscount && <Text style={styles.uberOriginalPrice}>{originalDisplayPrice}</Text>}
+            </View>
+            {hasDiscount && (
               <Text style={styles.menuDiscountHint}>
                 {itemDiscounts[0].percentage}% OFF
               </Text>
@@ -442,9 +462,12 @@ export default function MenuScreen() {
       <FlatList
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />
+        }
         ListHeaderComponent={
           <View style={styles.deliverySection}>
-            <DeliveryEstimator />
+            <DeliveryEstimator theme={theme} />
           </View>
         }
         ListEmptyComponent={
@@ -537,6 +560,8 @@ export default function MenuScreen() {
           style={[styles.uberCard, { width: CARD_WIDTH }, todayOrderingClosed && styles.uberCardClosed]}
           activeOpacity={0.7}
           onPress={() => handleAddCycleItem(mealName, meal.mealType, dayName, weekKeyStr)}
+          accessibilityRole="button"
+          accessibilityLabel={`${mealName}, R${CYCLE_ITEM_PRICE}${todayOrderingClosed ? ', ordering closed' : ''}`}
         >
           <View style={styles.uberImageSection}>
             <View style={[styles.cycleCardIconWrapFull, { backgroundColor: color + '18' }]}>
@@ -551,6 +576,7 @@ export default function MenuScreen() {
                 <QuickAddButton
                   quantity={qty}
                   onPress={() => handleAddCycleItem(mealName, meal.mealType, dayName, weekKeyStr)}
+                  theme={theme}
                 />
               )}
             </View>
@@ -568,13 +594,19 @@ export default function MenuScreen() {
 
     // TODAY view — only today's meals
     return (
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />
+        }
+      >
         <View style={styles.todayIndicator}>
           <Text style={styles.todayIndicatorText}>Today is <Text style={styles.todayIndicatorDay}>{todayName}</Text></Text>
         </View>
 
         <View style={styles.weekStatusRow}>
-          <CutoffCountdown compact />
+          <CutoffCountdown compact theme={theme} />
         </View>
 
         {todayMeals.length > 0 ? (
@@ -608,19 +640,35 @@ export default function MenuScreen() {
     );
   };
 
+  // Brief shimmer shown for the useSimulatedLoad() initial-load window — a
+  // stand-in for the real fetch this screen will eventually make.
+  const renderMenuSkeleton = () => (
+    <View style={styles.listContainer}>
+      <View style={styles.uberGridColumn}>
+        {[0, 1].map(i => <Skeleton key={`s1-${i}`} theme={theme} style={{ width: CARD_WIDTH, height: 190 }} />)}
+      </View>
+      <View style={styles.uberGridColumn}>
+        {[0, 1].map(i => <Skeleton key={`s2-${i}`} theme={theme} style={{ width: CARD_WIDTH, height: 190 }} />)}
+      </View>
+      <View style={styles.uberGridColumn}>
+        {[0, 1].map(i => <Skeleton key={`s3-${i}`} theme={theme} style={{ width: CARD_WIDTH, height: 190 }} />)}
+      </View>
+    </View>
+  );
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle="light-content" backgroundColor={theme.background} />
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
 
       {/* Admins land here deliberately (via "Preview App") to see exactly what a
           customer sees while editing items — not to place personal orders. */}
       {user?.role === 'admin' && (
         <View style={styles.previewBanner}>
           <View style={styles.previewBannerLeft}>
-            <Ionicons name="eye" size={14} color="#000000" />
+            <Ionicons name="eye" size={14} color={theme.text} />
             <Text style={styles.previewBannerText}>Previewing as a customer</Text>
           </View>
-          <TouchableOpacity onPress={() => router.replace('/admin')}>
+          <TouchableOpacity onPress={() => router.replace('/admin')} accessibilityRole="button" accessibilityLabel="Exit customer preview">
             <Text style={styles.previewBannerExit}>Exit Preview</Text>
           </TouchableOpacity>
         </View>
@@ -633,15 +681,21 @@ export default function MenuScreen() {
           <TextInput
             style={styles.searchInput}
             placeholder="Search dishes, meals..."
-            placeholderTextColor="#9E9E9E"
+            placeholderTextColor={theme.textTertiary}
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCapitalize="none"
             autoCorrect={false}
             returnKeyType="search"
+            accessibilityLabel="Search dishes, meals"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.searchClear}>
+            <TouchableOpacity
+              onPress={() => setSearchQuery('')}
+              style={styles.searchClear}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+            >
               <Text style={styles.searchClearIcon}>✕</Text>
             </TouchableOpacity>
           )}
@@ -649,10 +703,20 @@ export default function MenuScreen() {
       </View>
 
       <View style={styles.toggleContainer}>
-        <TouchableOpacity style={[styles.toggleBtn, menuView === 'main' && styles.toggleBtnActive]} onPress={() => setMenuView('main')}>
+        <TouchableOpacity
+          style={[styles.toggleBtn, menuView === 'main' && styles.toggleBtnActive]}
+          onPress={() => setMenuView('main')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: menuView === 'main' }}
+        >
           <Text style={[styles.toggleBtnText, menuView === 'main' && styles.toggleBtnTextActive]}>Main Menu</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.toggleBtn, menuView === 'today' && styles.toggleBtnActive]} onPress={() => setMenuView('today')}>
+        <TouchableOpacity
+          style={[styles.toggleBtn, menuView === 'today' && styles.toggleBtnActive]}
+          onPress={() => setMenuView('today')}
+          accessibilityRole="button"
+          accessibilityState={{ selected: menuView === 'today' }}
+        >
           <Text style={[styles.toggleBtnText, menuView === 'today' && styles.toggleBtnTextActive]}>Today's Menu</Text>
         </TouchableOpacity>
       </View>
@@ -662,7 +726,7 @@ export default function MenuScreen() {
       )}
       {menuView === 'main' ? renderCategoryFilter() : null}
 
-      {menuView === 'main' ? renderStaticMenuGrid() : renderCycleMenu()}
+      {isLoading ? renderMenuSkeleton() : (menuView === 'main' ? renderStaticMenuGrid() : renderCycleMenu())}
 
       {/* Add to Cart Modal with Notes */}
       <Modal
@@ -675,7 +739,11 @@ export default function MenuScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{isCycleItem ? 'Add Today\'s Meal' : 'Customize Order'}</Text>
-              <TouchableOpacity onPress={() => setSelectedItem(null)}>
+              <TouchableOpacity
+                onPress={() => setSelectedItem(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
@@ -723,6 +791,9 @@ export default function MenuScreen() {
                               style={[styles.sizeChip, selectedSizeIndex === idx && styles.sizeChipActive]}
                               onPress={() => setSelectedSizeIndex(idx)}
                               activeOpacity={0.8}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: selectedSizeIndex === idx }}
+                              accessibilityLabel={`${size.label}, R${size.price.toFixed(0)}`}
                             >
                               <Text style={[styles.sizeChipLabel, selectedSizeIndex === idx && styles.sizeChipTextActive]}>
                                 {size.label}
@@ -748,6 +819,9 @@ export default function MenuScreen() {
                                 style={[styles.addOnRow, addOnIdx > 0 && styles.addOnRowDivider]}
                                 onPress={() => toggleAddOn(addOn.name)}
                                 activeOpacity={0.7}
+                                accessibilityRole="checkbox"
+                                accessibilityState={{ checked: isSelected }}
+                                accessibilityLabel={`${addOn.name}, +R${addOn.price.toFixed(0)}`}
                               >
                                 <View style={styles.addOnRowLeft}>
                                   <View style={[styles.addOnCheckbox, isSelected && styles.addOnCheckboxSelected]}>
@@ -768,7 +842,11 @@ export default function MenuScreen() {
                         <View style={styles.deliverySectionHeader}>
                           <Text style={styles.notesLabel}>DELIVER ON (OPTIONAL)</Text>
                           {selectedDeliveryDates.length > 0 && (
-                            <TouchableOpacity onPress={() => setSelectedDeliveryDates([])}>
+                            <TouchableOpacity
+                              onPress={() => setSelectedDeliveryDates([])}
+                              accessibilityRole="button"
+                              accessibilityLabel="Clear selected delivery dates"
+                            >
                               <Text style={styles.deliveryClearText}>Clear</Text>
                             </TouchableOpacity>
                           )}
@@ -791,6 +869,9 @@ export default function MenuScreen() {
                                       style={[styles.deliveryChip, isSelected && styles.deliveryChipActive]}
                                       onPress={() => toggleDeliveryDate(day.iso)}
                                       activeOpacity={0.8}
+                                      accessibilityRole="checkbox"
+                                      accessibilityState={{ checked: isSelected }}
+                                      accessibilityLabel={day.label}
                                     >
                                       <Text style={[styles.deliveryChipText, isSelected && styles.deliveryChipTextActive]}>
                                         {day.label}
@@ -806,7 +887,7 @@ export default function MenuScreen() {
                     )}
 
                     {selectedItem.tags && selectedItem.tags.length > 0 && (
-                      <DietaryTagRow key={selectedItem.id} tags={selectedItem.tags} />
+                      <DietaryTagRow key={selectedItem.id} tags={selectedItem.tags} styles={styles} />
                     )}
 
                     <View style={styles.quantitySection}>
@@ -816,13 +897,17 @@ export default function MenuScreen() {
                             style={[styles.stepperBtn, modalQuantity <= 1 && styles.stepperBtnDisabled]}
                             onPress={() => setModalQuantity(q => Math.max(1, q - 1))}
                             disabled={modalQuantity <= 1}
+                            accessibilityRole="button"
+                            accessibilityLabel="Decrease quantity"
                           >
                             <Text style={styles.stepperBtnText}>−</Text>
                           </TouchableOpacity>
-                          <Text style={styles.stepperValue}>{modalQuantity}</Text>
+                          <Text style={styles.stepperValue} accessibilityLabel={`Quantity: ${modalQuantity}`}>{modalQuantity}</Text>
                           <TouchableOpacity
                             style={styles.stepperBtn}
                             onPress={() => setModalQuantity(q => Math.min(20, q + 1))}
+                            accessibilityRole="button"
+                            accessibilityLabel="Increase quantity"
                           >
                             <Text style={styles.stepperBtnText}>+</Text>
                           </TouchableOpacity>
@@ -834,17 +919,29 @@ export default function MenuScreen() {
                       <TextInput
                         style={styles.notesInput}
                         placeholder="e.g., No onions, allergy to nuts, extra sauce..."
-                        placeholderTextColor="#9E9E9E"
+                        placeholderTextColor={theme.textTertiary}
                         value={specialInstructions}
                         onChangeText={setSpecialInstructions}
                         multiline={true}
                         numberOfLines={4}
                         textAlignVertical="top"
+                        accessibilityLabel="Special instructions or allergies"
                       />
                     </View>
                   </ScrollView>
 
-                  <TouchableOpacity style={styles.modalAddBtn} onPress={confirmAddToCart} activeOpacity={0.9}>
+                  <TouchableOpacity
+                    ref={addToCartBtnRef}
+                    style={styles.modalAddBtn}
+                    onPress={() => {
+                      addToCartBtnRef.current?.measureInWindow((x, y, width, height) => {
+                        triggerCartFly(x + width / 2, y + height / 2);
+                      });
+                      confirmAddToCart();
+                    }}
+                    activeOpacity={0.9}
+                    accessibilityRole="button"
+                  >
                     <Text style={styles.modalAddBtnText}>
                       Add to Cart · R{lineTotal.toFixed(2)}
                       {dayMultiplier > 1 ? ` (${dayMultiplier} days)` : ''}
@@ -871,7 +968,11 @@ export default function MenuScreen() {
               {cutoffInfo.message} Today's Menu items can only be ordered for today, so this one can't be added right now.
             </Text>
             <Text style={styles.closedDialogDate}>Next window: {cutoffInfo.formattedEarliest}</Text>
-            <TouchableOpacity style={styles.closedDialogBtn} onPress={() => setShowOrderingClosedNotice(false)}>
+            <TouchableOpacity
+              style={styles.closedDialogBtn}
+              onPress={() => setShowOrderingClosedNotice(false)}
+              accessibilityRole="button"
+            >
               <Text style={styles.closedDialogBtnText}>Got it</Text>
             </TouchableOpacity>
           </View>
@@ -881,23 +982,25 @@ export default function MenuScreen() {
   );
 }
 
+type Styles = ReturnType<typeof createStyles>;
+
 // Dietary tag chips fade + scale in with a short stagger when the customizer
 // opens. Purely presentational — tags come straight from menu data and are
 // only rendered when a dish actually has them (none of the bundled items do yet).
-function DietaryTagRow({ tags }: { tags: string[] }) {
+function DietaryTagRow({ tags, styles }: { tags: string[]; styles: Styles }) {
   return (
     <View style={styles.tagsSection}>
       <Text style={styles.notesLabel}>DIETARY TAGS</Text>
       <View style={styles.tagsRow}>
         {tags.map((tag, idx) => (
-          <AnimatedTagChip key={tag} label={tag} delay={idx * 60} />
+          <AnimatedTagChip key={tag} label={tag} delay={idx * 60} styles={styles} />
         ))}
       </View>
     </View>
   );
 }
 
-function AnimatedTagChip({ label, delay }: { label: string; delay: number }) {
+function AnimatedTagChip({ label, delay, styles }: { label: string; delay: number; styles: Styles }) {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.timing(anim, { toValue: 1, duration: 240, delay, useNativeDriver: true }).start();
@@ -918,92 +1021,92 @@ function AnimatedTagChip({ label, delay }: { label: string; delay: number }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
   previewBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderBottomWidth: 1,
-    borderBottomColor: '#EBEBEB',
+    borderBottomColor: theme.border,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
   previewBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  previewBannerText: { color: '#000000', fontSize: 12, fontWeight: '800' },
-  previewBannerExit: { color: '#000000', fontSize: 12, fontWeight: '800', textDecorationLine: 'underline' },
+  previewBannerText: { color: theme.text, fontSize: 12, fontWeight: '800' },
+  previewBannerExit: { color: theme.text, fontSize: 12, fontWeight: '800', textDecorationLine: 'underline' },
   searchSection: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
   searchWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.inputBg,
     borderRadius: 14,
     paddingHorizontal: 14,
     height: 44,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   searchIcon: { fontSize: 15, marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14, color: '#000000', paddingVertical: 0, height: 44 },
+  searchInput: { flex: 1, fontSize: 14, color: theme.text, paddingVertical: 0, height: 44 },
   searchClear: { padding: 4 },
-  searchClearIcon: { fontSize: 16, color: '#9E9E9E', fontWeight: '700' },
+  searchClearIcon: { fontSize: 16, color: theme.textTertiary, fontWeight: '700' },
   toggleContainer: {
     flexDirection: 'row',
     padding: 4,
     paddingHorizontal: 6,
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     marginHorizontal: 16,
     marginVertical: 8,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   toggleBtn: { flex: 1, paddingVertical: 7, alignItems: 'center', borderRadius: 9, marginHorizontal: 2 },
-  toggleBtnActive: { backgroundColor: '#000000' },
-  toggleBtnText: { color: '#9E9E9E', fontSize: 13, fontWeight: '700' },
+  toggleBtnActive: { backgroundColor: theme.accent },
+  toggleBtnText: { color: theme.textTertiary, fontSize: 13, fontWeight: '700' },
   exploreHeading: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#000000',
+    color: theme.text,
     letterSpacing: -0.3,
     marginHorizontal: 16,
     marginTop: 4,
     marginBottom: 10,
   },
-  toggleBtnTextActive: { color: '#FFFFFF' },
-  deliverySection: { marginBottom: 4 },
+  toggleBtnTextActive: { color: theme.onAccent },
+  deliverySection: { marginTop: 8, marginBottom: 12 },
   listContainer: { paddingHorizontal: 16, paddingBottom: 100 },
   emptyContainer: { padding: 40, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: '#9E9E9E', textAlign: 'center', fontSize: 14 },
+  emptyText: { color: theme.textTertiary, textAlign: 'center', fontSize: 14 },
   emptyEmoji: { fontSize: 32, marginBottom: 12 },
-  emptyTitle: { color: '#000000', fontSize: 16, fontWeight: '700', marginBottom: 6 },
-  emptySub: { color: '#9E9E9E', fontSize: 13, textAlign: 'center' },
+  emptyTitle: { color: theme.text, fontSize: 16, fontWeight: '700', marginBottom: 6 },
+  emptySub: { color: theme.textTertiary, fontSize: 13, textAlign: 'center' },
 
   categoryFilterContainer: { marginBottom: 16 },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F6F6F6',
-    paddingVertical: 10,
+    backgroundColor: theme.surfaceSecondary,
+    paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     marginRight: 10,
   },
   categoryChipActive: {
-    backgroundColor: '#000000',
-    borderColor: '#000000',
+    backgroundColor: theme.accent,
+    borderColor: theme.accent,
   },
   categoryChipIcon: { fontSize: 18, marginRight: 7 },
-  categoryChipText: { color: '#6B6B6B', fontSize: 14, fontWeight: '700' },
-  categoryChipTextActive: { color: '#FFFFFF' },
+  categoryChipText: { color: theme.textSecondary, fontSize: 14, fontWeight: '700' },
+  categoryChipTextActive: { color: theme.onAccent },
 
   categorySection: { marginBottom: 28 },
   categoryHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, paddingHorizontal: 4 },
   categoryIcon: { fontSize: 24, marginRight: 10 },
-  categoryTitle: { fontSize: 21, fontWeight: '800', color: '#000000', letterSpacing: -0.4 },
+  categoryTitle: { fontSize: 21, fontWeight: '800', color: theme.text, letterSpacing: -0.4 },
   uberGrid: {},
   uberGridColumn: {
     justifyContent: 'space-between',
@@ -1011,11 +1114,11 @@ const styles = StyleSheet.create({
   },
 
   uberCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
@@ -1029,7 +1132,7 @@ const styles = StyleSheet.create({
   uberImageContainer: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#F0F0F0',
+    backgroundColor: theme.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -1060,31 +1163,33 @@ const styles = StyleSheet.create({
   },
   uberItemEmoji: { fontSize: 48 },
   uberContent: { padding: 10 },
-  uberItemName: { fontSize: 14, fontWeight: '800', color: '#000000', lineHeight: 18, marginBottom: 3, letterSpacing: -0.2 },
-  uberItemDesc: { fontSize: 11, color: '#6B6B6B', lineHeight: 14, marginBottom: 8 },
-  uberMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  uberPrice: { fontSize: 15, fontWeight: '900', color: '#000000', letterSpacing: -0.4 },
+  uberItemName: { fontSize: 15, fontWeight: '800', color: theme.text, lineHeight: 19, marginBottom: 3, letterSpacing: -0.2 },
+  uberItemDesc: { fontSize: 11, color: theme.textSecondary, lineHeight: 15, marginBottom: 8 },
+  uberMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
+  uberPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexShrink: 1 },
+  uberPrice: { fontSize: 15, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
+  uberOriginalPrice: { fontSize: 12, fontWeight: '600', color: theme.textTertiary, textDecorationLine: 'line-through' },
 
   todayIndicator: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderRadius: 16,
     paddingVertical: 10,
     paddingHorizontal: 16,
     marginBottom: 16,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
-  todayIndicatorText: { color: '#6B6B6B', fontSize: 14, fontWeight: '600' },
-  todayIndicatorDay: { color: '#22C55E', fontWeight: '800' },
+  todayIndicatorText: { color: theme.textSecondary, fontSize: 14, fontWeight: '600' },
+  todayIndicatorDay: { color: theme.success, fontWeight: '800' },
 
   dayHeaderBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
   dayHeaderLeft: { flexDirection: 'row', alignItems: 'center' },
-  todayDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#22C55E', marginRight: 6 },
-  dayTitle: { fontSize: 15, fontWeight: '800', color: '#000000' },
-  dayTitleToday: { color: '#22C55E' },
-  dayMealCount: { fontSize: 12, color: '#9E9E9E', fontWeight: '600' },
-  
+  todayDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.success, marginRight: 6 },
+  dayTitle: { fontSize: 15, fontWeight: '800', color: theme.text },
+  dayTitleToday: { color: theme.success },
+  dayMealCount: { fontSize: 12, color: theme.textTertiary, fontWeight: '600' },
+
   cycleCardIconWrapFull: {
     width: '100%',
     height: '100%',
@@ -1096,31 +1201,31 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     left: 8,
-    backgroundColor: '#22C55E',
+    backgroundColor: theme.success,
     borderRadius: 12,
     paddingVertical: 2,
     paddingHorizontal: 8,
   },
   todayBadgeText: { color: '#000000', fontSize: 10, fontWeight: '800' },
   todayCardBorder: {
-    borderColor: '#22C55E',
+    borderColor: theme.success,
   },
   cycleMealType: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
 
   // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+    backgroundColor: theme.modalOverlay,
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     padding: 24,
     paddingBottom: 16,
     borderTopWidth: 1,
-    borderTopColor: '#EBEBEB',
+    borderTopColor: theme.border,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
@@ -1137,46 +1242,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  modalTitle: { fontSize: 22, fontWeight: '900', color: '#000000', letterSpacing: -0.5 },
-  modalClose: { fontSize: 28, color: '#6B6B6B', fontWeight: '600' },
+  modalTitle: { fontSize: 22, fontWeight: '900', color: theme.text, letterSpacing: -0.5 },
+  modalClose: { fontSize: 28, color: theme.textSecondary, fontWeight: '600' },
   modalItemInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderRadius: 16,
     padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   modalItemIcon: { fontSize: 40, marginRight: 12 },
   modalItemDetails: { flex: 1 },
-  modalItemName: { fontSize: 16, fontWeight: '800', color: '#000000', marginBottom: 4 },
-  modalItemPrice: { fontSize: 18, fontWeight: '900', color: '#000000' },
-  modalItemMealType: { fontSize: 13, fontWeight: '600', color: '#6B6B6B', marginTop: 2 },
+  modalItemName: { fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 4 },
+  modalItemPrice: { fontSize: 18, fontWeight: '900', color: theme.text },
+  modalItemMealType: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginTop: 2 },
   notesSection: { marginBottom: 20 },
-  notesLabel: { fontSize: 13, fontWeight: '700', color: '#6B6B6B', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  notesLabel: { fontSize: 13, fontWeight: '700', color: theme.textSecondary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   ingredientsSection: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 14,
     padding: 12,
     marginBottom: 20,
   },
-  ingredientsText: { fontSize: 13, color: '#000000', lineHeight: 19, fontWeight: '500' },
+  ingredientsText: { fontSize: 13, color: theme.text, lineHeight: 19, fontWeight: '500' },
   notesInput: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.inputBg,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 16,
     padding: 16,
     fontSize: 15,
-    color: '#000000',
+    color: theme.text,
     minHeight: 120,
   },
   modalAddBtn: {
-    backgroundColor: '#000000',
+    backgroundColor: theme.accent,
     paddingVertical: 18,
     borderRadius: 16,
     alignItems: 'center',
@@ -1186,13 +1291,18 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 6,
   },
-  modalAddBtnText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  modalAddBtnText: { color: theme.onAccent, fontSize: 16, fontWeight: '800' },
 
   // Quick-add button positioning wrapper (button itself lives in QuickAddButton.tsx)
   uberQuickAddWrap: { position: 'absolute', bottom: 10, right: 10 },
 
   // Today's cycle menu — cutoff status row
-  weekStatusRow: { paddingHorizontal: 16, marginBottom: 12, marginTop: 8 },
+  // No paddingHorizontal here — the parent ScrollView's contentContainerStyle
+  // already pads 16px; adding it again here double-inset this row vs. every
+  // other element on the Today's Menu tab (and vs. DeliveryEstimator's
+  // equivalent slot on the Main Menu tab, which relies on the same parent
+  // padding via `listContainer`).
+  weekStatusRow: { marginBottom: 12, marginTop: 8 },
 
   // Cycle card dimmed state once today's ordering window has closed
   uberCardClosed: { opacity: 0.45 },
@@ -1207,11 +1317,11 @@ const styles = StyleSheet.create({
   closedBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
 
   // "Today's ordering has closed" explainer dialog
-  closedDialogOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  closedDialogOverlay: { flex: 1, backgroundColor: theme.modalOverlay, justifyContent: 'center', alignItems: 'center', padding: 24 },
   closedDialogCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 24,
     padding: 28,
     width: '100%',
@@ -1219,33 +1329,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   closedDialogIcon: { fontSize: 36, marginBottom: 12 },
-  closedDialogTitle: { fontSize: 18, fontWeight: '900', color: '#000000', marginBottom: 8, textAlign: 'center' },
-  closedDialogText: { fontSize: 14, color: '#6B6B6B', textAlign: 'center', lineHeight: 20 },
-  closedDialogDate: { fontSize: 12, color: '#000000', fontWeight: '700', marginTop: 10, marginBottom: 20 },
-  closedDialogBtn: { backgroundColor: '#000000', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 14, alignSelf: 'stretch', alignItems: 'center' },
-  closedDialogBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  closedDialogTitle: { fontSize: 18, fontWeight: '900', color: theme.text, marginBottom: 8, textAlign: 'center' },
+  closedDialogText: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', lineHeight: 20 },
+  closedDialogDate: { fontSize: 12, color: theme.text, fontWeight: '700', marginTop: 10, marginBottom: 20 },
+  closedDialogBtn: { backgroundColor: theme.accent, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 14, alignSelf: 'stretch', alignItems: 'center' },
+  closedDialogBtnText: { color: theme.onAccent, fontSize: 15, fontWeight: '800' },
 
   // Item customizer modal — size picker, quantity stepper, dietary tags
   sizeSection: { marginBottom: 20 },
   sizeRow: { flexDirection: 'row', gap: 10 },
   sizeChip: {
     flex: 1,
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1.5,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 14,
     paddingVertical: 12,
     alignItems: 'center',
   },
-  sizeChipActive: { borderColor: '#000000', backgroundColor: '#F0F0F0' },
-  sizeChipLabel: { color: '#000000', fontSize: 13, fontWeight: '800', marginBottom: 2 },
-  sizeChipPrice: { color: '#6B6B6B', fontSize: 12, fontWeight: '600' },
-  sizeChipTextActive: { color: '#000000' },
+  sizeChipActive: { borderColor: theme.accent, backgroundColor: theme.surfaceSecondary },
+  sizeChipLabel: { color: theme.text, fontSize: 13, fontWeight: '800', marginBottom: 2 },
+  sizeChipPrice: { color: theme.textSecondary, fontSize: 12, fontWeight: '600' },
+  sizeChipTextActive: { color: theme.text },
   addOnsSection: { marginBottom: 20 },
   addOnsList: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 14,
     overflow: 'hidden',
   },
@@ -1256,40 +1366,40 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 14,
   },
-  addOnRowDivider: { borderTopWidth: 1, borderTopColor: '#EBEBEB' },
+  addOnRowDivider: { borderTopWidth: 1, borderTopColor: theme.border },
   addOnRowLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 10 },
   addOnCheckbox: {
     width: 20,
     height: 20,
     borderRadius: 5,
     borderWidth: 1.5,
-    borderColor: '#9E9E9E',
+    borderColor: theme.textTertiary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
   },
-  addOnCheckboxSelected: { backgroundColor: '#000000', borderColor: '#000000' },
-  addOnCheckboxCheck: { color: '#FFFFFF', fontSize: 12, fontWeight: '800' },
-  addOnName: { color: '#000000', fontSize: 14, fontWeight: '600', flexShrink: 1 },
-  addOnPrice: { color: '#6B6B6B', fontSize: 13, fontWeight: '700' },
+  addOnCheckboxSelected: { backgroundColor: theme.accent, borderColor: theme.accent },
+  addOnCheckboxCheck: { color: theme.onAccent, fontSize: 12, fontWeight: '800' },
+  addOnName: { color: theme.text, fontSize: 14, fontWeight: '600', flexShrink: 1 },
+  addOnPrice: { color: theme.textSecondary, fontSize: 13, fontWeight: '700' },
   deliveryDatesSection: { marginBottom: 20 },
   deliverySectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  deliveryClearText: { color: '#000000', fontSize: 12, fontWeight: '700' },
-  deliveryHint: { color: '#9E9E9E', fontSize: 12, marginBottom: 12, lineHeight: 16 },
+  deliveryClearText: { color: theme.text, fontSize: 12, fontWeight: '700' },
+  deliveryHint: { color: theme.textTertiary, fontSize: 12, marginBottom: 12, lineHeight: 16 },
   deliveryGroup: { marginBottom: 12 },
-  deliveryGroupLabel: { color: '#9E9E9E', fontSize: 11, fontWeight: '700', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
+  deliveryGroupLabel: { color: theme.textTertiary, fontSize: 11, fontWeight: '700', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
   deliveryChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   deliveryChip: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1.5,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 12,
     paddingVertical: 8,
     paddingHorizontal: 12,
   },
-  deliveryChipActive: { borderColor: '#000000', backgroundColor: '#F0F0F0' },
-  deliveryChipText: { color: '#6B6B6B', fontSize: 12, fontWeight: '700' },
-  deliveryChipTextActive: { color: '#000000' },
+  deliveryChipActive: { borderColor: theme.accent, backgroundColor: theme.surfaceSecondary },
+  deliveryChipText: { color: theme.textSecondary, fontSize: 12, fontWeight: '700' },
+  deliveryChipTextActive: { color: theme.text },
   tagsSection: { marginBottom: 20 },
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tagChip: {
@@ -1305,9 +1415,9 @@ const styles = StyleSheet.create({
   quantityStepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 14,
     alignSelf: 'flex-start',
     paddingHorizontal: 6,
@@ -1319,6 +1429,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   stepperBtnDisabled: { opacity: 0.35 },
-  stepperBtnText: { color: '#000000', fontSize: 20, fontWeight: '800' },
-  stepperValue: { color: '#000000', fontSize: 16, fontWeight: '800', minWidth: 32, textAlign: 'center' },
+  stepperBtnText: { color: theme.text, fontSize: 20, fontWeight: '800' },
+  stepperValue: { color: theme.text, fontSize: 16, fontWeight: '800', minWidth: 32, textAlign: 'center' },
 });

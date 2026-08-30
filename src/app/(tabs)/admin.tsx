@@ -1,10 +1,13 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, StatusBar, ScrollView, TextInput, Modal, Dimensions } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, StatusBar, ScrollView, TextInput, Modal, Dimensions, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useKitchen, Order, AppUser } from '../../context/KitchenCoContext';
 import { Ionicons } from '@expo/vector-icons';
 import { calculateDeliveryFee, getItemDueDate, isSameDay } from '../../utils/deliveryHelpers';
+import { ThemeColors } from '../../utils/theme';
+import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
+import { haptics } from '../../utils/haptics';
 
 const STATUS_COLORS: Record<string, string> = {
   pending: '#FF9500',
@@ -41,7 +44,9 @@ const TAB_ICONS: Record<TabType, string> = {
 };
 
 export default function AdminScreen() {
-    const { orders, activeWeek, setActiveWeek, allUsers, discounts, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, addCompany, deleteCompany, updateOrderStatus } = useKitchen();
+    const { orders, activeWeek, setActiveWeek, allUsers, discounts, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, addCompany, deleteCompany, updateOrderStatus, theme } = useKitchen();
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { refreshing, refresh } = useSimulatedLoad();
   const router = useRouter();
   const [selectedTab, setSelectedTab] = useState<TabType>('dashboard');
   const [showAddDiscount, setShowAddDiscount] = useState(false);
@@ -159,6 +164,7 @@ export default function AdminScreen() {
       categoryId: discountCategory || undefined,
       itemName: discountItem || undefined,
     });
+    haptics.success();
     setDiscountCode('');
     setDiscountPercent('');
     setDiscountExpiry('');
@@ -191,6 +197,7 @@ export default function AdminScreen() {
         distanceKm: Number.isFinite(parsedDistance) ? parsedDistance : undefined,
       } : undefined,
     });
+    haptics.success();
     setNewCompanyName('');
     setNewCompanyDomains('');
     setNewCompanyStreet('');
@@ -214,6 +221,7 @@ export default function AdminScreen() {
         orderCount: 0,
       };
       addUser(newUser);
+      haptics.success();
       setNewUserName('');
       setNewUserEmail('');
       setShowAddUser(false);
@@ -222,7 +230,7 @@ export default function AdminScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
 
       {/* Shell header — identity + the one action that matters everywhere: previewing the live app */}
       <View style={styles.shellHeader}>
@@ -234,8 +242,10 @@ export default function AdminScreen() {
           style={styles.previewBtn}
           onPress={() => router.push('/')}
           testID="preview-as-customer-button"
+          accessibilityRole="button"
+          accessibilityLabel="Preview app as customer"
         >
-          <Ionicons name="eye" size={16} color="#000000" />
+          <Ionicons name="eye" size={16} color={theme.text} />
           <Text style={styles.previewBtnText}>Preview App</Text>
         </TouchableOpacity>
       </View>
@@ -254,13 +264,16 @@ export default function AdminScreen() {
             <TouchableOpacity
               key={key}
               style={[styles.tabPill, isActive && styles.tabPillActive]}
-              onPress={() => setSelectedTab(key)}
+              onPress={() => { haptics.selection(); setSelectedTab(key); }}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`${label} tab`}
             >
               <Ionicons
                 name={TAB_ICONS[key] as any}
                 size={16}
-                color={isActive ? '#FFFFFF' : '#6B6B6B'}
+                color={isActive ? theme.onAccent : theme.textSecondary}
               />
               <Text style={[styles.tabPillLabel, isActive && styles.tabPillLabelActive]}>{label}</Text>
             </TouchableOpacity>
@@ -268,7 +281,12 @@ export default function AdminScreen() {
         })}
       </ScrollView>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />}
+      >
         {selectedTab === 'dashboard' && (
           <>
             {/* Header */}
@@ -281,7 +299,7 @@ export default function AdminScreen() {
                 right now, ahead of the retrospective stats below. */}
             <View style={styles.todayCard}>
               <View style={styles.todayCardHeader}>
-                <Ionicons name="today" size={16} color="#000000" />
+                <Ionicons name="today" size={16} color={theme.text} />
                 <Text style={styles.todayCardTitle}>Today at a Glance</Text>
               </View>
               <View style={styles.todayCardRow}>
@@ -542,14 +560,19 @@ export default function AdminScreen() {
                 <Text style={styles.greeting}>User Management</Text>
                 <Text style={styles.greetingSub}>{allUsers.length} registered users</Text>
               </View>
-              <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddUser(true)}>
-                <Ionicons name="add" size={22} color="#000000" />
+              <TouchableOpacity
+                style={styles.addBtn}
+                onPress={() => setShowAddUser(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Add user"
+              >
+                <Ionicons name="add" size={22} color={theme.text} />
               </TouchableOpacity>
             </View>
             {allUsers.length === 0 ? (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIconWrap}>
-                  <Ionicons name="people-outline" size={40} color="#6B6B6B" />
+                  <Ionicons name="people-outline" size={40} color={theme.textSecondary} />
                 </View>
                 <Text style={styles.emptyTitle}>No users yet</Text>
                 <Text style={styles.emptySub}>Add users to get started</Text>
@@ -581,8 +604,13 @@ export default function AdminScreen() {
                     <Text style={styles.userMeta}>Joined {user.joinedDate} • {user.orderCount} orders</Text>
                   </View>
                   {user.role !== 'admin' && (
-                    <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteUser(user.id)}>
-                      <Ionicons name="trash-outline" size={18} color="#FF453A" />
+                    <TouchableOpacity
+                      style={styles.deleteBtn}
+                      onPress={() => { haptics.warning(); deleteUser(user.id); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete user ${user.name || 'Unknown'}`}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={theme.error} />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -592,19 +620,19 @@ export default function AdminScreen() {
         )}
 
         {selectedTab === 'orders' && (
-          <OrdersSection orders={orders} updateOrderStatus={updateOrderStatus} />
+          <OrdersSection orders={orders} updateOrderStatus={updateOrderStatus} theme={theme} />
         )}
 
         {selectedTab === 'chef' && (
-          <ChefSection orders={orders} updateOrderStatus={updateOrderStatus} />
+          <ChefSection orders={orders} updateOrderStatus={updateOrderStatus} theme={theme} />
         )}
 
         {selectedTab === 'weeks' && (
-          <WeeksSection activeWeek={activeWeek} setActiveWeek={setActiveWeek} />
+          <WeeksSection activeWeek={activeWeek} setActiveWeek={setActiveWeek} theme={theme} />
         )}
 
         {selectedTab === 'meals' && (
-          <MealsSection />
+          <MealsSection theme={theme} />
         )}
 
         {selectedTab === 'discounts' && (
@@ -614,15 +642,21 @@ export default function AdminScreen() {
                 <Text style={styles.greeting}>Discount Codes</Text>
                 <Text style={styles.greetingSub}>{discounts.length} active codes</Text>
               </View>
-              <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddDiscount(true)} testID="add-discount-button">
-                <Ionicons name="add" size={22} color="#000000" />
+              <TouchableOpacity
+                style={styles.addBtn}
+                onPress={() => setShowAddDiscount(true)}
+                testID="add-discount-button"
+                accessibilityRole="button"
+                accessibilityLabel="Add discount"
+              >
+                <Ionicons name="add" size={22} color={theme.text} />
               </TouchableOpacity>
             </View>
-            
+
             {discounts.length === 0 ? (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIconWrap}>
-                  <Ionicons name="pricetag-outline" size={40} color="#6B6B6B" />
+                  <Ionicons name="pricetag-outline" size={40} color={theme.textSecondary} />
                 </View>
                 <Text style={styles.emptyTitle}>No discounts yet</Text>
                 <Text style={styles.emptySub}>Create discount codes to promote your meals</Text>
@@ -637,9 +671,12 @@ export default function AdminScreen() {
                       </View>
                       <Text style={styles.discountPercent}>-{discount.percentage}% OFF</Text>
                     </View>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                       style={[styles.discountToggle, discount.active && styles.discountToggleOn]}
-                      onPress={() => updateDiscount(discount.id, { active: !discount.active })}
+                      onPress={() => { haptics.selection(); updateDiscount(discount.id, { active: !discount.active }); }}
+                      accessibilityRole="switch"
+                      accessibilityState={{ checked: discount.active }}
+                      accessibilityLabel={`${discount.code} active`}
                     >
                       <View style={[styles.discountToggleCircle, discount.active && styles.discountToggleCircleOn]} />
                     </TouchableOpacity>
@@ -656,8 +693,12 @@ export default function AdminScreen() {
                     ) : (
                       <Text style={styles.discountExpiry}>No expiry</Text>
                     )}
-                    <TouchableOpacity onPress={() => deleteDiscount(discount.id)}>
-                      <Ionicons name="trash-outline" size={16} color="#FF453A" />
+                    <TouchableOpacity
+                      onPress={() => { haptics.warning(); deleteDiscount(discount.id); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete discount ${discount.code}`}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={theme.error} />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -673,8 +714,14 @@ export default function AdminScreen() {
                 <Text style={styles.greeting}>Corporate Clients</Text>
                 <Text style={styles.greetingSub}>{companies.length} companies registered</Text>
               </View>
-              <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddCompany(true)} testID="add-company-button">
-                <Ionicons name="add" size={22} color="#000000" />
+              <TouchableOpacity
+                style={styles.addBtn}
+                onPress={() => setShowAddCompany(true)}
+                testID="add-company-button"
+                accessibilityRole="button"
+                accessibilityLabel="Add company"
+              >
+                <Ionicons name="add" size={22} color={theme.text} />
               </TouchableOpacity>
             </View>
 
@@ -693,7 +740,7 @@ export default function AdminScreen() {
             {companies.length === 0 ? (
               <View style={styles.emptyState}>
                 <View style={styles.emptyIconWrap}>
-                  <Ionicons name="business-outline" size={40} color="#6B6B6B" />
+                  <Ionicons name="business-outline" size={40} color={theme.textSecondary} />
                 </View>
                 <Text style={styles.emptyTitle}>No companies yet</Text>
                 <Text style={styles.emptySub}>Add a corporate client to get started</Text>
@@ -713,7 +760,7 @@ export default function AdminScreen() {
                       {company.address ? (
                         <>
                           <View style={styles.companyAddressRow}>
-                            <Ionicons name="location" size={11} color="#6B6B6B" />
+                            <Ionicons name="location" size={11} color={theme.textSecondary} />
                             <Text style={styles.companyAddressText} numberOfLines={1}>
                               {company.address.unit ? `${company.address.unit}, ` : ''}
                               {company.address.street}, {company.address.suburb}
@@ -743,8 +790,13 @@ export default function AdminScreen() {
                         </View>
                       )}
                     </View>
-                    <TouchableOpacity style={styles.deleteBtn} onPress={() => deleteCompany(company.id)}>
-                      <Ionicons name="trash-outline" size={18} color="#FF453A" />
+                    <TouchableOpacity
+                      style={styles.deleteBtn}
+                      onPress={() => { haptics.warning(); deleteCompany(company.id); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete company ${company.name}`}
+                    >
+                      <Ionicons name="trash-outline" size={18} color={theme.error} />
                     </TouchableOpacity>
                   </View>
                 );
@@ -760,14 +812,18 @@ export default function AdminScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Discount</Text>
-              <TouchableOpacity onPress={() => setShowAddDiscount(false)}>
-                <Ionicons name="close" size={24} color="#6B6B6B" />
+              <TouchableOpacity
+                onPress={() => setShowAddDiscount(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <Ionicons name="close" size={24} color={theme.textSecondary} />
               </TouchableOpacity>
             </View>
             <TextInput
               style={styles.modalInput}
               placeholder="Code (e.g. SAVE20)"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={discountCode}
               onChangeText={setDiscountCode}
               autoCapitalize="characters"
@@ -775,7 +831,7 @@ export default function AdminScreen() {
             <TextInput
               style={styles.modalInput}
               placeholder="Percentage (e.g. 20)"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={discountPercent}
               onChangeText={setDiscountPercent}
               keyboardType="numeric"
@@ -783,7 +839,7 @@ export default function AdminScreen() {
             <TextInput
               style={[styles.modalInput, discountExpiryError ? styles.modalInputError : null]}
               placeholder="Expiry date (optional, e.g. 31 Dec 2026)"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={discountExpiry}
               onChangeText={(val) => { setDiscountExpiry(val); setDiscountExpiryError(''); }}
             />
@@ -793,6 +849,8 @@ export default function AdminScreen() {
               <TouchableOpacity
                 style={[styles.categoryPickerChip, discountCompany === '' && styles.categoryPickerChipActive]}
                 onPress={() => setDiscountCompany('')}
+                accessibilityRole="button"
+                accessibilityState={{ selected: discountCompany === '' }}
               >
                 <Text style={[styles.categoryPickerChipText, discountCompany === '' && styles.categoryPickerChipTextActive]}>
                   Any / Everyone
@@ -803,6 +861,8 @@ export default function AdminScreen() {
                   key={co.id}
                   style={[styles.categoryPickerChip, discountCompany === co.name && styles.categoryPickerChipActive]}
                   onPress={() => setDiscountCompany(co.name)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: discountCompany === co.name }}
                 >
                   <Text style={[styles.categoryPickerChipText, discountCompany === co.name && styles.categoryPickerChipTextActive]}>
                     {co.name}
@@ -865,10 +925,10 @@ export default function AdminScreen() {
               </>
             )}
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddDiscount(false)}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddDiscount(false)} accessibilityRole="button">
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddDiscount}>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddDiscount} accessibilityRole="button">
                 <Text style={styles.modalSaveText}>Add Discount</Text>
               </TouchableOpacity>
             </View>
@@ -882,31 +942,35 @@ export default function AdminScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add User</Text>
-              <TouchableOpacity onPress={() => setShowAddUser(false)}>
-                <Ionicons name="close" size={24} color="#6B6B6B" />
+              <TouchableOpacity
+                onPress={() => setShowAddUser(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <Ionicons name="close" size={24} color={theme.textSecondary} />
               </TouchableOpacity>
             </View>
             <TextInput
               style={styles.modalInput}
               placeholder="Full Name"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={newUserName}
               onChangeText={setNewUserName}
             />
             <TextInput
               style={styles.modalInput}
               placeholder="Email Address"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={newUserEmail}
               onChangeText={setNewUserEmail}
               keyboardType="email-address"
               autoCapitalize="none"
             />
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddUser(false)}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddUser(false)} accessibilityRole="button">
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddUser}>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddUser} accessibilityRole="button">
                 <Text style={styles.modalSaveText}>Add User</Text>
               </TouchableOpacity>
             </View>
@@ -920,21 +984,21 @@ export default function AdminScreen() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Company</Text>
-              <TouchableOpacity onPress={() => setShowAddCompany(false)}>
-                <Ionicons name="close" size={24} color="#6B6B6B" />
+              <TouchableOpacity onPress={() => setShowAddCompany(false)} accessibilityRole="button" accessibilityLabel="Close">
+                <Ionicons name="close" size={24} color={theme.textSecondary} />
               </TouchableOpacity>
             </View>
             <TextInput
               style={styles.modalInput}
               placeholder="Company Name (e.g. Acme Logistics)"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={newCompanyName}
               onChangeText={setNewCompanyName}
             />
             <TextInput
               style={styles.modalInput}
               placeholder="Email domain(s), comma-separated"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={newCompanyDomains}
               onChangeText={setNewCompanyDomains}
               keyboardType="email-address"
@@ -947,14 +1011,14 @@ export default function AdminScreen() {
             <TextInput
               style={styles.modalInput}
               placeholder="Street address"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={newCompanyStreet}
               onChangeText={setNewCompanyStreet}
             />
             <TextInput
               style={styles.modalInput}
               placeholder="Floor / suite / unit (optional)"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={newCompanyUnit}
               onChangeText={setNewCompanyUnit}
             />
@@ -962,14 +1026,14 @@ export default function AdminScreen() {
               <TextInput
                 style={[styles.modalInput, styles.modalRowInput]}
                 placeholder="Suburb"
-                placeholderTextColor="#6B6B6B"
+                placeholderTextColor={theme.textTertiary}
                 value={newCompanySuburb}
                 onChangeText={setNewCompanySuburb}
               />
               <TextInput
                 style={[styles.modalInput, styles.modalRowInput]}
                 placeholder="City"
-                placeholderTextColor="#6B6B6B"
+                placeholderTextColor={theme.textTertiary}
                 value={newCompanyCity}
                 onChangeText={setNewCompanyCity}
               />
@@ -978,7 +1042,7 @@ export default function AdminScreen() {
               <TextInput
                 style={[styles.modalInput, styles.modalRowInput]}
                 placeholder="Postal code"
-                placeholderTextColor="#6B6B6B"
+                placeholderTextColor={theme.textTertiary}
                 value={newCompanyCode}
                 onChangeText={setNewCompanyCode}
                 keyboardType="numeric"
@@ -986,7 +1050,7 @@ export default function AdminScreen() {
               <TextInput
                 style={[styles.modalInput, styles.modalRowInput]}
                 placeholder="Distance (km)"
-                placeholderTextColor="#6B6B6B"
+                placeholderTextColor={theme.textTertiary}
                 value={newCompanyDistance}
                 onChangeText={setNewCompanyDistance}
                 keyboardType="numeric"
@@ -999,7 +1063,7 @@ export default function AdminScreen() {
             <TextInput
               style={styles.modalInput}
               placeholder="e.g. Use the loading bay entrance, sign in at security, ask for reception on floor 6"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={newCompanyInstructions}
               onChangeText={setNewCompanyInstructions}
               multiline
@@ -1010,10 +1074,10 @@ export default function AdminScreen() {
               Standing access notes shown to the courier on every order to this company — no need to re-enter them per order.
             </Text>
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddCompany(false)}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddCompany(false)} accessibilityRole="button">
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddCompany}>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddCompany} accessibilityRole="button">
                 <Text style={styles.modalSaveText}>Add Company</Text>
               </TouchableOpacity>
             </View>
@@ -1024,8 +1088,9 @@ export default function AdminScreen() {
   );
 }
 
-function MealsSection() {
+function MealsSection({ theme }: { theme: ThemeColors }) {
   const { menus, addMenuItem, updateMenuItem, deleteMenuItem } = useKitchen();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -1063,6 +1128,7 @@ function MealsSection() {
       price: priceNum,
       description: newItemDesc.trim() || `${newItemName.trim()} - Freshly prepared`,
     });
+    haptics.success();
     setNewItemName('');
     setNewItemPrice('');
     setNewItemDesc('');
@@ -1086,6 +1152,7 @@ function MealsSection() {
       price: priceNum,
       description: editingItem.description.trim(),
     });
+    haptics.success();
     setEditingItem(null);
     setShowEditModal(false);
   };
@@ -1118,12 +1185,23 @@ function MealsSection() {
           </Text>
         </View>
         <View style={styles.mealsHeaderActions}>
-          <TouchableOpacity style={styles.previewMenuBtn} onPress={() => router.push('/')}>
-            <Ionicons name="eye-outline" size={16} color="#000000" />
+          <TouchableOpacity
+            style={styles.previewMenuBtn}
+            onPress={() => router.push('/')}
+            accessibilityRole="button"
+            accessibilityLabel="Preview app as customer"
+          >
+            <Ionicons name="eye-outline" size={16} color={theme.text} />
             <Text style={styles.previewMenuBtnText}>Preview</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddModal(true)} testID="add-meal-button">
-            <Ionicons name="add" size={22} color="#000000" />
+          <TouchableOpacity
+            style={styles.addBtn}
+            onPress={() => setShowAddModal(true)}
+            testID="add-meal-button"
+            accessibilityRole="button"
+            accessibilityLabel="Add menu item"
+          >
+            <Ionicons name="add" size={22} color={theme.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -1133,6 +1211,8 @@ function MealsSection() {
         <TouchableOpacity
           style={[styles.categoryTab, selectedCategory === null && styles.categoryTabActive]}
           onPress={() => setSelectedCategory(null)}
+          accessibilityRole="button"
+          accessibilityState={{ selected: selectedCategory === null }}
         >
           <Text style={[styles.categoryTabText, selectedCategory === null && styles.categoryTabTextActive]}>
             All Categories
@@ -1143,6 +1223,8 @@ function MealsSection() {
             key={cat.id}
             style={[styles.categoryTab, selectedCategory === cat.id && styles.categoryTabActive]}
             onPress={() => setSelectedCategory(cat.id)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: selectedCategory === cat.id }}
           >
             <Text style={[styles.categoryTabText, selectedCategory === cat.id && styles.categoryTabTextActive]}>
               {cat.name}
@@ -1155,7 +1237,7 @@ function MealsSection() {
       {categories.length === 0 ? (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconWrap}>
-            <Ionicons name="restaurant-outline" size={40} color="#6B6B6B" />
+            <Ionicons name="restaurant-outline" size={40} color={theme.textSecondary} />
           </View>
           <Text style={styles.emptyTitle}>No menu items found</Text>
           <Text style={styles.emptySub}>Add your first menu item to get started</Text>
@@ -1188,17 +1270,21 @@ function MealsSection() {
                       ) : null}
                     </View>
                     <View style={styles.menuItemActions}>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.menuEditBtn}
                         onPress={() => openEditModal(cat.id, { ...item, id: itemId })}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${item.name}`}
                       >
                         <Ionicons name="create-outline" size={18} color="#5AC8FA" />
                       </TouchableOpacity>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.menuDeleteBtn}
                         onPress={() => handleDeleteItem(cat.id, itemId, item.name)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete ${item.name}`}
                       >
-                        <Ionicons name="trash-outline" size={18} color="#FF453A" />
+                        <Ionicons name="trash-outline" size={18} color={theme.error} />
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -1215,21 +1301,21 @@ function MealsSection() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Menu Item</Text>
-              <TouchableOpacity onPress={() => setShowAddModal(false)}>
-                <Ionicons name="close" size={24} color="#6B6B6B" />
+              <TouchableOpacity onPress={() => setShowAddModal(false)} accessibilityRole="button" accessibilityLabel="Close">
+                <Ionicons name="close" size={24} color={theme.textSecondary} />
               </TouchableOpacity>
             </View>
             <TextInput
               style={styles.modalInput}
               placeholder="Item Name *"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={newItemName}
               onChangeText={setNewItemName}
             />
             <TextInput
               style={styles.modalInput}
               placeholder="Price * (e.g. 80)"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={newItemPrice}
               onChangeText={setNewItemPrice}
               keyboardType="numeric"
@@ -1237,7 +1323,7 @@ function MealsSection() {
             <TextInput
               style={styles.modalInput}
               placeholder="Description (optional)"
-              placeholderTextColor="#6B6B6B"
+              placeholderTextColor={theme.textTertiary}
               value={newItemDesc}
               onChangeText={setNewItemDesc}
               multiline
@@ -1259,10 +1345,10 @@ function MealsSection() {
               ))}
             </ScrollView>
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddModal(false)}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddModal(false)} accessibilityRole="button">
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddItem}>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddItem} accessibilityRole="button">
                 <Text style={styles.modalSaveText}>Add Item</Text>
               </TouchableOpacity>
             </View>
@@ -1276,8 +1362,8 @@ function MealsSection() {
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Edit Menu Item</Text>
-              <TouchableOpacity onPress={() => { setShowEditModal(false); setEditingItem(null); }}>
-                <Ionicons name="close" size={24} color="#6B6B6B" />
+              <TouchableOpacity onPress={() => { setShowEditModal(false); setEditingItem(null); }} accessibilityRole="button" accessibilityLabel="Close">
+                <Ionicons name="close" size={24} color={theme.textSecondary} />
               </TouchableOpacity>
             </View>
             {editingItem && (
@@ -1285,14 +1371,14 @@ function MealsSection() {
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Item Name"
-                  placeholderTextColor="#6B6B6B"
+                  placeholderTextColor={theme.textTertiary}
                   value={editingItem.name}
                   onChangeText={(val) => setEditingItem({...editingItem, name: val})}
                 />
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Price (e.g. 80)"
-                  placeholderTextColor="#6B6B6B"
+                  placeholderTextColor={theme.textTertiary}
                   value={editingItem.price}
                   onChangeText={(val) => setEditingItem({...editingItem, price: val})}
                   keyboardType="numeric"
@@ -1300,7 +1386,7 @@ function MealsSection() {
                 <TextInput
                   style={[styles.modalInput, { minHeight: 80 }]}
                   placeholder="Description"
-                  placeholderTextColor="#6B6B6B"
+                  placeholderTextColor={theme.textTertiary}
                   value={editingItem.description}
                   onChangeText={(val) => setEditingItem({...editingItem, description: val})}
                   multiline
@@ -1308,10 +1394,10 @@ function MealsSection() {
                   textAlignVertical="top"
                 />
                 <View style={styles.modalBtnRow}>
-                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setShowEditModal(false); setEditingItem(null); }}>
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setShowEditModal(false); setEditingItem(null); }} accessibilityRole="button">
                     <Text style={styles.modalCancelText}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.modalSaveBtn} onPress={handleEditItem}>
+                  <TouchableOpacity style={styles.modalSaveBtn} onPress={handleEditItem} accessibilityRole="button">
                     <Text style={styles.modalSaveText}>Save Changes</Text>
                   </TouchableOpacity>
                 </View>
@@ -1328,7 +1414,7 @@ function MealsSection() {
             <Text style={styles.dialogIcon}>⚠️</Text>
             <Text style={styles.dialogTitle}>{infoDialog?.title}</Text>
             <Text style={styles.dialogText}>{infoDialog?.message}</Text>
-            <TouchableOpacity style={styles.dialogOkBtn} onPress={() => setInfoDialog(null)}>
+            <TouchableOpacity style={styles.dialogOkBtn} onPress={() => setInfoDialog(null)} accessibilityRole="button">
               <Text style={styles.dialogOkText}>Got it</Text>
             </TouchableOpacity>
           </View>
@@ -1345,15 +1431,18 @@ function MealsSection() {
               Are you sure you want to delete "{deleteConfirm?.itemName}"?
             </Text>
             <View style={styles.dialogBtnRow}>
-              <TouchableOpacity style={styles.dialogCancelBtn} onPress={() => setDeleteConfirm(null)}>
+              <TouchableOpacity style={styles.dialogCancelBtn} onPress={() => setDeleteConfirm(null)} accessibilityRole="button">
                 <Text style={styles.dialogCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.dialogDeleteBtn}
                 onPress={() => {
+                  haptics.warning();
                   if (deleteConfirm) deleteMenuItem(deleteConfirm.categoryId, deleteConfirm.itemId);
                   setDeleteConfirm(null);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${deleteConfirm?.itemName ?? 'item'}`}
               >
                 <Text style={styles.dialogDeleteText}>Delete</Text>
               </TouchableOpacity>
@@ -1365,14 +1454,15 @@ function MealsSection() {
   );
 }
 
-function OrdersSection({ orders, updateOrderStatus }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void }) {
+function OrdersSection({ orders, updateOrderStatus, theme }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors }) {
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
 
   if (orders.length === 0) {
     return (
       <View style={styles.emptyState}>
         <View style={styles.emptyIconWrap}>
-          <Ionicons name="receipt-outline" size={40} color="#6B6B6B" />
+          <Ionicons name="receipt-outline" size={40} color={theme.textSecondary} />
         </View>
         <Text style={styles.emptyTitle}>No orders yet</Text>
         <Text style={styles.emptySub}>Orders will appear here once placed</Text>
@@ -1397,6 +1487,8 @@ function OrdersSection({ orders, updateOrderStatus }: { orders: Order[]; updateO
             <TouchableOpacity
               onPress={() => setExpandedOrder(isExpanded ? null : order.id)}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`Order ${order.id}, ${isExpanded ? 'collapse' : 'expand'} details`}
             >
               <View style={styles.orderCardHeader}>
                 <View style={styles.orderCardLeft}>
@@ -1413,7 +1505,7 @@ function OrdersSection({ orders, updateOrderStatus }: { orders: Order[]; updateO
               <Text style={styles.orderCardDate}>{order.timestamp || order.date}</Text>
 
               <View style={styles.expandArrow}>
-                <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color="#6B6B6B" />
+                <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={theme.textSecondary} />
               </View>
             </TouchableOpacity>
 
@@ -1439,7 +1531,7 @@ function OrdersSection({ orders, updateOrderStatus }: { orders: Order[]; updateO
                 </View>
                 {order.deliveryAddress && (
                   <View style={styles.orderAddress}>
-                    <Ionicons name="location-outline" size={14} color="#6B6B6B" />
+                    <Ionicons name="location-outline" size={14} color={theme.textSecondary} />
                     <Text style={styles.orderAddressText}>
                       {order.deliveryAddress.street}, {order.deliveryAddress.suburb}
                     </Text>
@@ -1461,8 +1553,11 @@ function OrdersSection({ orders, updateOrderStatus }: { orders: Order[]; updateO
                               isCurrent && { backgroundColor: STATUS_COLORS[status], borderColor: STATUS_COLORS[status] },
                               isPast && styles.statusFlowChipPast,
                             ]}
-                            onPress={() => updateOrderStatus(order.id, status)}
+                            onPress={() => { haptics.selection(); updateOrderStatus(order.id, status); }}
                             disabled={isCurrent}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: isCurrent, disabled: isCurrent }}
+                            accessibilityLabel={`Mark as ${STATUS_LABELS[status]}`}
                           >
                             <Text style={[
                               styles.statusFlowChipText,
@@ -1477,7 +1572,9 @@ function OrdersSection({ orders, updateOrderStatus }: { orders: Order[]; updateO
                     </View>
                     <TouchableOpacity
                       style={styles.cancelOrderBtn}
-                      onPress={() => updateOrderStatus(order.id, 'cancelled')}
+                      onPress={() => { haptics.warning(); updateOrderStatus(order.id, 'cancelled'); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Cancel order ${order.id}`}
                     >
                       <Text style={styles.cancelOrderBtnText}>Cancel Order</Text>
                     </TouchableOpacity>
@@ -1499,7 +1596,8 @@ function OrdersSection({ orders, updateOrderStatus }: { orders: Order[]; updateO
  * order queue with status controls, stripped of everything a chef doesn't
  * need (revenue, discounts, company/user management).
  */
-function ChefSection({ orders, updateOrderStatus }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void }) {
+function ChefSection({ orders, updateOrderStatus, theme }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors }) {
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const activeOrders = useMemo(
     () => orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled'),
     [orders]
@@ -1546,7 +1644,7 @@ function ChefSection({ orders, updateOrderStatus }: { orders: Order[]; updateOrd
     return (
       <View style={styles.emptyState}>
         <View style={styles.emptyIconWrap}>
-          <Ionicons name="restaurant-outline" size={40} color="#6B6B6B" />
+          <Ionicons name="restaurant-outline" size={40} color={theme.textSecondary} />
         </View>
         <Text style={styles.emptyTitle}>Nothing to prep</Text>
         <Text style={styles.emptySub}>Active orders will show up here for the kitchen</Text>
@@ -1630,8 +1728,11 @@ function ChefSection({ orders, updateOrderStatus }: { orders: Order[]; updateOrd
                             isCurrent && { backgroundColor: STATUS_COLORS[status], borderColor: STATUS_COLORS[status] },
                             isPast && styles.statusFlowChipPast,
                           ]}
-                          onPress={() => updateOrderStatus(order.id, status)}
+                          onPress={() => { haptics.selection(); updateOrderStatus(order.id, status); }}
                           disabled={isCurrent}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isCurrent, disabled: isCurrent }}
+                          accessibilityLabel={`Mark as ${STATUS_LABELS[status]}`}
                         >
                           <Text style={[
                             styles.statusFlowChipText,
@@ -1654,7 +1755,8 @@ function ChefSection({ orders, updateOrderStatus }: { orders: Order[]; updateOrd
   );
 }
 
-function WeeksSection({ activeWeek, setActiveWeek }: { activeWeek: number; setActiveWeek: (w: number) => void }) {
+function WeeksSection({ activeWeek, setActiveWeek, theme }: { activeWeek: number; setActiveWeek: (w: number) => void; theme: ThemeColors }) {
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const weeks = [1, 2, 3, 4, 5, 6, 7, 8];
 
   return (
@@ -1665,7 +1767,7 @@ function WeeksSection({ activeWeek, setActiveWeek }: { activeWeek: number; setAc
           <Text style={styles.greetingSub}>Select which week is active</Text>
         </View>
       </View>
-      
+
       <View style={styles.weeksGrid}>
         {weeks.map((week) => {
           const isActive = activeWeek === week;
@@ -1673,8 +1775,11 @@ function WeeksSection({ activeWeek, setActiveWeek }: { activeWeek: number; setAc
             <TouchableOpacity
               key={week}
               style={[styles.weekGridCard, isActive && styles.weekGridCardActive]}
-              onPress={() => setActiveWeek(week)}
+              onPress={() => { haptics.selection(); setActiveWeek(week); }}
               activeOpacity={0.7}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={`Week ${week}${isActive ? ', active' : ''}`}
             >
               <Text style={[styles.weekGridNumber, isActive && styles.weekGridNumberActive]}>
                 {week}
@@ -1707,8 +1812,8 @@ function WeeksSection({ activeWeek, setActiveWeek }: { activeWeek: number; setAc
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.background },
 
   // Shell header
   shellHeader: {
@@ -1719,26 +1824,26 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 4,
   },
-  shellTitle: { fontSize: 20, fontWeight: '900', color: '#000000', letterSpacing: -0.3 },
-  shellSubtitle: { fontSize: 12, color: '#6B6B6B', fontWeight: '600', marginTop: 2 },
+  shellTitle: { fontSize: 20, fontWeight: '900', color: theme.text, letterSpacing: -0.3 },
+  shellSubtitle: { fontSize: 12, color: theme.textSecondary, fontWeight: '600', marginTop: 2 },
   previewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 12,
   },
-  previewBtnText: { color: '#000000', fontSize: 12, fontWeight: '800' },
+  previewBtnText: { color: theme.text, fontSize: 12, fontWeight: '800' },
 
   // Horizontal-scroll pill nav
   tabBar: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#EBEBEB',
+    borderBottomColor: theme.border,
     flexGrow: 0,
   },
   tabBarContent: {
@@ -1754,21 +1859,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 999,
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   tabPillActive: {
-    backgroundColor: '#000000',
-    borderColor: '#000000',
+    backgroundColor: theme.accent,
+    borderColor: theme.accent,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
   },
-  tabPillLabel: { fontSize: 12, fontWeight: '700', color: '#6B6B6B' },
-  tabPillLabelActive: { color: '#FFFFFF' },
+  tabPillLabel: { fontSize: 12, fontWeight: '700', color: theme.textSecondary },
+  tabPillLabelActive: { color: theme.onAccent },
 
   // Page Header
   pageHeader: {
@@ -1780,12 +1885,12 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 24,
     fontWeight: '900',
-    color: '#000000',
+    color: theme.text,
     letterSpacing: -0.5,
   },
   greetingSub: {
     fontSize: 13,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     fontWeight: '500',
     marginTop: 2,
   },
@@ -1806,8 +1911,8 @@ const styles = StyleSheet.create({
     padding: 18,
     paddingTop: 16,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
-    backgroundColor: '#FFFFFF',
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
     overflow: 'hidden',
   },
   statAccentBar: {
@@ -1828,48 +1933,48 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 26,
     fontWeight: '900',
-    color: '#000000',
+    color: theme.text,
     letterSpacing: -0.5,
   },
   statLabel: {
     fontSize: 12,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     fontWeight: '600',
     marginTop: 4,
   },
 
   // Today at a Glance
   todayCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderRadius: 20,
     padding: 18,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   todayCardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
-  todayCardTitle: { fontSize: 14, fontWeight: '800', color: '#000000', textTransform: 'uppercase', letterSpacing: 0.5 },
+  todayCardTitle: { fontSize: 14, fontWeight: '800', color: theme.text, textTransform: 'uppercase', letterSpacing: 0.5 },
   todayCardRow: { flexDirection: 'row', alignItems: 'center' },
   todayTile: { flex: 1, alignItems: 'center', paddingVertical: 4 },
-  todayTileDivider: { width: 1, height: 40, backgroundColor: '#EBEBEB' },
-  todayTileNumber: { fontSize: 30, fontWeight: '900', color: '#000000', letterSpacing: -0.5 },
+  todayTileDivider: { width: 1, height: 40, backgroundColor: theme.border },
+  todayTileNumber: { fontSize: 30, fontWeight: '900', color: theme.text, letterSpacing: -0.5 },
   todayTileNumberAlert: { color: '#FF9500' },
-  todayTileLabel: { fontSize: 12, color: '#6B6B6B', fontWeight: '600', marginTop: 2, textAlign: 'center' },
-  todayList: { marginTop: 16, borderTopWidth: 1, borderTopColor: '#EBEBEB' },
+  todayTileLabel: { fontSize: 12, color: theme.textSecondary, fontWeight: '600', marginTop: 2, textAlign: 'center' },
+  todayList: { marginTop: 16, borderTopWidth: 1, borderTopColor: theme.border },
   todayListRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#EBEBEB',
+    borderTopColor: theme.border,
   },
   todayListStatusDot: { width: 8, height: 8, borderRadius: 4 },
-  todayListId: { fontSize: 13, fontWeight: '700', color: '#000000' },
-  todayListName: { flex: 1, fontSize: 13, color: '#6B6B6B' },
-  todayListQty: { fontSize: 12, fontWeight: '700', color: '#000000' },
+  todayListId: { fontSize: 13, fontWeight: '700', color: theme.text },
+  todayListName: { flex: 1, fontSize: 13, color: theme.textSecondary },
+  todayListQty: { fontSize: 12, fontWeight: '700', color: theme.text },
   todayListMore: { paddingTop: 10, alignItems: 'center' },
-  todayListMoreText: { fontSize: 12, fontWeight: '700', color: '#6B6B6B' },
+  todayListMoreText: { fontSize: 12, fontWeight: '700', color: theme.textSecondary },
 
   // Chef's Kitchen
   prepListRow: {
@@ -1877,15 +1982,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#EBEBEB',
+    borderTopColor: theme.border,
     gap: 12,
   },
-  prepListQty: { fontSize: 15, fontWeight: '900', color: '#000000', width: 40 },
-  prepListName: { flex: 1, fontSize: 14, color: '#000000', fontWeight: '600' },
+  prepListQty: { fontSize: 15, fontWeight: '900', color: theme.text, width: 40 },
+  prepListName: { flex: 1, fontSize: 14, color: theme.text, fontWeight: '600' },
   chefQueueTitle: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 12,
@@ -1897,12 +2002,12 @@ const styles = StyleSheet.create({
 
   // Section Card
   sectionCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderRadius: 20,
     padding: 20,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   sectionCardHeader: {
     flexDirection: 'row',
@@ -1913,14 +2018,14 @@ const styles = StyleSheet.create({
   sectionCardTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#000000',
+    color: theme.text,
     marginBottom: 16,
     letterSpacing: -0.3,
   },
   seeAllText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.text,
     textDecorationLine: 'underline',
     marginBottom: 16,
   },
@@ -1946,12 +2051,12 @@ const styles = StyleSheet.create({
   breakdownLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6B6B6B',
+    color: theme.textSecondary,
   },
   breakdownBarBg: {
     flex: 1,
     height: 6,
-    backgroundColor: '#EBEBEB',
+    backgroundColor: theme.border,
     borderRadius: 3,
     overflow: 'hidden',
   },
@@ -1962,19 +2067,19 @@ const styles = StyleSheet.create({
   breakdownCount: {
     fontSize: 13,
     fontWeight: '800',
-    color: '#000000',
+    color: theme.text,
     width: 30,
     textAlign: 'right',
   },
 
   // Week Card
   weekCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderRadius: 20,
     padding: 20,
     marginBottom: 20,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1995,22 +2100,22 @@ const styles = StyleSheet.create({
   weekCardLabel: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     marginBottom: 3,
   },
   weekCardValue: {
     fontSize: 18,
     fontWeight: '900',
-    color: '#000000',
+    color: theme.text,
   },
   weekCardBtn: {
-    backgroundColor: '#EBEBEB',
+    backgroundColor: theme.surfaceSecondary,
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 12,
   },
   weekCardBtnText: {
-    color: '#000000',
+    color: theme.text,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -2022,7 +2127,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 14,
     borderTopWidth: 1,
-    borderTopColor: '#EBEBEB',
+    borderTopColor: theme.border,
   },
   recentOrderLeft: {
     flexDirection: 'row',
@@ -2038,11 +2143,11 @@ const styles = StyleSheet.create({
   recentOrderId: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.text,
   },
   recentOrderUser: {
     fontSize: 11,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     marginTop: 1,
   },
   recentOrderRight: {
@@ -2052,7 +2157,7 @@ const styles = StyleSheet.create({
   recentOrderTotal: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#000000',
+    color: theme.text,
   },
   recentStatusBadge: {
     paddingHorizontal: 8,
@@ -2081,12 +2186,12 @@ const styles = StyleSheet.create({
   userCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 16,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   userAvatar: {
     width: 48,
@@ -2110,7 +2215,7 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.text,
   },
   adminBadge: {
     backgroundColor: '#FFF3C4',
@@ -2135,12 +2240,12 @@ const styles = StyleSheet.create({
   companyBadgeText: { color: '#5AC8FA', fontSize: 10, fontWeight: '800' },
   userEmail: {
     fontSize: 12,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     fontWeight: '500',
   },
   userMeta: {
     fontSize: 11,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     marginTop: 2,
   },
   deleteBtn: {
@@ -2154,12 +2259,12 @@ const styles = StyleSheet.create({
 
   // Orders
   orderCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 16,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     position: 'relative',
   },
   orderCardHeader: {
@@ -2171,16 +2276,16 @@ const styles = StyleSheet.create({
   orderCardId: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#000000',
+    color: theme.text,
   },
   orderCardUser: {
     fontSize: 12,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     marginTop: 2,
   },
   orderCardDate: {
     fontSize: 11,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     marginTop: 6,
   },
   orderCardExpanded: {
@@ -2188,7 +2293,7 @@ const styles = StyleSheet.create({
   },
   orderDivider: {
     height: 1,
-    backgroundColor: '#EBEBEB',
+    backgroundColor: theme.border,
     marginVertical: 10,
   },
   orderDishRow: {
@@ -2199,17 +2304,17 @@ const styles = StyleSheet.create({
   },
   orderDishName: {
     fontSize: 13,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     flex: 1,
     paddingRight: 8,
   },
   orderDishSize: {
     fontSize: 11,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
   },
   orderDishPrice: {
     fontSize: 13,
-    color: '#000000',
+    color: theme.text,
     fontWeight: '600',
   },
   orderTotalRow: {
@@ -2219,12 +2324,12 @@ const styles = StyleSheet.create({
   },
   orderTotalLabel: {
     fontSize: 14,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
   },
   orderTotalValue: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#000000',
+    color: theme.text,
   },
   orderAddress: {
     flexDirection: 'row',
@@ -2234,13 +2339,13 @@ const styles = StyleSheet.create({
   },
   orderAddressText: {
     fontSize: 12,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     flex: 1,
   },
   statusFlowLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     letterSpacing: 0.5,
     marginTop: 14,
     marginBottom: 10,
@@ -2251,11 +2356,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
-    backgroundColor: '#F6F6F6',
+    borderColor: theme.border,
+    backgroundColor: theme.surfaceSecondary,
   },
-  statusFlowChipPast: { backgroundColor: '#EBEBEB', borderColor: '#EBEBEB' },
-  statusFlowChipText: { fontSize: 12, fontWeight: '700', color: '#6B6B6B' },
+  statusFlowChipPast: { backgroundColor: theme.border, borderColor: theme.border },
+  statusFlowChipText: { fontSize: 12, fontWeight: '700', color: theme.textSecondary },
   statusFlowChipTextCurrent: { color: '#000000' },
   statusFlowChipTextPast: { color: '#1DA836' },
   cancelOrderBtn: { alignSelf: 'flex-start', paddingVertical: 6 },
@@ -2285,22 +2390,22 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     marginBottom: 16,
   },
   emptyTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#000000',
+    color: theme.text,
     marginBottom: 6,
   },
   emptySub: {
     fontSize: 13,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
   },
@@ -2314,11 +2419,11 @@ const styles = StyleSheet.create({
   },
   weekGridCard: {
     width: (SCREEN_WIDTH - 42) / 4,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     alignItems: 'center',
     position: 'relative',
     minHeight: 90,
@@ -2331,7 +2436,7 @@ const styles = StyleSheet.create({
   weekGridNumber: {
     fontSize: 26,
     fontWeight: '900',
-    color: '#000000',
+    color: theme.text,
   },
   weekGridNumberActive: {
     color: '#22C55E',
@@ -2339,7 +2444,7 @@ const styles = StyleSheet.create({
   weekGridLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     marginTop: 4,
   },
   weekGridLabelActive: {
@@ -2371,6 +2476,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   infoContent: { flex: 1 },
+  // infoCard's background is a fixed light-blue tint in both themes (see
+  // infoCard above) — its text must stay literal dark too, or it goes
+  // invisible against that tint once theme.text/textSecondary flip to white.
   infoTitle: {
     fontSize: 14,
     fontWeight: '800',
@@ -2391,12 +2499,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   categoryTab: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     paddingHorizontal: 18,
     paddingVertical: 12,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   categoryTabActive: {
     backgroundColor: '#22C55E',
@@ -2405,7 +2513,7 @@ const styles = StyleSheet.create({
   categoryTabText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#6B6B6B',
+    color: theme.textSecondary,
   },
   categoryTabTextActive: {
     color: '#000000',
@@ -2413,12 +2521,12 @@ const styles = StyleSheet.create({
 
   // Discounts
   discountCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 16,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   discountTopRow: {
     flexDirection: 'row',
@@ -2445,13 +2553,13 @@ const styles = StyleSheet.create({
   discountPercent: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.text,
   },
   discountToggle: {
     width: 48,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#D1D1D1',
+    backgroundColor: theme.border,
     justifyContent: 'center',
     paddingHorizontal: 3,
   },
@@ -2463,10 +2571,10 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.white,
   },
   discountToggleCircleOn: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.white,
   },
   discountCompanyRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
   discountCompanyText: { color: '#5AC8FA', fontSize: 12, fontWeight: '700' },
@@ -2477,11 +2585,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#EBEBEB',
+    borderTopColor: theme.border,
   },
   discountExpiry: {
     fontSize: 12,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     fontWeight: '500',
   },
 
@@ -2502,36 +2610,36 @@ const styles = StyleSheet.create({
   menuCategoryTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#000000',
+    color: theme.text,
     letterSpacing: -0.3,
   },
   menuCategoryCount: {
     fontSize: 12,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     fontWeight: '600',
   },
   menuEmptyItems: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderRadius: 12,
     padding: 20,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   menuEmptyItemsText: {
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     fontSize: 13,
     fontWeight: '500',
   },
   menuItemCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderRadius: 14,
     padding: 14,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
   },
   menuItemInfo: {
     flex: 1,
@@ -2540,18 +2648,18 @@ const styles = StyleSheet.create({
   menuItemName: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#000000',
+    color: theme.text,
     marginBottom: 2,
   },
   menuItemPrice: {
     fontSize: 15,
     fontWeight: '800',
-    color: '#000000',
+    color: theme.text,
     marginBottom: 4,
   },
   menuItemDesc: {
     fontSize: 11,
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     lineHeight: 15,
   },
   menuItemActions: {
@@ -2577,7 +2685,7 @@ const styles = StyleSheet.create({
   modalFieldLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     marginBottom: 8,
     letterSpacing: 0.5,
   },
@@ -2585,12 +2693,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   categoryPickerChip: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     marginRight: 8,
   },
   categoryPickerChipActive: {
@@ -2600,7 +2708,7 @@ const styles = StyleSheet.create({
   categoryPickerChipText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#6B6B6B',
+    color: theme.textSecondary,
   },
   categoryPickerChipTextActive: {
     color: '#000000',
@@ -2609,17 +2717,17 @@ const styles = StyleSheet.create({
   // Modals
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: theme.modalOverlay,
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 24,
     paddingBottom: 40,
     borderTopWidth: 1,
-    borderTopColor: '#EBEBEB',
+    borderTopColor: theme.border,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -2630,22 +2738,22 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 20,
     fontWeight: '900',
-    color: '#000000',
+    color: theme.text,
     letterSpacing: -0.3,
   },
   modalInput: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.inputBg,
     borderRadius: 14,
     padding: 16,
     marginBottom: 12,
-    color: '#000000',
+    color: theme.text,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     fontSize: 15,
   },
-  modalInputError: { borderColor: '#E0393E' },
-  modalFieldError: { color: '#E0393E', fontSize: 12, fontWeight: '600', marginTop: -8, marginBottom: 12 },
-  modalHint: { color: '#6B6B6B', fontSize: 12, lineHeight: 17, marginTop: -4, marginBottom: 16 },
+  modalInputError: { borderColor: theme.error },
+  modalFieldError: { color: theme.error, fontSize: 12, fontWeight: '600', marginTop: -8, marginBottom: 12 },
+  modalHint: { color: theme.textSecondary, fontSize: 12, lineHeight: 17, marginTop: -4, marginBottom: 16 },
   modalBtnRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -2653,13 +2761,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   modalCancelBtn: {
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     paddingHorizontal: 20,
     paddingVertical: 14,
     borderRadius: 12,
   },
   modalCancelText: {
-    color: '#6B6B6B',
+    color: theme.textSecondary,
     fontWeight: '700',
     fontSize: 14,
   },
@@ -2677,11 +2785,11 @@ const styles = StyleSheet.create({
 
   // Small centered dialogs (info / confirm) — distinct from the bottom-sheet
   // add/edit modals above.
-  dialogOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center' },
+  dialogOverlay: { flex: 1, backgroundColor: theme.modalOverlay, justifyContent: 'center', alignItems: 'center' },
   dialogCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: theme.surface,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     borderRadius: 24,
     padding: 28,
     marginHorizontal: 32,
@@ -2693,23 +2801,23 @@ const styles = StyleSheet.create({
     elevation: 10,
   },
   dialogIcon: { fontSize: 36, marginBottom: 12 },
-  dialogTitle: { fontSize: 18, fontWeight: '900', color: '#000000', marginBottom: 8, textAlign: 'center' },
-  dialogText: { fontSize: 14, color: '#6B6B6B', textAlign: 'center', lineHeight: 20, marginBottom: 24 },
-  dialogOkBtn: { backgroundColor: '#000000', paddingHorizontal: 32, paddingVertical: 14, borderRadius: 14, alignSelf: 'stretch', alignItems: 'center' },
-  dialogOkText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  dialogTitle: { fontSize: 18, fontWeight: '900', color: theme.text, marginBottom: 8, textAlign: 'center' },
+  dialogText: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
+  dialogOkBtn: { backgroundColor: theme.accent, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 14, alignSelf: 'stretch', alignItems: 'center' },
+  dialogOkText: { color: theme.onAccent, fontSize: 15, fontWeight: '800' },
   dialogBtnRow: { flexDirection: 'row', gap: 12, alignSelf: 'stretch' },
   dialogCancelBtn: {
     flex: 1,
     paddingVertical: 14,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     alignItems: 'center',
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
   },
-  dialogCancelText: { color: '#6B6B6B', fontSize: 15, fontWeight: '800' },
+  dialogCancelText: { color: theme.textSecondary, fontSize: 15, fontWeight: '800' },
   dialogDeleteBtn: { flex: 1, paddingVertical: 14, borderRadius: 14, backgroundColor: '#E0393E', alignItems: 'center' },
-  dialogDeleteText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  dialogDeleteText: { color: theme.white, fontSize: 15, fontWeight: '800' },
 
   // Top Selling Items
   topItemRow: {
@@ -2717,21 +2825,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: '#EBEBEB',
+    borderTopColor: theme.border,
     gap: 12,
   },
   topItemRank: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#EBEBEB',
+    backgroundColor: theme.border,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  topItemRankText: { color: '#6B6B6B', fontSize: 11, fontWeight: '800' },
-  topItemName: { flex: 1, fontSize: 13, fontWeight: '700', color: '#000000' },
-  topItemQty: { fontSize: 12, color: '#6B6B6B', fontWeight: '600', marginRight: 6 },
-  topItemRevenue: { fontSize: 13, fontWeight: '800', color: '#000000', width: 64, textAlign: 'right' },
+  topItemRankText: { color: theme.textSecondary, fontSize: 11, fontWeight: '800' },
+  topItemName: { flex: 1, fontSize: 13, fontWeight: '700', color: theme.text },
+  topItemQty: { fontSize: 12, color: theme.textSecondary, fontWeight: '600', marginRight: 6 },
+  topItemRevenue: { fontSize: 13, fontWeight: '800', color: theme.text, width: 64, textAlign: 'right' },
   companyStatIcon: {
     width: 32,
     height: 32,
@@ -2759,13 +2867,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  // biCard is a fixed light-yellow tint in both themes (see biCard above) —
+  // same reasoning as infoTitle/infoText: its text must stay literal dark.
   biTitle: { fontSize: 15, fontWeight: '800', color: '#8A6D00' },
   biSubtitle: { fontSize: 11, color: '#6B6B6B', fontWeight: '600', marginTop: 2 },
   biText: { fontSize: 12, color: '#6B6B6B', lineHeight: 18 },
 
   // Company address (Companies tab)
   companyAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  companyAddressText: { fontSize: 11, color: '#6B6B6B', fontWeight: '500', flexShrink: 1 },
+  companyAddressText: { fontSize: 11, color: theme.textSecondary, fontWeight: '500', flexShrink: 1 },
 
   // Modal helper layout
   modalRow: { flexDirection: 'row', gap: 10 },
@@ -2777,12 +2887,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#F6F6F6',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: '#EBEBEB',
+    borderColor: theme.border,
     paddingHorizontal: 12,
     height: 42,
     borderRadius: 21,
   },
-  previewMenuBtnText: { color: '#000000', fontSize: 12, fontWeight: '800' },
+  previewMenuBtnText: { color: theme.text, fontSize: 12, fontWeight: '800' },
 });
