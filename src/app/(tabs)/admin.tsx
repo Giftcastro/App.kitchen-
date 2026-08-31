@@ -70,15 +70,26 @@ export default function AdminScreen() {
   const [newCompanyCode, setNewCompanyCode] = useState('');
   const [newCompanyDistance, setNewCompanyDistance] = useState('');
   const [newCompanyInstructions, setNewCompanyInstructions] = useState('');
+  const [newCompanySubsidy, setNewCompanySubsidy] = useState('');
 
-  // Stats
+  // Stats — one pass over `orders` instead of five (four separate .filter()
+  // calls plus a .reduce()), and memoized so it only recomputes when orders
+  // actually change rather than on every render of this screen (which has a
+  // lot of unrelated form state — company/user/discount inputs — each
+  // keystroke in any of them was re-scanning the full orders array 5x).
   const totalUsers = allUsers.length;
   const totalOrders = orders.length;
-  const pendingOrders = orders.filter(o => o.status === 'pending').length;
-  const preparingOrders = orders.filter(o => o.status === 'preparing').length;
-  const onTheWayOrders = orders.filter(o => o.status === 'on_the_way').length;
-  const deliveredCount = orders.filter(o => o.status === 'delivered').length;
-  const revenue = orders.reduce((sum, o) => sum + o.total, 0);
+  const { pendingOrders, preparingOrders, onTheWayOrders, deliveredCount, revenue } = useMemo(() => {
+    let pending = 0, preparing = 0, onTheWay = 0, delivered = 0, rev = 0;
+    for (const o of orders) {
+      if (o.status === 'pending') pending++;
+      else if (o.status === 'preparing') preparing++;
+      else if (o.status === 'on_the_way') onTheWay++;
+      else if (o.status === 'delivered') delivered++;
+      rev += o.total;
+    }
+    return { pendingOrders: pending, preparingOrders: preparing, onTheWayOrders: onTheWay, deliveredCount: delivered, revenue: rev };
+  }, [orders]);
 
   // Orders with at least one item due for delivery TODAY — delivery date
   // lives per-item (not per-order, since one order can mix items scheduled
@@ -130,16 +141,42 @@ export default function AdminScreen() {
       .map(([name, stats]) => ({ name, ...stats }));
   }, [orders]);
 
+  // Single pass over allUsers + a single pass over orders, using a
+  // email -> companyName index, instead of re-scanning allUsers and orders
+  // once per company (was O(companies x (users + orders)); this is
+  // O(users + orders + companies)). Reused for both the per-company
+  // order/revenue stats below and the employee-count badge in the Companies
+  // tab further down, which previously did its own O(companies x users) scan
+  // directly in the render body on every render of this screen.
+  const { employeeCountByCompany, orderStatsByCompany } = useMemo(() => {
+    const emailToCompany = new Map<string, string>();
+    const employeeCountByCompany = new Map<string, number>();
+    for (const u of allUsers) {
+      if (!u.companyName) continue;
+      emailToCompany.set(u.email, u.companyName);
+      employeeCountByCompany.set(u.companyName, (employeeCountByCompany.get(u.companyName) ?? 0) + 1);
+    }
+    const orderStatsByCompany = new Map<string, { orderCount: number; revenue: number }>();
+    for (const o of orders) {
+      const companyName = o.userEmail ? emailToCompany.get(o.userEmail) : undefined;
+      if (!companyName) continue;
+      const stats = orderStatsByCompany.get(companyName) ?? { orderCount: 0, revenue: 0 };
+      stats.orderCount++;
+      stats.revenue += o.total;
+      orderStatsByCompany.set(companyName, stats);
+    }
+    return { employeeCountByCompany, orderStatsByCompany };
+  }, [allUsers, orders]);
+
   const companyStats = useMemo(() => {
     return companies
       .map(co => {
-        const emails = new Set(allUsers.filter(u => u.companyName === co.name).map(u => u.email));
-        const coOrders = orders.filter(o => o.userEmail && emails.has(o.userEmail));
-        return { company: co, orderCount: coOrders.length, revenue: coOrders.reduce((s, o) => s + o.total, 0) };
+        const stats = orderStatsByCompany.get(co.name);
+        return { company: co, orderCount: stats?.orderCount ?? 0, revenue: stats?.revenue ?? 0 };
       })
       .filter(c => c.orderCount > 0)
       .sort((a, b) => b.revenue - a.revenue);
-  }, [companies, allUsers, orders]);
+  }, [companies, orderStatsByCompany]);
 
     const tabs: TabType[] = ['dashboard', 'users', 'orders', 'chef', 'weeks', 'meals', 'discounts', 'companies'];
 
@@ -184,6 +221,7 @@ export default function AdminScreen() {
     if (domains.length === 0) return;
     const hasAddress = newCompanyStreet.trim() && newCompanySuburb.trim() && newCompanyCity.trim();
     const parsedDistance = parseFloat(newCompanyDistance);
+    const parsedSubsidy = parseFloat(newCompanySubsidy);
     addCompany({
       name: newCompanyName.trim(),
       domains,
@@ -196,6 +234,7 @@ export default function AdminScreen() {
         instructions: newCompanyInstructions.trim() || undefined,
         distanceKm: Number.isFinite(parsedDistance) ? parsedDistance : undefined,
       } : undefined,
+      mealSubsidy: Number.isFinite(parsedSubsidy) && parsedSubsidy > 0 ? parsedSubsidy : undefined,
     });
     haptics.success();
     setNewCompanyName('');
@@ -207,6 +246,7 @@ export default function AdminScreen() {
     setNewCompanyCode('');
     setNewCompanyDistance('');
     setNewCompanyInstructions('');
+    setNewCompanySubsidy('');
     setShowAddCompany(false);
   };
 
@@ -747,7 +787,7 @@ export default function AdminScreen() {
               </View>
             ) : (
               companies.map((company, idx) => {
-                const employeeCount = allUsers.filter(u => u.companyName === company.name).length;
+                const employeeCount = employeeCountByCompany.get(company.name) ?? 0;
                 return (
                   <View key={company.id} style={[styles.userCard, idx === 0 && { marginTop: 4 }]}>
                     <View style={[styles.userAvatar, { backgroundColor: '#5AC8FA30' }]}>
@@ -757,6 +797,14 @@ export default function AdminScreen() {
                       <Text style={styles.userName}>{company.name}</Text>
                       <Text style={styles.userEmail}>{company.domains.map(d => `@${d}`).join(', ')}</Text>
                       <Text style={styles.userMeta}>{employeeCount} user{employeeCount === 1 ? '' : 's'} matched</Text>
+                      {company.mealSubsidy ? (
+                        <View style={styles.companyAddressRow}>
+                          <Ionicons name="cash" size={11} color="#22C55E" />
+                          <Text style={[styles.companyAddressText, { color: '#22C55E' }]} numberOfLines={1}>
+                            R{company.mealSubsidy.toFixed(2)} meal subsidy (incl. VAT)
+                          </Text>
+                        </View>
+                      ) : null}
                       {company.address ? (
                         <>
                           <View style={styles.companyAddressRow}>
@@ -1072,6 +1120,18 @@ export default function AdminScreen() {
             />
             <Text style={styles.modalHint}>
               Standing access notes shown to the courier on every order to this company — no need to re-enter them per order.
+            </Text>
+            <Text style={styles.modalFieldLabel}>MEAL SUBSIDY (OPTIONAL)</Text>
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Amount per meal, e.g. 80.00 (incl. VAT)"
+              placeholderTextColor={theme.textTertiary}
+              value={newCompanySubsidy}
+              onChangeText={setNewCompanySubsidy}
+              keyboardType="numeric"
+            />
+            <Text style={styles.modalHint}>
+              Deducted automatically from every eligible employee's order — capped so a single meal is never subsidized past its own price.
             </Text>
             <View style={styles.modalBtnRow}>
               <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddCompany(false)} accessibilityRole="button">

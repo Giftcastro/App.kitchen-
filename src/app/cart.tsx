@@ -24,7 +24,7 @@ import { getOrderCutoffInfo } from '../utils/deliveryHelpers';
 import { ThemeColors } from '../utils/theme';
 
 export default function CartScreen() {
-  const { cart, removeFromCart, clearCart, addToCart, discounts, appliedDiscount, setAppliedDiscount, isItemEligibleForDiscount, calculateDiscountAmount, deliveryInfo, theme } = useKitchen();
+  const { cart, removeFromCart, clearCart, addToCart, discounts, appliedDiscount, setAppliedDiscount, isItemEligibleForDiscount, calculateDiscountAmount, calculateSubsidyAmount, deliveryInfo, theme } = useKitchen();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
 
@@ -41,10 +41,13 @@ export default function CartScreen() {
 
   // Calculate discount only on eligible items
   const discountAmount = calculateDiscountAmount(cart, appliedDiscount);
+  // Company meal subsidy — automatic, no code needed; zero unless the user
+  // is attached to a subsidizing company.
+  const subsidyAmount = calculateSubsidyAmount(cart);
   // Distance-based delivery fee — resolved automatically from the user's
   // company address (corporate accounts) or default saved address.
   const deliveryFee = deliveryInfo.fee ?? 0;
-  const finalTotal = totalPrice - discountAmount + deliveryFee;
+  const finalTotal = Math.max(0, totalPrice - discountAmount - subsidyAmount) + deliveryFee;
 
   // Business hours + 48-hour advance ordering cutoff info
   const cutoffInfo = getOrderCutoffInfo();
@@ -271,6 +274,13 @@ export default function CartScreen() {
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Discount ({appliedDiscount.percentage}%)</Text>
             <Text style={styles.discountValue}>- R {discountAmount.toFixed(2)}</Text>
+          </View>
+        )}
+
+        {subsidyAmount > 0 && (
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabel}>Company Meal Subsidy</Text>
+            <Text style={styles.discountValue}>- R {subsidyAmount.toFixed(2)}</Text>
           </View>
         )}
 

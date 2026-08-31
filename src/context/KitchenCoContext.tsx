@@ -63,6 +63,8 @@ export interface Order {
   note?: string;
   discount?: Discount;
   discountAmount?: number;
+  /** Company meal subsidy deducted from this order, if the customer belonged to a subsidizing company at checkout. */
+  subsidyAmount?: number;
 }
 
 export interface DeliveryAddress {
@@ -105,6 +107,8 @@ export interface Company {
   domains: string[];
   /** Registered delivery address for bulk/company orders. */
   address?: CompanyAddress;
+  /** Fixed amount (Rand, VAT-inclusive) the company subsidizes per meal ordered by its employees. Deducted automatically at checkout, capped per item so it can't exceed that item's price. */
+  mealSubsidy?: number;
 }
 
 export interface SavedCard {
@@ -185,6 +189,8 @@ interface KitchenContextType {
   registerCartFlyHandler: (handler: ((fromX: number, fromY: number) => void) | null) => void;
   isItemEligibleForDiscount: (item: CartItem, discount: Discount | null) => boolean;
   calculateDiscountAmount: (cartItems: CartItem[], discount: Discount | null) => number;
+  /** Company meal subsidy for the current user, applied automatically (no code needed) — each item's contribution is capped at that item's own price so a meal is never "paid" to order. Zero if the user isn't matched to a subsidizing company. */
+  calculateSubsidyAmount: (cartItems: CartItem[]) => number;
   remindersEnabled: boolean;
   setRemindersEnabled: Dispatch<SetStateAction<boolean>>;
 }
@@ -204,32 +210,40 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [companies, setCompanies] = useState<Company[]>([
     {
-      id: 'co-1',
-      name: 'Acme Logistics',
-      domains: ['acmelogistics.com'],
+      id: 'co-ecogra',
+      name: 'Ecogra',
+      domains: ['ecogra.org'],
       address: {
-        street: '14 Rivonia Road',
-        unit: 'Floor 6, Suite 604',
-        suburb: 'Sandton',
+        street: '160 Jan Smuts Ave',
+        suburb: 'Rosebank',
         city: 'Johannesburg',
-        code: '2196',
-        instructions: 'Use the loading bay entrance at the rear. Sign in at security, ask for the 6th floor reception.',
-        distanceKm: 14,
+        code: '',
       },
+      mealSubsidy: 80.0,
     },
     {
-      id: 'co-2',
-      name: 'Nexus Financial',
-      domains: ['nexusfinancial.co.za'],
+      id: 'co-tata',
+      name: 'TATA',
+      domains: ['tcs.com'],
       address: {
-        street: '88 Fredman Drive',
-        unit: 'Ground Floor',
-        suburb: 'Sandton',
+        street: '39 Ferguson Road',
+        suburb: 'Illovo',
         city: 'Johannesburg',
-        code: '2196',
-        instructions: 'Deliver to the front reception desk. Visitor parking available in Bay 3-6.',
-        distanceKm: 18,
+        code: '',
       },
+      mealSubsidy: 85.0,
+    },
+    {
+      id: 'co-rcl',
+      name: 'RCL',
+      domains: ['rclfoods.com'],
+      address: {
+        street: '15 Railey Road',
+        suburb: 'Bedfordview',
+        city: 'Johannesburg',
+        code: '',
+      },
+      mealSubsidy: 40.0,
     },
   ]);
   const [appliedDiscount, setAppliedDiscountState] = useState<Discount | null>(null);
@@ -672,9 +686,12 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     if (cart.length === 0) return;
     const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const discountAmount = calculateDiscountAmount(cart, appliedDiscount);
+    const subsidyAmount = calculateSubsidyAmount(cart);
     const resolvedAddress = deliveryAddress ?? deliveryInfo.address ?? undefined;
     const deliveryFee = deliveryAddress ? calculateDeliveryFee(deliveryAddress.distanceKm ?? -1) ?? 0 : (deliveryInfo.fee ?? 0);
-    const finalTotal = totalAmount - discountAmount + deliveryFee;
+    // Floored in case a promo discount and the company subsidy overlap on the
+    // same cheap item and would otherwise combine past its price.
+    const finalTotal = Math.max(0, totalAmount - discountAmount - subsidyAmount) + deliveryFee;
     const nowStr = new Date().toLocaleString();
 
     const newOrder: Order = {
@@ -692,6 +709,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       note: orderNote || undefined,
       discount: appliedDiscount || undefined,
       discountAmount: discountAmount || undefined,
+      subsidyAmount: subsidyAmount || undefined,
     };
     setOrders(prev => [newOrder, ...prev]);
     
@@ -776,6 +794,18 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       .filter(item => isItemEligibleForDiscount(item, discount))
       .reduce((sum, item) => sum + item.price * item.quantity, 0);
     return eligibleTotal * discount.percentage / 100;
+  };
+
+  // Company meal subsidy — automatic, no code required. Matched via the same
+  // user.companyName the company-targeted discount above uses, so it only
+  // kicks in once a user is actually attached to a company (domain
+  // auto-match at signup, or companyName set some other way).
+  const calculateSubsidyAmount = (cartItems: CartItem[]): number => {
+    if (!user?.companyName) return 0;
+    const company = companies.find(c => c.name.toLowerCase() === user.companyName!.toLowerCase());
+    const subsidy = company?.mealSubsidy;
+    if (!subsidy) return 0;
+    return cartItems.reduce((sum, item) => sum + Math.min(subsidy, item.price) * item.quantity, 0);
   };
 
   const updateDiscount = (discountId: string, discount: Partial<Discount>) => {
@@ -920,6 +950,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         registerCartFlyHandler,
         isItemEligibleForDiscount,
         calculateDiscountAmount,
+        calculateSubsidyAmount,
         remindersEnabled,
         setRemindersEnabled,
       }}

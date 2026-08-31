@@ -26,10 +26,12 @@ export interface ThemeColors {
   statusBarStyle: 'light-content' | 'dark-content';
 }
 
-// Uber-style light theme: white/near-white surfaces, black as the primary
-// UI color (buttons, active states, prices) instead of a brand accent hue —
-// color is reserved for semantic status (success/warning/error), matching
-// how the reference app itself uses almost no color outside food photography.
+// Uber-style light theme: white/near-white surfaces, with the brand's
+// "Mediterranean + Berry" primary blue (#3571B7) as the accent — buttons,
+// active states, prices — and the brand's secondary red (#AF1718) standing
+// in for the error/destructive color. Everything else stays semantic
+// (success/warning/info), matching how the reference app reserves color for
+// status rather than decoration.
 export const lightColors: ThemeColors = {
   background: '#FFFFFF',
   surface: '#FFFFFF',
@@ -38,11 +40,11 @@ export const lightColors: ThemeColors = {
   text: '#000000',
   textSecondary: '#6B6B6B',
   textTertiary: '#9E9E9E',
-  accent: '#000000',
+  accent: '#3571B7',
   onAccent: '#FFFFFF',
   success: '#1DA836',
   warning: '#E8A100',
-  error: '#E0393E',
+  error: '#AF1718',
   info: '#0073E6',
   white: '#FFFFFF',
   black: '#000000',
@@ -54,11 +56,14 @@ export const lightColors: ThemeColors = {
   statusBarStyle: 'dark-content',
 };
 
-// Dark theme mirrors the same monochrome logic: near-black surfaces, white
-// as the primary UI color. `accent` flips from black to white here — a
-// light-mode black button would otherwise vanish against a near-black
+// Dark theme mirrors the same brand logic with near-black surfaces. `accent`
+// swaps to the palette's paler blue (#B6DFF8) here — the light-mode blue
+// reads fine on white but loses too much contrast against a near-black
 // background — so anything painting text/icons on top of `accent` must use
 // `onAccent`, not a hardcoded white, or it renders invisible in this mode.
+// `error` is likewise brightened from the brand red for the same reason,
+// following the same lighten-for-dark-mode pattern already used below for
+// success/warning/info.
 export const darkColors: ThemeColors = {
   background: '#0B0B0B',
   surface: '#141414',
@@ -67,11 +72,11 @@ export const darkColors: ThemeColors = {
   text: '#FFFFFF',
   textSecondary: '#A0A0A0',
   textTertiary: '#6B6B6B',
-  accent: '#FFFFFF',
+  accent: '#B6DFF8',
   onAccent: '#000000',
   success: '#22C55E',
   warning: '#F5A623',
-  error: '#F0544F',
+  error: '#CB6869',
   info: '#3B9EFF',
   white: '#FFFFFF',
   black: '#000000',

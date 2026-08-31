@@ -8,7 +8,7 @@ import { DeliveryEstimator } from '../../components/DeliveryEstimator';
 import { CutoffCountdown } from '../../components/CutoffCountdown';
 import { QuickAddButton } from '../../components/QuickAddButton';
 import { Skeleton } from '../../components/Skeleton';
-import { getUpcomingOrderableWeekdays, getOrderCutoffInfo } from '../../utils/deliveryHelpers';
+import { getUpcomingOrderableWeekdays, UpcomingWeekday, ORDER_CUTOFF_LABEL } from '../../utils/deliveryHelpers';
 import { useResponsive } from '../../utils/responsive';
 import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { APP_MAX_WIDTH, ThemeColors } from '../../utils/theme';
@@ -89,23 +89,70 @@ export default function MenuScreen() {
   // rotating weekly menu's content is admin-controlled week to week, so it isn't
   // safe to let customers book against it 2 weeks out.
   const [selectedDeliveryDates, setSelectedDeliveryDates] = useState<string[]>([]);
+  // Per-date quantity, only used once 2+ dates are selected — lets a customer
+  // put e.g. 3 of an item on one date and 6 on another in a single Add to
+  // Cart pass instead of the shared QUANTITY stepper applying to every date.
+  const [dateQuantities, setDateQuantities] = useState<Record<string, number>>({});
   // Names of category-level extras (e.g. "Extra Bacon") selected for the item
   // currently open in the customize modal — an Uber-Eats-style modifier tied
   // to this specific order, not a standalone browsable menu item.
   const [selectedAddOns, setSelectedAddOns] = useState<Set<string>>(new Set());
   const upcomingWeekdays = useMemo(() => getUpcomingOrderableWeekdays(), []);
 
-  // Today's Menu (cycle items) has no future-date picker — it's an order for
-  // "today" only. Once today's 9:00 AM cutoff has passed (or it's a
-  // non-business day), there's no valid delivery slot left for it, so adding
-  // it to the cart must be blocked rather than just showing a passive banner.
-  const [cutoffInfo, setCutoffInfo] = useState(() => getOrderCutoffInfo());
-  useEffect(() => {
-    const interval = setInterval(() => setCutoffInfo(getOrderCutoffInfo()), 30000);
-    return () => clearInterval(interval);
-  }, []);
-  const todayOrderingClosed = !cutoffInfo.isOpenToday;
-  const [showOrderingClosedNotice, setShowOrderingClosedNotice] = useState(false);
+  // Today's Menu (cycle items) can now be pre-ordered up to a week ahead —
+  // narrower than the Main Menu's ~2-3 week horizon, so this only takes
+  // "This week"/"Next week" out of the shared upcomingWeekdays list (not
+  // "In 2 weeks"). The 2-3 business day advance cutoff is still enforced for
+  // free, since upcomingWeekdays never contains a date earlier than
+  // getOrderCutoffInfo().earliestDeliveryDate.
+  const cycleOrderableDays = useMemo(
+    () => upcomingWeekdays.filter(w => w.weekLabel !== 'In 2 weeks'),
+    [upcomingWeekdays]
+  );
+  // Multiple days can be picked at once — each checked day gets its own
+  // "day header + meal grid" section stacked on the page (see
+  // renderCycleMenu), so a customer can browse and add meals for e.g.
+  // Monday and Friday without losing sight of either. Seeded with the
+  // earliest orderable day so the page isn't blank on first load — this has
+  // to be a real, recorded selection (not just a display fallback used only
+  // when the array is empty), otherwise checking a second day would make the
+  // first day's section vanish the moment the array stops being empty.
+  const [selectedCycleDates, setSelectedCycleDates] = useState<string[]>(
+    () => (cycleOrderableDays[0] ? [cycleOrderableDays[0].iso] : [])
+  );
+  const toggleCycleDate = (iso: string) => {
+    setSelectedCycleDates(prev => {
+      if (prev.includes(iso)) {
+        // Keep at least one day selected — an empty picker would otherwise
+        // read as "no dates available" (a different, genuine empty state).
+        if (prev.length === 1) return prev;
+        return prev.filter(d => d !== iso);
+      }
+      return [...prev, iso];
+    });
+  };
+  const activeCycleDays = useMemo(
+    () => cycleOrderableDays.filter(w => selectedCycleDates.includes(w.iso)),
+    [selectedCycleDates, cycleOrderableDays]
+  );
+
+  // Which rotation week (Week 1-8 in cycleMenu.json) a given upcoming weekday
+  // pulls its meals from. The admin only ever sets "which week is live right
+  // now" (see admin.tsx WeeksSection) with no calendar anchoring, so a future
+  // date is projected forward from that as "N rotation-weeks after the
+  // currently active one" — This week = the active week itself, Next week =
+  // the week after, In 2 weeks = two after, wrapping through the 8 stored
+  // weeks. This is an assumption, not a guarantee: it's only accurate if the
+  // admin keeps advancing the active week on schedule.
+  const CYCLE_WEEK_OFFSET: Record<UpcomingWeekday['weekLabel'], number> = {
+    'This week': 0,
+    'Next week': 1,
+    'In 2 weeks': 2,
+  };
+  const getCycleWeekKeyForDate = (day: UpcomingWeekday): string => {
+    const rotationWeek = ((activeWeek - 1 + CYCLE_WEEK_OFFSET[day.weekLabel]) % 8) + 1;
+    return `Week ${rotationWeek}`;
+  };
 
   // Card sizing follows the responsive app frame. Phones keep the compact
   // 2-column grid; tablets widen the frame and move to 3 columns so cards
@@ -118,25 +165,6 @@ export default function MenuScreen() {
   const usableWidth = frameWidth - PAGE_PADDING * 2 - 4;
   const numColumns = isTablet ? 3 : 2;
   const CARD_WIDTH = Math.floor((usableWidth - CARD_GAP * (numColumns - 1)) / numColumns);
-
-  // Get current day of the week
-  const getCurrentDayName = (): string => {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    return days[new Date().getDay()];
-  };
-
-  // Meals only run Monday–Friday, so the "no meals today" message should
-  // point to the next weekday with a menu (Monday) rather than always
-  // saying "tomorrow" — which is wrong on Saturday (tomorrow is Sunday,
-  // also meal-less).
-  const getNoMealsMessage = (): string => {
-    const dayIndex = new Date().getDay(); // 0=Sun ... 6=Sat
-    if (dayIndex === 6 || dayIndex === 0) {
-      // Saturday or Sunday
-      return 'Meals are served Monday to Friday. Check back Monday!';
-    }
-    return 'Check back tomorrow!';
-  };
 
   const getItemQuantity = (id: string) => {
     const item = cart.find(c => c.id === id);
@@ -237,13 +265,31 @@ export default function MenuScreen() {
     setModalQuantity(1);
     setSelectedSizeIndex(0);
     setSelectedDeliveryDates([]);
+    setDateQuantities({});
     setSelectedAddOns(new Set());
   };
 
   const toggleDeliveryDate = (iso: string) => {
-    setSelectedDeliveryDates(prev =>
-      prev.includes(iso) ? prev.filter(d => d !== iso) : [...prev, iso]
-    );
+    const isSelected = selectedDeliveryDates.includes(iso);
+    if (isSelected) {
+      setSelectedDeliveryDates(prev => prev.filter(d => d !== iso));
+      setDateQuantities(prev => {
+        const next = { ...prev };
+        delete next[iso];
+        return next;
+      });
+    } else {
+      setSelectedDeliveryDates(prev => [...prev, iso]);
+      // Always starts at 1, not the shared stepper's current value — that
+      // stepper only reflects the last date it was displayed for (0 or 1
+      // dates selected), so carrying it over to a newly added date would be
+      // an arbitrary leftover value, not a deliberate choice for this date.
+      setDateQuantities(prev => ({ ...prev, [iso]: prev[iso] ?? 1 }));
+    }
+  };
+
+  const setDateQuantity = (iso: string, qty: number) => {
+    setDateQuantities(prev => ({ ...prev, [iso]: Math.max(1, Math.min(20, qty)) }));
   };
 
   const toggleAddOn = (name: string) => {
@@ -269,14 +315,24 @@ export default function MenuScreen() {
       : '';
 
     // Main Menu items can optionally be pre-scheduled across several weekdays
-    // in one go; cycle items and undated adds just place a single normal order.
-    const datesToApply = !isCycleItem && selectedDeliveryDates.length > 0
-      ? selectedDeliveryDates
-      : [undefined];
+    // in one go; a cycle item instead carries the single date already picked
+    // on the Today's Menu screen (selectedItem.deliveryDate); an undated add
+    // just places a single normal order.
+    const datesToApply = isCycleItem
+      ? [selectedItem.deliveryDate as string | undefined]
+      : selectedDeliveryDates.length > 0
+        ? selectedDeliveryDates
+        : [undefined];
 
     datesToApply.forEach((iso) => {
       const dateMeta = iso ? upcomingWeekdays.find(w => w.iso === iso) : undefined;
-      for (let i = 0; i < modalQuantity; i++) {
+      // With 2+ dates selected, each date uses its own stepper value (see
+      // dateQuantities); a single date/undated add still uses the shared
+      // QUANTITY stepper.
+      const qtyForDate = iso && selectedDeliveryDates.length > 1
+        ? (dateQuantities[iso] ?? 1)
+        : modalQuantity;
+      for (let i = 0; i < qtyForDate; i++) {
         addToCart({
           id: (iso ? `${selectedItem.id}::${iso}` : selectedItem.id) + addOnsIdSuffix,
           name: selectedItem.name,
@@ -297,23 +353,25 @@ export default function MenuScreen() {
     setSpecialInstructions('');
     setIsCycleItem(false);
     setSelectedDeliveryDates([]);
+    setDateQuantities({});
     setSelectedAddOns(new Set());
   };
 
-  const handleAddCycleItem = (mealName: string, mealType: string, day: string, weekName: string) => {
-    if (todayOrderingClosed) {
-      setShowOrderingClosedNotice(true);
-      return;
-    }
+  const handleAddCycleItem = (mealName: string, mealType: string, day: UpcomingWeekday, weekName: string) => {
     const cycleItem = {
-      id: `cycle-${weekName}-${day}-${mealType}-${mealName.replace(/\s+/g, '')}`,
+      id: `cycle-${weekName}-${day.dayName}-${mealType}-${mealName.replace(/\s+/g, '')}`,
       name: mealName,
       description: mealType.replace(/_/g, ' '),
-      category: `${weekName} • ${day}`,
+      category: `${weekName} • ${day.dayName}`,
       sizes: [{ label: 'Regular', price: CYCLE_ITEM_PRICE }],
       mealType,
-      day,
+      day: day.dayName,
       weekName,
+      // Carries the customer's chosen delivery date through to the cart —
+      // picked on the Today's Menu screen itself (see activeCycleDays), not
+      // in this add-to-cart modal like the Main Menu's multi-date picker.
+      deliveryDate: day.iso,
+      deliveryDateLabel: day.label,
     };
     setSelectedItem(cycleItem);
     setSpecialInstructions('');
@@ -504,10 +562,14 @@ export default function MenuScreen() {
     );
   };
 
-  // Today's cycle menu — shows only today's meals
-  // Customers only ever see today's meals — never a week picker. Which week is
-  // "live" is entirely admin-controlled (see admin.tsx WeeksSection), and which
-  // day is "today" is derived automatically from the system date.
+  // Today's Menu — customer picks one or more upcoming orderable weekdays
+  // (same 2-3-business-day-minimum list the Main Menu uses) and each picked
+  // day gets its own "day header + meal grid" section stacked on the page
+  // (e.g. Monday's meals, then Friday's meals underneath), instead of only
+  // ever showing a single day at a time. Which rotation week a date pulls
+  // its meals from is projected from the admin's current "active week" (see
+  // getCycleWeekKeyForDate above) — a given day's meals can genuinely differ
+  // from another day's even within the same page.
   const renderCycleMenu = () => {
     if (!cycleMenuData) {
       return (
@@ -519,66 +581,64 @@ export default function MenuScreen() {
       );
     }
 
-    const weekKey = `Week ${activeWeek}`;
-    const weekData = (cycleMenuData as any)[weekKey];
-    const todayName = getCurrentDayName();
-
-    if (!weekData || !Array.isArray(weekData)) {
+    if (activeCycleDays.length === 0) {
       return (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyEmoji}>📅</Text>
-          <Text style={styles.emptyTitle}>Week {activeWeek} menu not available</Text>
-          <Text style={styles.emptySub}>Check back later for this week's schedule</Text>
+          <Text style={styles.emptyTitle}>No orderable dates available</Text>
+          <Text style={styles.emptySub}>Check back later</Text>
         </View>
       );
     }
 
-    // Find today's meals
-    const todayData = weekData.find((dayObj: any) => dayObj.DAY === todayName);
-    const todayMeals = todayData
-      ? Object.entries(todayData)
-          .filter(([k]) => k !== 'DAY')
-          .map(([mealType, mealDescription]: [string, any]) => ({
-            mealType,
-            mealDescription: typeof mealDescription === 'string' ? mealDescription : String(mealDescription),
-          }))
-      : [];
+    // Resolves one day's meals (and which rotation week they came from) —
+    // called once per section below, since each selected day can land in a
+    // different rotation week.
+    const getMealsForDay = (day: UpcomingWeekday) => {
+      const weekKey = getCycleWeekKeyForDate(day);
+      const weekData = (cycleMenuData as any)[weekKey];
+      if (!weekData || !Array.isArray(weekData)) return { weekKey, meals: null as null | { mealType: string; mealDescription: string }[] };
+      const dayData = weekData.find((dayObj: any) => dayObj.DAY === day.dayName);
+      const meals = dayData
+        ? Object.entries(dayData)
+            .filter(([k]) => k !== 'DAY')
+            .map(([mealType, mealDescription]: [string, any]) => ({
+              mealType,
+              mealDescription: typeof mealDescription === 'string' ? mealDescription : String(mealDescription),
+            }))
+        : [];
+      return { weekKey, meals };
+    };
 
     // Cycle meal card renderer
     const renderCycleCard = (
       meal: { mealType: string; mealDescription: string },
-      dayName: string,
+      day: UpcomingWeekday,
       weekKeyStr: string
     ) => {
       const icon = MEAL_TYPE_ICONS[meal.mealType] || '🍽️';
       const color = MEAL_TYPE_COLORS[meal.mealType] || '#8E8E93';
       const mealName = meal.mealDescription;
-      const qty = getItemQuantity(`cycle-${weekKeyStr}-${dayName}-${meal.mealType}-${mealName.replace(/\s+/g, '')}`);
+      const qty = getItemQuantity(`cycle-${weekKeyStr}-${day.dayName}-${meal.mealType}-${mealName.replace(/\s+/g, '')}`);
 
       return (
         <TouchableOpacity
-          style={[styles.uberCard, { width: CARD_WIDTH }, todayOrderingClosed && styles.uberCardClosed]}
+          style={[styles.uberCard, { width: CARD_WIDTH }]}
           activeOpacity={0.7}
-          onPress={() => handleAddCycleItem(mealName, meal.mealType, dayName, weekKeyStr)}
+          onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
           accessibilityRole="button"
-          accessibilityLabel={`${mealName}, R${CYCLE_ITEM_PRICE}${todayOrderingClosed ? ', ordering closed' : ''}`}
+          accessibilityLabel={`${mealName}, R${CYCLE_ITEM_PRICE}`}
         >
           <View style={styles.uberImageSection}>
             <View style={[styles.cycleCardIconWrapFull, { backgroundColor: color + '18' }]}>
               <Text style={styles.cycleCardIcon}>{icon}</Text>
             </View>
             <View style={styles.uberQuickAddWrap}>
-              {todayOrderingClosed ? (
-                <View style={styles.closedBadge}>
-                  <Text style={styles.closedBadgeText}>Closed</Text>
-                </View>
-              ) : (
-                <QuickAddButton
-                  quantity={qty}
-                  onPress={() => handleAddCycleItem(mealName, meal.mealType, dayName, weekKeyStr)}
-                  theme={theme}
-                />
-              )}
+              <QuickAddButton
+                quantity={qty}
+                onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
+                theme={theme}
+              />
             </View>
           </View>
           <View style={styles.uberContent}>
@@ -592,7 +652,6 @@ export default function MenuScreen() {
       );
     };
 
-    // TODAY view — only today's meals
     return (
       <ScrollView
         style={{ flex: 1 }}
@@ -601,41 +660,84 @@ export default function MenuScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />
         }
       >
-        <View style={styles.todayIndicator}>
-          <Text style={styles.todayIndicatorText}>Today is <Text style={styles.todayIndicatorDay}>{todayName}</Text></Text>
+        <View style={styles.deliveryDatesSection}>
+          <Text style={styles.notesLabel}>DELIVERY DATE</Text>
+          <Text style={styles.deliveryHint}>
+            Pick one or more days to browse and order — each day's meals appear in their own section below. Orders still close {ORDER_CUTOFF_LABEL} at least 2 business days ahead.
+          </Text>
+          {(['This week', 'Next week'] as const).map((group) => {
+            const groupDays = cycleOrderableDays.filter(w => w.weekLabel === group);
+            if (groupDays.length === 0) return null;
+            return (
+              <View key={group} style={styles.deliveryGroup}>
+                <Text style={styles.deliveryGroupLabel}>{group}</Text>
+                <View style={styles.deliveryChipRow}>
+                  {groupDays.map((day) => {
+                    const isSelected = activeCycleDays.some(d => d.iso === day.iso);
+                    return (
+                      <TouchableOpacity
+                        key={day.iso}
+                        style={[styles.deliveryChip, isSelected && styles.deliveryChipActive]}
+                        onPress={() => toggleCycleDate(day.iso)}
+                        activeOpacity={0.8}
+                        accessibilityRole="checkbox"
+                        accessibilityState={{ checked: isSelected }}
+                        accessibilityLabel={day.label}
+                      >
+                        <Text style={[styles.deliveryChipText, isSelected && styles.deliveryChipTextActive]}>
+                          {day.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            );
+          })}
         </View>
 
         <View style={styles.weekStatusRow}>
           <CutoffCountdown compact theme={theme} />
         </View>
 
-        {todayMeals.length > 0 ? (
-          <View style={styles.categorySection}>
-            <View style={styles.dayHeaderBar}>
-              <View style={styles.dayHeaderLeft}>
-                <View style={styles.todayDot} />
-                <Text style={[styles.dayTitle, styles.dayTitleToday]}>{todayName}</Text>
+        {activeCycleDays.map((day) => {
+          const { weekKey, meals } = getMealsForDay(day);
+          return (
+            <View key={day.iso} style={styles.categorySection}>
+              <View style={styles.dayHeaderBar}>
+                <View style={styles.dayHeaderLeft}>
+                  <View style={styles.todayDot} />
+                  <Text style={[styles.dayTitle, styles.dayTitleToday]}>{day.label}</Text>
+                </View>
+                {meals && meals.length > 0 && <Text style={styles.dayMealCount}>{meals.length} meals</Text>}
               </View>
-              <Text style={styles.dayMealCount}>{todayMeals.length} meals</Text>
+              {meals === null ? (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyEmoji}>📅</Text>
+                  <Text style={styles.emptyTitle}>{weekKey} menu not available</Text>
+                  <Text style={styles.emptySub}>Check back later for this week's schedule</Text>
+                </View>
+              ) : meals.length > 0 ? (
+                <FlatList
+                  key={`cycle-${day.iso}-${numColumns}`}
+                  data={meals}
+                  keyExtractor={(_, idx) => `cycle-${day.iso}-${idx}`}
+                  numColumns={numColumns}
+                  columnWrapperStyle={styles.uberGridColumn}
+                  scrollEnabled={false}
+                  nestedScrollEnabled={true}
+                  renderItem={({ item: meal }) => renderCycleCard(meal, day, weekKey)}
+                />
+              ) : (
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyEmoji}>😴</Text>
+                  <Text style={styles.emptyTitle}>No meals scheduled for {day.dayName}</Text>
+                  <Text style={styles.emptySub}>Try a different date above.</Text>
+                </View>
+              )}
             </View>
-            <FlatList
-              key={`today-${numColumns}`}
-              data={todayMeals}
-              keyExtractor={(_, idx) => `today-${idx}`}
-              numColumns={numColumns}
-              columnWrapperStyle={styles.uberGridColumn}
-              scrollEnabled={false}
-              nestedScrollEnabled={true}
-              renderItem={({ item: meal }) => renderCycleCard(meal, todayName, weekKey)}
-            />
-          </View>
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyEmoji}>😴</Text>
-            <Text style={styles.emptyTitle}>No meals scheduled for today</Text>
-            <Text style={styles.emptySub}>Today is {todayName}. {getNoMealsMessage()}</Text>
-          </View>
-        )}
+          );
+        })}
       </ScrollView>
     );
   };
@@ -738,7 +840,7 @@ export default function MenuScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{isCycleItem ? 'Add Today\'s Meal' : 'Customize Order'}</Text>
+              <Text style={styles.modalTitle}>{isCycleItem ? 'Add Meal' : 'Customize Order'}</Text>
               <TouchableOpacity
                 onPress={() => setSelectedItem(null)}
                 accessibilityRole="button"
@@ -750,12 +852,16 @@ export default function MenuScreen() {
 
             {selectedItem && (() => {
               const activeSize = selectedItem.sizes[selectedSizeIndex] || selectedItem.sizes[0];
-              const dayMultiplier = !isCycleItem && selectedDeliveryDates.length > 0 ? selectedDeliveryDates.length : 1;
               const categoryAddOns = menus.find(c => c.name === selectedItem.category)?.addOns;
               const addOnsTotal = (categoryAddOns ?? [])
                 .filter(a => selectedAddOns.has(a.name))
                 .reduce((sum, a) => sum + a.price, 0);
-              const lineTotal = (activeSize.price + addOnsTotal) * modalQuantity * dayMultiplier;
+              // With 2+ dates selected each has its own quantity; otherwise
+              // it's just the shared QUANTITY stepper (0 or 1 dates picked).
+              const totalUnits = !isCycleItem && selectedDeliveryDates.length > 1
+                ? selectedDeliveryDates.reduce((sum, iso) => sum + (dateQuantities[iso] ?? 1), 0)
+                : modalQuantity;
+              const lineTotal = (activeSize.price + addOnsTotal) * totalUnits;
 
               return (
                 <>
@@ -767,6 +873,9 @@ export default function MenuScreen() {
                         <Text style={styles.modalItemPrice}>R{activeSize.price.toFixed(0)}</Text>
                         {isCycleItem && selectedItem.description ? (
                           <Text style={styles.modalItemMealType}>{selectedItem.description}</Text>
+                        ) : null}
+                        {isCycleItem && selectedItem.deliveryDateLabel ? (
+                          <Text style={styles.modalItemMealType}>📅 Delivering {selectedItem.deliveryDateLabel}</Text>
                         ) : null}
                       </View>
                     </View>
@@ -843,7 +952,7 @@ export default function MenuScreen() {
                           <Text style={styles.notesLabel}>DELIVER ON (OPTIONAL)</Text>
                           {selectedDeliveryDates.length > 0 && (
                             <TouchableOpacity
-                              onPress={() => setSelectedDeliveryDates([])}
+                              onPress={() => { setSelectedDeliveryDates([]); setDateQuantities({}); }}
                               accessibilityRole="button"
                               accessibilityLabel="Clear selected delivery dates"
                             >
@@ -891,28 +1000,66 @@ export default function MenuScreen() {
                     )}
 
                     <View style={styles.quantitySection}>
-                        <Text style={styles.notesLabel}>QUANTITY</Text>
-                        <View style={styles.quantityStepperRow}>
-                          <TouchableOpacity
-                            style={[styles.stepperBtn, modalQuantity <= 1 && styles.stepperBtnDisabled]}
-                            onPress={() => setModalQuantity(q => Math.max(1, q - 1))}
-                            disabled={modalQuantity <= 1}
-                            accessibilityRole="button"
-                            accessibilityLabel="Decrease quantity"
-                          >
-                            <Text style={styles.stepperBtnText}>−</Text>
-                          </TouchableOpacity>
-                          <Text style={styles.stepperValue} accessibilityLabel={`Quantity: ${modalQuantity}`}>{modalQuantity}</Text>
-                          <TouchableOpacity
-                            style={styles.stepperBtn}
-                            onPress={() => setModalQuantity(q => Math.min(20, q + 1))}
-                            accessibilityRole="button"
-                            accessibilityLabel="Increase quantity"
-                          >
-                            <Text style={styles.stepperBtnText}>+</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
+                      {selectedDeliveryDates.length > 1 ? (
+                        <>
+                          <Text style={styles.notesLabel}>QUANTITY PER DAY</Text>
+                          {selectedDeliveryDates.map((iso) => {
+                            const dateMeta = upcomingWeekdays.find(w => w.iso === iso);
+                            const qty = dateQuantities[iso] ?? 1;
+                            const label = dateMeta?.label ?? iso;
+                            return (
+                              <View key={iso} style={styles.dateQuantityRow}>
+                                <Text style={styles.dateQuantityLabel}>{label}</Text>
+                                <View style={styles.quantityStepperRow}>
+                                  <TouchableOpacity
+                                    style={[styles.stepperBtn, qty <= 1 && styles.stepperBtnDisabled]}
+                                    onPress={() => setDateQuantity(iso, qty - 1)}
+                                    disabled={qty <= 1}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`Decrease quantity for ${label}`}
+                                  >
+                                    <Text style={styles.stepperBtnText}>−</Text>
+                                  </TouchableOpacity>
+                                  <Text style={styles.stepperValue} accessibilityLabel={`Quantity for ${label}: ${qty}`}>{qty}</Text>
+                                  <TouchableOpacity
+                                    style={styles.stepperBtn}
+                                    onPress={() => setDateQuantity(iso, qty + 1)}
+                                    accessibilityRole="button"
+                                    accessibilityLabel={`Increase quantity for ${label}`}
+                                  >
+                                    <Text style={styles.stepperBtnText}>+</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            );
+                          })}
+                        </>
+                      ) : (
+                        <>
+                          <Text style={styles.notesLabel}>QUANTITY</Text>
+                          <View style={styles.quantityStepperRow}>
+                            <TouchableOpacity
+                              style={[styles.stepperBtn, modalQuantity <= 1 && styles.stepperBtnDisabled]}
+                              onPress={() => setModalQuantity(q => Math.max(1, q - 1))}
+                              disabled={modalQuantity <= 1}
+                              accessibilityRole="button"
+                              accessibilityLabel="Decrease quantity"
+                            >
+                              <Text style={styles.stepperBtnText}>−</Text>
+                            </TouchableOpacity>
+                            <Text style={styles.stepperValue} accessibilityLabel={`Quantity: ${modalQuantity}`}>{modalQuantity}</Text>
+                            <TouchableOpacity
+                              style={styles.stepperBtn}
+                              onPress={() => setModalQuantity(q => Math.min(20, q + 1))}
+                              accessibilityRole="button"
+                              accessibilityLabel="Increase quantity"
+                            >
+                              <Text style={styles.stepperBtnText}>+</Text>
+                            </TouchableOpacity>
+                          </View>
+                        </>
+                      )}
+                    </View>
 
                     <View style={styles.notesSection}>
                       <Text style={styles.notesLabel}>Special Instructions / Allergies</Text>
@@ -944,37 +1091,12 @@ export default function MenuScreen() {
                   >
                     <Text style={styles.modalAddBtnText}>
                       Add to Cart · R{lineTotal.toFixed(2)}
-                      {dayMultiplier > 1 ? ` (${dayMultiplier} days)` : ''}
+                      {selectedDeliveryDates.length > 1 ? ` (${selectedDeliveryDates.length} days)` : ''}
                     </Text>
                   </TouchableOpacity>
                 </>
               );
             })()}
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={showOrderingClosedNotice}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setShowOrderingClosedNotice(false)}
-      >
-        <View style={styles.closedDialogOverlay}>
-          <View style={styles.closedDialogCard}>
-            <Text style={styles.closedDialogIcon}>🕒</Text>
-            <Text style={styles.closedDialogTitle}>Today's ordering has closed</Text>
-            <Text style={styles.closedDialogText}>
-              {cutoffInfo.message} Today's Menu items can only be ordered for today, so this one can't be added right now.
-            </Text>
-            <Text style={styles.closedDialogDate}>Next window: {cutoffInfo.formattedEarliest}</Text>
-            <TouchableOpacity
-              style={styles.closedDialogBtn}
-              onPress={() => setShowOrderingClosedNotice(false)}
-              accessibilityRole="button"
-            >
-              <Text style={styles.closedDialogBtnText}>Got it</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1170,18 +1292,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   uberPrice: { fontSize: 15, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
   uberOriginalPrice: { fontSize: 12, fontWeight: '600', color: theme.textTertiary, textDecorationLine: 'line-through' },
 
-  todayIndicator: {
-    backgroundColor: theme.surfaceSecondary,
-    borderRadius: 16,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  todayIndicatorText: { color: theme.textSecondary, fontSize: 14, fontWeight: '600' },
-  todayIndicatorDay: { color: theme.success, fontWeight: '800' },
 
   dayHeaderBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
   dayHeaderLeft: { flexDirection: 'row', alignItems: 'center' },
@@ -1304,37 +1414,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   // padding via `listContainer`).
   weekStatusRow: { marginBottom: 12, marginTop: 8 },
 
-  // Cycle card dimmed state once today's ordering window has closed
-  uberCardClosed: { opacity: 0.45 },
-  closedBadge: {
-    backgroundColor: '#000000CC',
-    borderWidth: 1,
-    borderColor: '#000000',
-    borderRadius: 10,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-  },
-  closedBadgeText: { color: '#FFFFFF', fontSize: 11, fontWeight: '800', letterSpacing: 0.3 },
-
-  // "Today's ordering has closed" explainer dialog
-  closedDialogOverlay: { flex: 1, backgroundColor: theme.modalOverlay, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  closedDialogCard: {
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 24,
-    padding: 28,
-    width: '100%',
-    maxWidth: 360,
-    alignItems: 'center',
-  },
-  closedDialogIcon: { fontSize: 36, marginBottom: 12 },
-  closedDialogTitle: { fontSize: 18, fontWeight: '900', color: theme.text, marginBottom: 8, textAlign: 'center' },
-  closedDialogText: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', lineHeight: 20 },
-  closedDialogDate: { fontSize: 12, color: theme.text, fontWeight: '700', marginTop: 10, marginBottom: 20 },
-  closedDialogBtn: { backgroundColor: theme.accent, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 14, alignSelf: 'stretch', alignItems: 'center' },
-  closedDialogBtnText: { color: theme.onAccent, fontSize: 15, fontWeight: '800' },
-
   // Item customizer modal — size picker, quantity stepper, dietary tags
   sizeSection: { marginBottom: 20 },
   sizeRow: { flexDirection: 'row', gap: 10 },
@@ -1412,6 +1491,13 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   },
   tagChipText: { color: '#1DA836', fontSize: 12, fontWeight: '800' },
   quantitySection: { marginBottom: 20 },
+  dateQuantityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  dateQuantityLabel: { color: theme.text, fontSize: 14, fontWeight: '700' },
   quantityStepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
