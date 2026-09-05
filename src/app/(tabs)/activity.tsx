@@ -59,7 +59,7 @@ export default function TabActivityScreen() {
     switch (status.toLowerCase()) {
       case 'pending': return 'Received';
       case 'preparing': return 'Preparing';
-            case 'on_the_way': return 'Out for delivery';
+      case 'on_the_way': return 'Out for delivery';
       case 'delivered': return 'Delivered';
       case 'cancelled': return 'Cancelled';
       default: return status;
@@ -77,7 +77,7 @@ export default function TabActivityScreen() {
   );
 
   return (
-        <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
 
       {isLoading ? (

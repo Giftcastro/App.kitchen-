@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useKitchen } from '../../context/KitchenCoContext';
@@ -15,7 +15,7 @@ export default function TabsLayout() {
   // partially behind that system UI on devices with gesture navigation.
   const insets = useSafeAreaInsets();
   // Admins manage the kitchen, they don't place personal orders — so the
-  // customer ordering surface (Menu/cart, past-order Activity, order Tracker)
+  // customer ordering surface (Menu/cart, past-order History, order Tracker)
   // isn't part of their account. Only Admin + Profile apply to them.
   const isAdmin = user?.role === 'admin';
 
@@ -27,7 +27,10 @@ export default function TabsLayout() {
   // measured position — this is the one screen that actually knows where it is.
   const cartIconRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
   const flyOverlayRef = useRef<FlyToCartOverlayHandle>(null);
-  const badgeScale = useRef(new Animated.Value(1)).current;
+  // Lazy useState, not useRef(new Animated.Value(x)).current: that form
+  // built a throwaway Animated.Value on every render and read a ref during
+  // render. useState guarantees the instance is created once and kept.
+  const [badgeScale] = useState(() => new Animated.Value(1));
 
   useEffect(() => {
     if (cartPulseSignal === 0) return;
@@ -121,17 +124,6 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen
-          name="activity"
-          options={{
-            title: 'Activity',
-            headerTitle: 'Past Orders',
-            href: user && !isAdmin ? undefined : null,
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="time" size={size} color={color} />
-            ),
-          }}
-        />
-        <Tabs.Screen
           name="tracker"
           options={{
             title: 'Orders',
@@ -139,6 +131,17 @@ export default function TabsLayout() {
             href: user && !isAdmin ? undefined : null,
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="receipt" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="activity"
+          options={{
+            title: 'History',
+            headerTitle: 'Order History',
+            href: user && !isAdmin ? undefined : null,
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="time" size={size} color={color} />
             ),
           }}
         />

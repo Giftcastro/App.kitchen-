@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Animated, View, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, StatusBar,
@@ -49,7 +49,10 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
   const [forgotSubmitted, setForgotSubmitted] = useState(false);
-  const btnScale = useRef(new Animated.Value(1)).current;
+  // Lazy useState, not useRef(new Animated.Value(x)).current: that form
+  // built a throwaway Animated.Value on every render and read a ref during
+  // render. useState guarantees the instance is created once and kept.
+  const [btnScale] = useState(() => new Animated.Value(1));
 
   // Scales the gap above the logo with the actual screen — a fixed pixel
   // value looked right on a Pixel-sized phone but would be cramped on a

@@ -18,7 +18,10 @@ const ICON_SIZE = 28;
 export const FlyToCartOverlay = forwardRef<FlyToCartOverlayHandle, { theme: ThemeColors }>(
   function FlyToCartOverlay({ theme }, ref) {
     const [flying, setFlying] = useState(false);
-    const progress = useRef(new Animated.Value(0)).current;
+    // Lazy useState, not useRef(new Animated.Value(x)).current: that form
+    // built a throwaway Animated.Value on every render and read a ref during
+    // render. useState guarantees the instance is created once and kept.
+    const [progress] = useState(() => new Animated.Value(0));
     const originRef = useRef({ fromX: 0, fromY: 0, toX: 0, toY: 0 });
 
     useImperativeHandle(ref, () => ({

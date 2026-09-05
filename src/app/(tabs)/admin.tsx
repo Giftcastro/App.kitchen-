@@ -3,7 +3,7 @@ import { StyleSheet, View, TouchableOpacity, StatusBar, ScrollView, Modal, Dimen
 import { Text, TextInput } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useKitchen, Order, AppUser, Company, AddOnOption } from '../../context/KitchenCoContext';
+import { useKitchen, createUserId, Order, AppUser, Company, AddOnOption } from '../../context/KitchenCoContext';
 import { Ionicons } from '@expo/vector-icons';
 import { calculateDeliveryFee, getItemDueDate, isSameDay } from '../../utils/deliveryHelpers';
 import { ThemeColors } from '../../utils/theme';
@@ -602,7 +602,7 @@ export default function AdminScreen() {
   const handleAddUser = () => {
     if (newUserName && newUserEmail) {
       const newUser: AppUser = {
-        id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
+        id: createUserId(),
         name: newUserName,
         email: newUserEmail,
         role: 'customer',
@@ -1807,9 +1807,15 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
   };
 
   const openEditModal = (categoryId: string, item: any) => {
+    // updateMenuItem finds the item by id, so an item with no id cannot be
+    // saved. The old `item-${Date.now()}` fallback minted an id that matched
+    // nothing, so the modal opened and Save silently did nothing. Every menu
+    // item does carry an id today; if one ever does not, refusing to open is
+    // honest where a no-op Save is not.
+    if (!item?.id) return;
     setEditingItem({
       categoryId,
-      itemId: item.id || `item-${Date.now()}`,
+      itemId: item.id,
       name: item.name || '',
       price: String(item.sizes?.[0]?.price || ''),
       description: item.description || '',

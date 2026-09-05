@@ -51,6 +51,13 @@ export default function PayFastSandboxScreen() {
   const [cvv, setCvv] = useState('');
   const [formErrors, setFormErrors] = useState<{[key: string]: string | undefined}>({});
 
+  // PayFast’s m_payment_id is our reference for this checkout, so it has to
+  // stay fixed for the life of the screen. It was Date.now() inlined into the
+  // form template below, which is built during render — so every re-render
+  // (a keystroke in the card form is enough) minted a different reference for
+  // the same payment. Lazy useState computes it once per mount instead.
+  const [paymentReference] = useState(() => `KITCHEN-${Date.now()}`);
+
   // Helper to detect card type from number
   const getCardType = (number: string): 'visa' | 'mastercard' | 'amex' | 'other' => {
     const cleaned = number.replace(/\s/g, '');
@@ -95,13 +102,9 @@ export default function PayFastSandboxScreen() {
   // the native cursor snaps to the end of the text on every reformat,
   // which is exactly the "glitching" this was causing. Digits-only input
   // (matching how the CVV field already behaved, which never glitched)
-  // sidesteps the whole bug category. formatCardNumber/formatExpiry are
-  // kept for display-only use (e.g. a formatted summary) if ever needed.
-  const formatCardNumber = (text: string) => {
-    const cleaned = text.replace(/\D/g, '').slice(0, 16);
-    const groups = cleaned.match(/.{1,4}/g);
-    return groups ? groups.join(' ') : cleaned;
-  };
+  // sidesteps the whole bug category. The card number needs no formatter
+  // at all now — maskCardNumber handles the saved-card display — so only
+  // formatExpiry survives, used when recording the saved card below.
 
   // Format expiry date as MM/YY
   const formatExpiry = (text: string) => {
@@ -264,7 +267,7 @@ export default function PayFastSandboxScreen() {
           <input type="hidden" name="return_url" value="${RETURN_URL}">
           <input type="hidden" name="cancel_url" value="${CANCEL_URL}">
           
-          <input type="hidden" name="m_payment_id" value="KITCHEN-${Date.now()}">
+          <input type="hidden" name="m_payment_id" value="${paymentReference}">
           <input type="hidden" name="amount" value="${finalTotal.toFixed(2)}">
           <input type="hidden" name="item_name" value="Kitchen App Order">
           <input type="hidden" name="item_description" value="Food order collection from Kitchen App">

@@ -33,12 +33,12 @@ export const DeliveryEstimator: React.FC<DeliveryEstimatorProps> = ({ theme }) =
     // Two different situations were sharing one message here before: on a
     // weekday morning before 8am there's still a 9am cutoff today to hit, so
     // "order by 9am today" stays accurate no matter when in that window they
-    // actually check out. A weekend is different — the 2-business-day count
-    // toward formattedDate starts from TODAY (a weekend day counts as day 0,
-    // same as any other day it's measured from), not from the next cutoff.
-    // Naming the next cutoff day here would look like it should relate
-    // arithmetically to formattedDate and it doesn't — so this states only
-    // what's actually true: ordering now gets you formattedDate.
+    // actually check out. A weekend is different: getOrderCutoffInfo rolls the
+    // start of the count forward to Monday first (rollForwardToWeekday), so a
+    // weekend day is never day zero — Saturday and Monday both yield the same
+    // Wednesday. Naming the next cutoff day here would look like it should
+    // relate arithmetically to formattedDate and it does not — so this states
+    // only what's actually true: ordering now gets you formattedDate.
     text = isOpenToday
       ? `Kitchen opens 8:00 AM — order by 9:00 AM today for delivery ${formattedDate}`
       : `Kitchen's closed for the weekend — order now for delivery ${formattedDate}`;

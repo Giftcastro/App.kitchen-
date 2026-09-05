@@ -13,6 +13,31 @@ export type { AddOnOption };
 const THEME_MODE_STORAGE_KEY = 'kitchenco_theme_mode';
 const KITCHEN_EMAIL_STORAGE_KEY = 'kitchenco_kitchen_email';
 
+/**
+ * Sequential source for new order numbers.
+ *
+ * These used to be a random 4-digit number (Math.random) — a
+ * 9,000-value space that the seeded demo orders already sit inside, giving a
+ * ~50% chance of a duplicate within ~112 orders. A duplicate is not cosmetic:
+ * updateOrderStatus maps over *every* order matching the id, so one customer's
+ * status change would silently move a stranger's order too, and the id is also
+ * the FlatList key on the History screen.
+ *
+ * Starts above the highest seeded id (ORD-1298). Orders are in-memory only
+ * today, so this resets per session — when they move server-side, take the id
+ * from the backend instead of this counter.
+ */
+let nextOrderNumber = 1299;
+
+/**
+ * Sequential source for new user ids, for the same reason as
+ * nextOrderNumber above — these were also random 4-digit numbers sharing a
+ * 9,000-value space with the seeded users (USR-1001..USR-1007). Exported so
+ * the admin screen mints ids from the same counter rather than its own.
+ */
+let nextUserNumber = 1008;
+export const createUserId = () => `USR-${nextUserNumber++}`;
+
 export type AccountType = 'individual' | 'company';
 
 export interface User {
@@ -203,19 +228,338 @@ interface KitchenContextType {
   setKitchenEmail: (email: string) => void;
 }
 
+interface DemoSeedData {
+  users: AppUser[];
+  orders: Order[];
+  discounts: Discount[];
+}
+
+/**
+ * Builds the prototype seed data (demo users, orders and discounts).
+ *
+ * This used to be a mount-time useEffect calling setAllUsers/setOrders/
+ * setDiscounts, so every launch rendered the entire app once against empty
+ * state and then immediately re-rendered with the data. It is the initial
+ * state now, so the first render already has it — one less full-app render
+ * pass on startup, from the provider that re-renders everything.
+ */
+function buildDemoSeedData(): DemoSeedData {
+  const demoUsers: AppUser[] = [
+    { id: 'USR-1001', name: 'John Customer', email: 'john@example.com', role: 'customer', joinedDate: '12 Jun 2026', orderCount: 3 },
+    { id: 'USR-1002', name: 'Jane Smith', email: 'jane@example.com', role: 'customer', joinedDate: '28 May 2026', orderCount: 7 },
+    { id: 'USR-1003', name: 'Mike Johnson', email: 'mike@example.com', role: 'customer', joinedDate: '5 Jun 2026', orderCount: 1 },
+    // Demonstrates work-email domain matching — signing in with any
+    // @ecogra.org/@tcs.com/@rclfoods.com address auto-detects the matching
+    // real corporate client (see `companies`, below). Two Ecogra employees
+    // are seeded so the Chef tab's Order Queue has a real multi-order
+    // batch to demonstrate, not just a single-order company.
+    { id: 'USR-1004', name: 'Thandiwe Mokoena', email: 'thandiwe@ecogra.org', role: 'customer', accountType: 'company', companyName: 'Ecogra', joinedDate: '3 Aug 2026', orderCount: 3 },
+    { id: 'USR-1005', name: 'Lerato Nkosi', email: 'lerato@ecogra.org', role: 'customer', accountType: 'company', companyName: 'Ecogra', joinedDate: '10 Aug 2026', orderCount: 2 },
+    { id: 'USR-1006', name: 'Raj Naidoo', email: 'raj@tcs.com', role: 'customer', accountType: 'company', companyName: 'TATA', joinedDate: '15 Aug 2026', orderCount: 1 },
+    { id: 'USR-1007', name: 'Nomvula Dube', email: 'nomvula@rclfoods.com', role: 'customer', accountType: 'company', companyName: 'RCL', joinedDate: '20 Aug 2026', orderCount: 1 },
+  ];
+  
+  const todayStr = new Date().toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
+  // yyyy-mm-dd, for a demo order whose items are pre-scheduled for delivery
+  // today — so the admin dashboard's "Due Today" tracking has something
+  // real to show regardless of what the actual current date happens to be.
+  // Built from local date parts, not toISOString() (UTC) — the due-date
+  // comparison this feeds (isSameDay) uses local getFullYear/Month/Date,
+  // so a UTC-based string could land on the wrong calendar day depending
+  // on the device's timezone offset.
+  const _today = new Date();
+  const todayISO = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, '0')}-${String(_today.getDate()).padStart(2, '0')}`;
+  const todayDeliveryLabel = new Date().toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' });
+
+  const demoOrders: Order[] = [
+    {
+      // A corporate bulk order placed a few days ago and pre-scheduled for
+      // delivery today — the realistic case "Due Today" is meant to catch:
+      // items booked for a specific date, not just orders placed today.
+      // Paired with ORD-1296 below (same company, same day) so the Chef
+      // tab's Order Queue has a real 2-order Ecogra batch to show off, not
+      // just a single order that happens to have a company attached.
+      id: 'ORD-1295',
+      items: [
+        { id: 'bulk-1', name: 'Chicken Aglio e Olio Penne', price: 80, category: 'CIAO ITALY', quantity: 15, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+        { id: 'bulk-2', name: 'Beef Lasagne', price: 80, category: 'CIAO ITALY', quantity: 10, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+      ],
+      total: 2100,
+      totalPrice: 2000,
+      deliveryFee: 100,
+      status: 'preparing',
+      date: '26 Aug 2026, 09:10',
+      timestamp: '26 Aug 2026, 09:10',
+      userEmail: 'thandiwe@ecogra.org',
+      userName: 'Thandiwe Mokoena',
+      deliveryAddress: {
+        id: 'company-ecogra',
+        label: 'Ecogra',
+        street: '160 Jan Smuts Ave',
+        suburb: 'Rosebank',
+        city: 'Johannesburg',
+        code: '',
+        isDefault: true,
+      },
+    },
+    {
+      id: 'ORD-1296',
+      items: [
+        { id: 'bulk-3', name: 'Chicken Napolitana Penne', price: 80, category: 'CIAO ITALY', quantity: 8, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+      ],
+      total: 740,
+      totalPrice: 640,
+      deliveryFee: 100,
+      status: 'preparing',
+      date: '27 Aug 2026, 08:50',
+      timestamp: '27 Aug 2026, 08:50',
+      userEmail: 'lerato@ecogra.org',
+      userName: 'Lerato Nkosi',
+      deliveryAddress: {
+        id: 'company-ecogra',
+        label: 'Ecogra',
+        street: '160 Jan Smuts Ave',
+        suburb: 'Rosebank',
+        city: 'Johannesburg',
+        code: '',
+        isDefault: true,
+      },
+    },
+    {
+      id: 'ORD-1297',
+      items: [
+        { id: 'bulk-4', name: 'Chicken Alfredo Linguini Pasta', price: 80, category: 'CIAO ITALY', quantity: 12, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+      ],
+      total: 1060,
+      totalPrice: 960,
+      deliveryFee: 100,
+      status: 'pending',
+      date: '28 Aug 2026, 10:15',
+      timestamp: '28 Aug 2026, 10:15',
+      userEmail: 'raj@tcs.com',
+      userName: 'Raj Naidoo',
+      deliveryAddress: {
+        id: 'company-tata',
+        label: 'TATA',
+        street: '39 Ferguson Road',
+        suburb: 'Illovo',
+        city: 'Johannesburg',
+        code: '',
+        isDefault: true,
+      },
+    },
+    {
+      id: 'ORD-1298',
+      items: [
+        { id: 'bulk-5', name: 'Beef Lasagne', price: 80, category: 'CIAO ITALY', quantity: 6, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+      ],
+      total: 580,
+      totalPrice: 480,
+      deliveryFee: 100,
+      status: 'pending',
+      date: '29 Aug 2026, 09:30',
+      timestamp: '29 Aug 2026, 09:30',
+      userEmail: 'nomvula@rclfoods.com',
+      userName: 'Nomvula Dube',
+      deliveryAddress: {
+        id: 'company-rcl',
+        label: 'RCL',
+        street: '15 Railey Road',
+        suburb: 'Bedfordview',
+        city: 'Johannesburg',
+        code: '',
+        isDefault: true,
+      },
+    },
+    {
+      id: 'ORD-1290',
+      items: [
+        { id: 'today-1', name: 'Grilled Chicken & Mushroom Pasta', price: 140, category: 'CIAO ITALY', quantity: 2, selectedSize: 'Regular' },
+        { id: 'today-2', name: 'Caesar Salad', price: 80, category: 'SALADS & BOWLS', quantity: 1 },
+        { id: 'today-3', name: 'Garlic Bread', price: 35, category: 'SIDES & SAUCES', quantity: 1 },
+      ],
+      total: 395,
+      totalPrice: 395,
+      status: 'on_the_way',
+      date: todayStr,
+      timestamp: todayStr,
+      userEmail: 'john@example.com',
+      userName: 'John Customer',
+      deliveryAddress: {
+        id: 'addr-1',
+        label: 'Home',
+        street: '12 Oak Avenue',
+        suburb: 'Rivonia',
+        city: 'Johannesburg',
+        code: '2128',
+        isDefault: true,
+      },
+    },
+    {
+      id: 'ORD-1234',
+      items: [
+        { id: '1', name: 'Grilled Chicken & Mushroom Pasta', price: 140, category: 'CIAO ITALY', quantity: 1, selectedSize: 'Regular' },
+        { id: '2', name: 'Garlic Bread', price: 35, category: 'SIDES & SAUCES', quantity: 1 },
+      ],
+      total: 175,
+      totalPrice: 175,
+      status: 'pending',
+      date: '17 Jul 2026, 10:30',
+      timestamp: '17 Jul 2026, 10:30',
+      userEmail: 'john@example.com',
+      userName: 'John Customer',
+      deliveryAddress: {
+        id: 'addr-1',
+        label: 'Home',
+        street: '12 Oak Avenue',
+        suburb: 'Rivonia',
+        city: 'Johannesburg',
+        code: '2128',
+        isDefault: true,
+      },
+    },
+    {
+      id: 'ORD-1233',
+      items: [
+        { id: '3', name: 'Creamy Chicken & Mushroom Pasta', price: 140, category: 'CIAO ITALY', quantity: 1, selectedSize: 'Regular' },
+        { id: '4', name: 'Green Salad', price: 20, category: 'SIDES & SAUCES', quantity: 1 },
+        // Weekly Menu item (id prefixed "cycle-") — included so Activity has a
+        // real example of an order that can't be reordered as a single action.
+        { id: 'cycle-Week 1-Monday-MAIN MEAL-TraditionalBeefBobotiewithYellowRice&Sambal', name: 'Traditional Beef Bobotie with Yellow Rice & Sambal', price: 80, category: 'Week 1 • Monday', quantity: 1, selectedSize: 'Regular' },
+      ],
+      total: 240,
+      totalPrice: 240,
+      status: 'delivered',
+      date: '16 Jul 2026, 14:20',
+      timestamp: '16 Jul 2026, 14:20',
+      userEmail: 'jane@example.com',
+      userName: 'Jane Smith',
+      deliveryAddress: {
+        id: 'addr-2',
+        label: 'Work',
+        street: '45 Maude Street',
+        suburb: 'Sandton',
+        city: 'Johannesburg',
+        code: '2196',
+        isDefault: true,
+      },
+    },
+    {
+      id: 'ORD-1232',
+      items: [
+        { id: '5', name: 'Beef Lasagne', price: 140, category: 'CIAO ITALY', quantity: 1, selectedSize: 'Regular' },
+      ],
+      total: 140,
+      totalPrice: 140,
+      status: 'delivered',
+      date: '15 Jul 2026, 12:45',
+      timestamp: '15 Jul 2026, 12:45',
+      userEmail: 'jane@example.com',
+      userName: 'Jane Smith',
+    },
+    {
+      id: 'ORD-1231',
+      items: [
+        { id: '6', name: 'Chicken Bacon & Avocado Wrap', price: 95, category: 'WRAPS & SANDWICHES', quantity: 2, selectedSize: 'Regular' },
+        { id: '7', name: 'Lemon & Herb Chicken Pasta Salad', price: 85, category: 'SALADS & BOWLS', quantity: 1 },
+        { id: '8', name: 'Sweet Potato Fries', price: 50, category: 'SIDES & SAUCES', quantity: 1 },
+      ],
+      total: 325,
+      totalPrice: 325,
+      status: 'delivered',
+      date: '14 Jul 2026, 11:20',
+      timestamp: '14 Jul 2026, 11:20',
+      userEmail: 'mike@example.com',
+      userName: 'Mike Johnson',
+      deliveryAddress: {
+        id: 'addr-3',
+        label: 'Home',
+        street: '8 Park Lane',
+        suburb: 'Parktown',
+        city: 'Johannesburg',
+        code: '2193',
+        isDefault: true,
+      },
+    },
+    {
+      id: 'ORD-1230',
+      items: [
+        { id: '9', name: 'Grilled Chicken Salad', price: 110, category: 'SALADS & BOWLS', quantity: 1, selectedSize: 'Regular' },
+      ],
+      total: 110,
+      totalPrice: 110,
+      status: 'cancelled',
+      date: '13 Jul 2026, 09:15',
+      timestamp: '13 Jul 2026, 09:15',
+      userEmail: 'john@example.com',
+      userName: 'John Customer',
+      deliveryAddress: {
+        id: 'addr-1',
+        label: 'Home',
+        street: '12 Oak Avenue',
+        suburb: 'Rivonia',
+        city: 'Johannesburg',
+        code: '2128',
+        isDefault: true,
+      },
+    },
+    {
+      id: 'ORD-1229',
+      items: [
+        { id: '10', name: 'BBQ Chicken Pizza', price: 135, category: 'CIAO ITALY', quantity: 1, selectedSize: 'Large' },
+        { id: '11', name: 'Caesar Salad', price: 80, category: 'SALADS & BOWLS', quantity: 1 },
+        { id: '12', name: 'Garlic Bread', price: 35, category: 'SIDES & SAUCES', quantity: 2 },
+      ],
+      total: 285,
+      totalPrice: 285,
+      status: 'delivered',
+      date: '12 Jul 2026, 18:30',
+      timestamp: '12 Jul 2026, 18:30',
+      userEmail: 'jane@example.com',
+      userName: 'Jane Smith',
+      deliveryAddress: {
+        id: 'addr-2',
+        label: 'Work',
+        street: '45 Maude Street',
+        suburb: 'Sandton',
+        city: 'Johannesburg',
+        code: '2196',
+        isDefault: true,
+      },
+    },
+  ];
+  
+  return {
+    users: demoUsers,
+    orders: demoOrders,
+    discounts: [
+      { id: '1', code: 'WELCOME10', percentage: 10, active: true, expires: '31 Dec 2026' },
+      { id: '2', code: 'SAVE20', percentage: 20, active: true, expires: '30 Aug 2026' },
+    ],
+  };
+}
+
+// Built once per app load and shared by the three lazy useState initialisers,
+// so all three describe the same snapshot (the orders reference the users).
+let demoSeedCache: DemoSeedData | null = null;
+const getDemoSeedData = (): DemoSeedData => {
+  if (!demoSeedCache) demoSeedCache = buildDemoSeedData();
+  return demoSeedCache;
+};
+
 export const KitchenCoContext = createContext<KitchenContextType | undefined>(undefined);
 
 export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<Order[]>(() => getDemoSeedData().orders);
   const [activeWeek, setActiveWeek] = useState<number>(1);
-  const [allUsers, setAllUsers] = useState<AppUser[]>([]);
+  const [allUsers, setAllUsers] = useState<AppUser[]>(() => getDemoSeedData().users);
   // Seeded from the same normalized shape the Menu screen renders, so admin
   // edits here are the actual data the customer-facing menu reads — not a
   // parallel array nothing ever displays.
   const [menus, setMenus] = useState<MenuCategory[]>(() => buildMenuFromStaticData(staticMenuData));
-  const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [discounts, setDiscounts] = useState<Discount[]>(() => getDemoSeedData().discounts);
   const [companies, setCompanies] = useState<Company[]>([
     {
       id: 'co-ecogra',
@@ -254,15 +598,16 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       mealSubsidy: 40.0,
     },
   ]);
-  const [appliedDiscount, setAppliedDiscountState] = useState<Discount | null>(null);
-  // Pauses the auto-apply effect below once the user has made an explicit
-  // choice (applied a code, or removed one) — otherwise the next unrelated
-  // cart change (e.g. a quantity +/- tap) would silently re-pick the "best"
-  // discount and undo what they just did. Resets on a fresh cart/session.
+  // The discount in force is DERIVED (see appliedDiscount below), not stored.
+  // These two hold only the part that is genuinely event-driven: whether the
+  // user has overridden the automatic pick, and what they chose. Overriding
+  // has to stick, or the next unrelated cart change (a quantity +/- tap)
+  // would silently re-pick the "best" discount and undo what they just did.
   const [discountAutoApplyPaused, setDiscountAutoApplyPaused] = useState(false);
+  const [userDiscountChoice, setUserDiscountChoice] = useState<Discount | null>(null);
   const setAppliedDiscount = (discount: Discount | null) => {
     setDiscountAutoApplyPaused(true);
-    setAppliedDiscountState(discount);
+    setUserDiscountChoice(discount);
   };
   const [savedAddresses, setSavedAddresses] = useState<DeliveryAddress[]>([]);
   const [savedCards, setSavedCards] = useState<SavedCard[]>([]);
@@ -338,299 +683,6 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   }, [user, orders, cart, remindersEnabled]);
 
   // Demo data for orders and users
-  React.useEffect(() => {
-    const demoUsers: AppUser[] = [
-      { id: 'USR-1001', name: 'John Customer', email: 'john@example.com', role: 'customer', joinedDate: '12 Jun 2026', orderCount: 3 },
-      { id: 'USR-1002', name: 'Jane Smith', email: 'jane@example.com', role: 'customer', joinedDate: '28 May 2026', orderCount: 7 },
-      { id: 'USR-1003', name: 'Mike Johnson', email: 'mike@example.com', role: 'customer', joinedDate: '5 Jun 2026', orderCount: 1 },
-      // Demonstrates work-email domain matching — signing in with any
-      // @ecogra.org/@tcs.com/@rclfoods.com address auto-detects the matching
-      // real corporate client (see `companies`, below). Two Ecogra employees
-      // are seeded so the Chef tab's Order Queue has a real multi-order
-      // batch to demonstrate, not just a single-order company.
-      { id: 'USR-1004', name: 'Thandiwe Mokoena', email: 'thandiwe@ecogra.org', role: 'customer', accountType: 'company', companyName: 'Ecogra', joinedDate: '3 Aug 2026', orderCount: 3 },
-      { id: 'USR-1005', name: 'Lerato Nkosi', email: 'lerato@ecogra.org', role: 'customer', accountType: 'company', companyName: 'Ecogra', joinedDate: '10 Aug 2026', orderCount: 2 },
-      { id: 'USR-1006', name: 'Raj Naidoo', email: 'raj@tcs.com', role: 'customer', accountType: 'company', companyName: 'TATA', joinedDate: '15 Aug 2026', orderCount: 1 },
-      { id: 'USR-1007', name: 'Nomvula Dube', email: 'nomvula@rclfoods.com', role: 'customer', accountType: 'company', companyName: 'RCL', joinedDate: '20 Aug 2026', orderCount: 1 },
-    ];
-    
-    const todayStr = new Date().toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
-    // yyyy-mm-dd, for a demo order whose items are pre-scheduled for delivery
-    // today — so the admin dashboard's "Due Today" tracking has something
-    // real to show regardless of what the actual current date happens to be.
-    // Built from local date parts, not toISOString() (UTC) — the due-date
-    // comparison this feeds (isSameDay) uses local getFullYear/Month/Date,
-    // so a UTC-based string could land on the wrong calendar day depending
-    // on the device's timezone offset.
-    const _today = new Date();
-    const todayISO = `${_today.getFullYear()}-${String(_today.getMonth() + 1).padStart(2, '0')}-${String(_today.getDate()).padStart(2, '0')}`;
-    const todayDeliveryLabel = new Date().toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' });
-
-    const demoOrders: Order[] = [
-      {
-        // A corporate bulk order placed a few days ago and pre-scheduled for
-        // delivery today — the realistic case "Due Today" is meant to catch:
-        // items booked for a specific date, not just orders placed today.
-        // Paired with ORD-1296 below (same company, same day) so the Chef
-        // tab's Order Queue has a real 2-order Ecogra batch to show off, not
-        // just a single order that happens to have a company attached.
-        id: 'ORD-1295',
-        items: [
-          { id: 'bulk-1', name: 'Chicken Aglio e Olio Penne', price: 80, category: 'CIAO ITALY', quantity: 15, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
-          { id: 'bulk-2', name: 'Beef Lasagne', price: 80, category: 'CIAO ITALY', quantity: 10, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
-        ],
-        total: 2100,
-        totalPrice: 2000,
-        deliveryFee: 100,
-        status: 'preparing',
-        date: '26 Aug 2026, 09:10',
-        timestamp: '26 Aug 2026, 09:10',
-        userEmail: 'thandiwe@ecogra.org',
-        userName: 'Thandiwe Mokoena',
-        deliveryAddress: {
-          id: 'company-ecogra',
-          label: 'Ecogra',
-          street: '160 Jan Smuts Ave',
-          suburb: 'Rosebank',
-          city: 'Johannesburg',
-          code: '',
-          isDefault: true,
-        },
-      },
-      {
-        id: 'ORD-1296',
-        items: [
-          { id: 'bulk-3', name: 'Chicken Napolitana Penne', price: 80, category: 'CIAO ITALY', quantity: 8, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
-        ],
-        total: 740,
-        totalPrice: 640,
-        deliveryFee: 100,
-        status: 'preparing',
-        date: '27 Aug 2026, 08:50',
-        timestamp: '27 Aug 2026, 08:50',
-        userEmail: 'lerato@ecogra.org',
-        userName: 'Lerato Nkosi',
-        deliveryAddress: {
-          id: 'company-ecogra',
-          label: 'Ecogra',
-          street: '160 Jan Smuts Ave',
-          suburb: 'Rosebank',
-          city: 'Johannesburg',
-          code: '',
-          isDefault: true,
-        },
-      },
-      {
-        id: 'ORD-1297',
-        items: [
-          { id: 'bulk-4', name: 'Chicken Alfredo Linguini Pasta', price: 80, category: 'CIAO ITALY', quantity: 12, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
-        ],
-        total: 1060,
-        totalPrice: 960,
-        deliveryFee: 100,
-        status: 'pending',
-        date: '28 Aug 2026, 10:15',
-        timestamp: '28 Aug 2026, 10:15',
-        userEmail: 'raj@tcs.com',
-        userName: 'Raj Naidoo',
-        deliveryAddress: {
-          id: 'company-tata',
-          label: 'TATA',
-          street: '39 Ferguson Road',
-          suburb: 'Illovo',
-          city: 'Johannesburg',
-          code: '',
-          isDefault: true,
-        },
-      },
-      {
-        id: 'ORD-1298',
-        items: [
-          { id: 'bulk-5', name: 'Beef Lasagne', price: 80, category: 'CIAO ITALY', quantity: 6, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
-        ],
-        total: 580,
-        totalPrice: 480,
-        deliveryFee: 100,
-        status: 'pending',
-        date: '29 Aug 2026, 09:30',
-        timestamp: '29 Aug 2026, 09:30',
-        userEmail: 'nomvula@rclfoods.com',
-        userName: 'Nomvula Dube',
-        deliveryAddress: {
-          id: 'company-rcl',
-          label: 'RCL',
-          street: '15 Railey Road',
-          suburb: 'Bedfordview',
-          city: 'Johannesburg',
-          code: '',
-          isDefault: true,
-        },
-      },
-      {
-        id: 'ORD-1290',
-        items: [
-          { id: 'today-1', name: 'Grilled Chicken & Mushroom Pasta', price: 140, category: 'CIAO ITALY', quantity: 2, selectedSize: 'Regular' },
-          { id: 'today-2', name: 'Caesar Salad', price: 80, category: 'SALADS & BOWLS', quantity: 1 },
-          { id: 'today-3', name: 'Garlic Bread', price: 35, category: 'SIDES & SAUCES', quantity: 1 },
-        ],
-        total: 395,
-        totalPrice: 395,
-        status: 'on_the_way',
-        date: todayStr,
-        timestamp: todayStr,
-        userEmail: 'john@example.com',
-        userName: 'John Customer',
-        deliveryAddress: {
-          id: 'addr-1',
-          label: 'Home',
-          street: '12 Oak Avenue',
-          suburb: 'Rivonia',
-          city: 'Johannesburg',
-          code: '2128',
-          isDefault: true,
-        },
-      },
-      {
-        id: 'ORD-1234',
-        items: [
-          { id: '1', name: 'Grilled Chicken & Mushroom Pasta', price: 140, category: 'CIAO ITALY', quantity: 1, selectedSize: 'Regular' },
-          { id: '2', name: 'Garlic Bread', price: 35, category: 'SIDES & SAUCES', quantity: 1 },
-        ],
-        total: 175,
-        totalPrice: 175,
-        status: 'pending',
-        date: '17 Jul 2026, 10:30',
-        timestamp: '17 Jul 2026, 10:30',
-        userEmail: 'john@example.com',
-        userName: 'John Customer',
-        deliveryAddress: {
-          id: 'addr-1',
-          label: 'Home',
-          street: '12 Oak Avenue',
-          suburb: 'Rivonia',
-          city: 'Johannesburg',
-          code: '2128',
-          isDefault: true,
-        },
-      },
-      {
-        id: 'ORD-1233',
-        items: [
-          { id: '3', name: 'Creamy Chicken & Mushroom Pasta', price: 140, category: 'CIAO ITALY', quantity: 1, selectedSize: 'Regular' },
-          { id: '4', name: 'Green Salad', price: 20, category: 'SIDES & SAUCES', quantity: 1 },
-          // Weekly Menu item (id prefixed "cycle-") — included so Activity has a
-          // real example of an order that can't be reordered as a single action.
-          { id: 'cycle-Week 1-Monday-MAIN MEAL-TraditionalBeefBobotiewithYellowRice&Sambal', name: 'Traditional Beef Bobotie with Yellow Rice & Sambal', price: 80, category: 'Week 1 • Monday', quantity: 1, selectedSize: 'Regular' },
-        ],
-        total: 240,
-        totalPrice: 240,
-        status: 'delivered',
-        date: '16 Jul 2026, 14:20',
-        timestamp: '16 Jul 2026, 14:20',
-        userEmail: 'jane@example.com',
-        userName: 'Jane Smith',
-        deliveryAddress: {
-          id: 'addr-2',
-          label: 'Work',
-          street: '45 Maude Street',
-          suburb: 'Sandton',
-          city: 'Johannesburg',
-          code: '2196',
-          isDefault: true,
-        },
-      },
-      {
-        id: 'ORD-1232',
-        items: [
-          { id: '5', name: 'Beef Lasagne', price: 140, category: 'CIAO ITALY', quantity: 1, selectedSize: 'Regular' },
-        ],
-        total: 140,
-        totalPrice: 140,
-        status: 'delivered',
-        date: '15 Jul 2026, 12:45',
-        timestamp: '15 Jul 2026, 12:45',
-        userEmail: 'jane@example.com',
-        userName: 'Jane Smith',
-      },
-      {
-        id: 'ORD-1231',
-        items: [
-          { id: '6', name: 'Chicken Bacon & Avocado Wrap', price: 95, category: 'WRAPS & SANDWICHES', quantity: 2, selectedSize: 'Regular' },
-          { id: '7', name: 'Lemon & Herb Chicken Pasta Salad', price: 85, category: 'SALADS & BOWLS', quantity: 1 },
-          { id: '8', name: 'Sweet Potato Fries', price: 50, category: 'SIDES & SAUCES', quantity: 1 },
-        ],
-        total: 325,
-        totalPrice: 325,
-        status: 'delivered',
-        date: '14 Jul 2026, 11:20',
-        timestamp: '14 Jul 2026, 11:20',
-        userEmail: 'mike@example.com',
-        userName: 'Mike Johnson',
-        deliveryAddress: {
-          id: 'addr-3',
-          label: 'Home',
-          street: '8 Park Lane',
-          suburb: 'Parktown',
-          city: 'Johannesburg',
-          code: '2193',
-          isDefault: true,
-        },
-      },
-      {
-        id: 'ORD-1230',
-        items: [
-          { id: '9', name: 'Grilled Chicken Salad', price: 110, category: 'SALADS & BOWLS', quantity: 1, selectedSize: 'Regular' },
-        ],
-        total: 110,
-        totalPrice: 110,
-        status: 'cancelled',
-        date: '13 Jul 2026, 09:15',
-        timestamp: '13 Jul 2026, 09:15',
-        userEmail: 'john@example.com',
-        userName: 'John Customer',
-        deliveryAddress: {
-          id: 'addr-1',
-          label: 'Home',
-          street: '12 Oak Avenue',
-          suburb: 'Rivonia',
-          city: 'Johannesburg',
-          code: '2128',
-          isDefault: true,
-        },
-      },
-      {
-        id: 'ORD-1229',
-        items: [
-          { id: '10', name: 'BBQ Chicken Pizza', price: 135, category: 'CIAO ITALY', quantity: 1, selectedSize: 'Large' },
-          { id: '11', name: 'Caesar Salad', price: 80, category: 'SALADS & BOWLS', quantity: 1 },
-          { id: '12', name: 'Garlic Bread', price: 35, category: 'SIDES & SAUCES', quantity: 2 },
-        ],
-        total: 285,
-        totalPrice: 285,
-        status: 'delivered',
-        date: '12 Jul 2026, 18:30',
-        timestamp: '12 Jul 2026, 18:30',
-        userEmail: 'jane@example.com',
-        userName: 'Jane Smith',
-        deliveryAddress: {
-          id: 'addr-2',
-          label: 'Work',
-          street: '45 Maude Street',
-          suburb: 'Sandton',
-          city: 'Johannesburg',
-          code: '2196',
-          isDefault: true,
-        },
-      },
-    ];
-    
-    setAllUsers(demoUsers);
-    setOrders(demoOrders);
-    setDiscounts([
-      { id: '1', code: 'WELCOME10', percentage: 10, active: true, expires: '31 Dec 2026' },
-      { id: '2', code: 'SAVE20', percentage: 20, active: true, expires: '30 Aug 2026' },
-    ]);
-  }, []);
 
   const login = (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string, companyLocation?: 1 | 2) => {
     const newUser = { email, role, name: name || email.split('@')[0], accountType, companyName, companyLocation };
@@ -647,7 +699,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         );
       }
       return [...prev, {
-        id: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
+        id: createUserId(),
         email,
         role,
         name: name || email.split('@')[0],
@@ -663,21 +715,17 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     setUser(null);
     setCart([]);
-    setAppliedDiscountState(null);
+    setUserDiscountChoice(null);
     setDiscountAutoApplyPaused(false);
   };
 
-  // Auto-apply the best matching discount whenever cart, discounts, or user
-  // changes — but only until the user makes an explicit choice of their own
-  // (see setAppliedDiscount above), and only for as long as they still have
-  // a cart going (a fresh, empty cart always gets a fresh auto-suggestion).
-  useEffect(() => {
-    if (cart.length === 0) {
-      setAppliedDiscountState(null);
-      setDiscountAutoApplyPaused(false);
-      return;
-    }
-    if (discountAutoApplyPaused) return;
+  // The best discount currently available for this cart. Pure derivation of
+  // cart/discounts/user — it used to be a useEffect that wrote the result
+  // into state, which meant every cart change rendered once with the stale
+  // discount and then again with the new one (and briefly showed the wrong
+  // price in between). Computing it during render removes that second pass.
+  const autoDiscount = useMemo(() => {
+    if (cart.length === 0) return null;
 
     const now = new Date();
     const validDiscounts = discounts.filter(d => {
@@ -686,7 +734,6 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       return true;
     });
 
-    // Find the best discount that matches items in cart
     let bestDiscount: Discount | null = null;
     for (const d of validDiscounts) {
       const hasEligibleItem = cart.some(item => {
@@ -702,12 +749,26 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    setAppliedDiscountState(bestDiscount);
-  }, [cart, discounts, user, discountAutoApplyPaused]);
+    return bestDiscount;
+  }, [cart, discounts, user]);
+
+  // An empty cart never carries a discount, and once the user has overridden
+  // the automatic pick their choice wins until the cart empties (addToCart
+  // clears the override when refilling from empty, so a fresh cart gets a
+  // fresh suggestion — the same rule the old effect enforced).
+  const appliedDiscount = cart.length === 0
+    ? null
+    : (discountAutoApplyPaused ? userDiscountChoice : autoDiscount);
 
   const addToCart = (newItem: CartItem) => {
     haptics.light();
     setCartPulseSignal(n => n + 1);
+    // Refilling from empty starts a fresh cart, so drop any override the
+    // previous cart left behind and let the auto-pick suggest again.
+    if (cart.length === 0) {
+      setDiscountAutoApplyPaused(false);
+      setUserDiscountChoice(null);
+    }
     setCart(prevCart => {
       const existing = prevCart.find(item => item.id === newItem.id);
       if (existing) {
@@ -730,7 +791,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
 
   const clearCart = () => {
     setCart([]);
-    setAppliedDiscountState(null);
+    setUserDiscountChoice(null);
     setDiscountAutoApplyPaused(false);
   };
 
@@ -801,7 +862,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     const nowStr = new Date().toLocaleString();
 
     const newOrder: Order = {
-      id: `ORD-${Math.floor(1000 + Math.random() * 9000)}`,
+      id: `ORD-${nextOrderNumber++}`,
       items: [...cart],
       total: finalTotal,
       totalPrice: totalAmount,

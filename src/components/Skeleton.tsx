@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Animated, StyleProp, ViewStyle } from 'react-native';
 import { ThemeColors } from '../utils/theme';
 
@@ -9,7 +9,10 @@ interface SkeletonProps {
 
 /** A shimmering placeholder block — used while `useSimulatedLoad().isLoading` is true. */
 export function Skeleton({ theme, style }: SkeletonProps) {
-  const opacity = useRef(new Animated.Value(0.35)).current;
+  // Lazy useState, not useRef(new Animated.Value(x)).current: that form
+  // built a throwaway Animated.Value on every render and read a ref during
+  // render. useState guarantees the instance is created once and kept.
+  const [opacity] = useState(() => new Animated.Value(0.35));
 
   useEffect(() => {
     const loop = Animated.loop(

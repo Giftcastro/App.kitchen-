@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Animated, Pressable, StyleSheet } from 'react-native';
 import { Text } from './AppText';
 import { ThemeColors } from '../utils/theme';
@@ -16,7 +16,10 @@ export const QuickAddButton: React.FC<QuickAddButtonProps> = ({
   disabled,
   theme,
 }) => {
-  const scale = useRef(new Animated.Value(1)).current;
+  // Lazy useState, not useRef(new Animated.Value(x)).current: that form
+  // built a throwaway Animated.Value on every render and read a ref during
+  // render. useState guarantees the instance is created once and kept.
+  const [scale] = useState(() => new Animated.Value(1));
   const styles = useMemo(() => createStyles(theme), [theme]);
 
   const handlePress = () => {

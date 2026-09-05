@@ -1098,7 +1098,10 @@ function DietaryTagRow({ tags, styles }: { tags: string[]; styles: Styles }) {
 }
 
 function AnimatedTagChip({ label, delay, styles }: { label: string; delay: number; styles: Styles }) {
-  const anim = useRef(new Animated.Value(0)).current;
+  // Lazy useState, not useRef(new Animated.Value(x)).current: that form
+  // built a throwaway Animated.Value on every render and read a ref during
+  // render. useState guarantees the instance is created once and kept.
+  const [anim] = useState(() => new Animated.Value(0));
   useEffect(() => {
     Animated.timing(anim, { toValue: 1, duration: 240, delay, useNativeDriver: true }).start();
   }, [anim, delay]);
