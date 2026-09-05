@@ -36,8 +36,15 @@ export interface OrderWindowInfo {
   isOpenToday: boolean;
   /** Earliest guaranteed delivery date (respects the 48h advance cutoff). */
   earliestDeliveryDate: Date;
-  /** Locale-formatted earliest delivery date. */
+  /** Locale-formatted earliest delivery date, spelled out ("Wednesday, 09 September"). */
   formattedEarliest: string;
+  /**
+   * Abbreviated earliest delivery date ("Wed, 09 Sept"), for anywhere the long
+   * form does not survive a narrow screen — a one-line pill, or a sentence that
+   * would otherwise push the date past a clamp and ellipsise the one fact the
+   * reader needs. Defined here so the components that need it cannot drift.
+   */
+  formattedEarliestShort: string;
   /** The next 9:00 AM cutoff that hasn't passed yet — e.g. Monday 9am when checked over a weekend. */
   nextCutoffDate: Date;
   /** Human-readable explanation shown to the user. */
@@ -147,6 +154,11 @@ export function getOrderCutoffInfo(now: Date = new Date()): OrderWindowInfo {
       day: 'numeric',
       month: 'long',
     }),
+    formattedEarliestShort: earliest.toLocaleDateString('en-ZA', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    }),
     nextCutoffDate: nextCutoff,
     message,
   };
@@ -186,8 +198,10 @@ export interface DeliveryEstimate {
   isOpenToday: boolean;
   /** Earliest guaranteed delivery date (respects the 2-business-day advance cutoff). */
   earliestDeliveryDate: Date;
-  /** Locale-formatted earliest delivery date. */
+  /** Locale-formatted earliest delivery date, spelled out. */
   formattedEarliest: string;
+  /** Abbreviated earliest delivery date ("Wed, 09 Sept") — see OrderCutoffInfo. */
+  formattedEarliestShort: string;
   /** The next 9:00 AM cutoff that hasn't passed yet — e.g. Monday 9am when checked over a weekend. */
   nextCutoffDate: Date;
   /** Human-readable explanation shown to the user. */
@@ -214,6 +228,7 @@ export function getEstimatedDelivery(now: Date = new Date()): DeliveryEstimate {
     isOpenToday: info.isOpenToday,
     earliestDeliveryDate: info.earliestDeliveryDate,
     formattedEarliest: info.formattedEarliest,
+    formattedEarliestShort: info.formattedEarliestShort,
     nextCutoffDate: info.nextCutoffDate,
     message: info.message,
   };

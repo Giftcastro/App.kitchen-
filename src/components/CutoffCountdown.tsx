@@ -20,14 +20,19 @@ export const CutoffCountdown: React.FC<CutoffCountdownProps> = ({ theme, compact
     return () => clearInterval(interval);
   }, []);
 
-  const { minutesUntilCutoff, cutoffPassed, isOpenToday, formattedEarliest } = info;
+  const { minutesUntilCutoff, cutoffPassed, isOpenToday, formattedEarliestShort } = info;
 
   if (cutoffPassed || !isOpenToday) {
+    // Abbreviated date and trimmed wording: spelled out, this line needed
+    // 385px of a 288px pill on a 320px phone and hard-clipped mid-date
+    // ("...Wednesday, 09"), losing the month entirely. numberOfLines={2} is the
+    // backstop rather than the fix — the text fits on one line now, but a large
+    // system font scale should wrap it instead of cutting the date off again.
     return (
       <View style={[styles.pill, styles.pillClosed, compact && styles.pillCompact]}>
         <View style={[styles.dot, styles.dotClosed]} />
-        <Text style={styles.closedText} numberOfLines={1}>
-          Closed for today · next delivery {formattedEarliest}
+        <Text style={styles.closedText} numberOfLines={2}>
+          Closed today · next delivery {formattedEarliestShort}
         </Text>
       </View>
     );
@@ -41,7 +46,7 @@ export const CutoffCountdown: React.FC<CutoffCountdownProps> = ({ theme, compact
   return (
     <View style={[styles.pill, urgent ? styles.pillUrgent : styles.pillOpen, compact && styles.pillCompact]}>
       <View style={[styles.dot, urgent ? styles.dotUrgent : styles.dotOpen]} />
-      <Text style={[styles.label, urgent && styles.labelUrgent]} numberOfLines={1}>
+      <Text style={[styles.label, urgent && styles.labelUrgent]} numberOfLines={2}>
         Order closes in {pad(days)}d : {pad(hours)}h : {pad(mins)}m
       </Text>
     </View>

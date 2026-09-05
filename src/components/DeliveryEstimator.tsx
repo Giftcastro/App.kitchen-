@@ -20,7 +20,7 @@ export const DeliveryEstimator: React.FC<DeliveryEstimatorProps> = ({ theme }) =
     return () => clearInterval(interval);
   }, []);
 
-  const { earliestDeliveryDate, minutesLeft, open, cutoffPassed, isOpenToday } = deliveryInfo;
+  const { formattedEarliestShort, minutesLeft, open, cutoffPassed, isOpenToday } = deliveryInfo;
 
   // Two parts, not one sentence: a headline saying what's happening and what
   // to do, then the delivery date on its own line. Each state still leads with
@@ -52,14 +52,7 @@ export const DeliveryEstimator: React.FC<DeliveryEstimatorProps> = ({ theme }) =
     headline = 'Order by 9:00 AM today';
   }
 
-  // Short form ("Wed, 09 Sep") rather than the estimate's long `formattedDate`
-  // ("Wednesday, 09 September"). Derived here instead of changing
-  // formattedEarliest, which other copy still wants spelled out in full.
-  const shortDate = earliestDeliveryDate.toLocaleDateString('en-ZA', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  });
+
 
   return (
     <View style={[styles.row, isUrgent && styles.rowUrgent]}>
@@ -71,7 +64,7 @@ export const DeliveryEstimator: React.FC<DeliveryEstimatorProps> = ({ theme }) =
           {isUrgent ? '⚠️ ' : ''}{headline}
         </Text>
         <Text style={[styles.delivery, isUrgent && styles.textUrgent]} numberOfLines={1}>
-          Delivery {shortDate}
+          Delivery {formattedEarliestShort}
         </Text>
       </View>
     </View>
