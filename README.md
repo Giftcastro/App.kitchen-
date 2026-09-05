@@ -28,7 +28,7 @@ manage orders from dedicated views in the same app.
 ```
 src/
   app/                 Screens (expo-router file-based routes)
-    (tabs)/             Menu, Activity, Tracker, Profile, Admin tabs
+    (tabs)/             Menu, Orders, History, Profile, Admin tabs
     cart.tsx, login.tsx, payfast.tsx
   components/          Shared UI components
   context/             App-wide state (KitchenCoContext)
