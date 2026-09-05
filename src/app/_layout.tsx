@@ -1,9 +1,22 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Slot, Redirect, useSegments } from 'expo-router';
 import { View, StyleSheet, LogBox } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as SplashScreen from 'expo-splash-screen';
+import {
+  useFonts,
+  Montserrat_300Light,
+  Montserrat_400Regular,
+  Montserrat_500Medium,
+  Montserrat_600SemiBold,
+  Montserrat_700Bold,
+  Montserrat_800ExtraBold,
+  Montserrat_900Black,
+} from '@expo-google-fonts/montserrat';
 import { KitchenProvider, useKitchen } from '../context/KitchenCoContext';
 import { useResponsive } from '../utils/responsive';
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 // This app only ever schedules LOCAL notifications (order reminders / payment
 // confirmations) — never remote push. Expo Go on SDK 53+ logs a console.error
@@ -51,8 +64,33 @@ const styles = StyleSheet.create({
   frame: { flex: 1, width: '100%', position: 'relative' },
 });
 
-// 2. The main export wraps the entire app contextually
+// 2. The main export wraps the entire app contextually.
+// Brand typeface (2026-09-05): loads Montserrat here; every screen actually
+// switches to it via src/components/AppText.tsx (a Text/TextInput wrapper
+// every file now imports instead of importing those two from 'react-native'
+// directly) — a global Text.defaultProps patch was tried first but doesn't
+// reach react-native-web's rendered output on this RN/React version, hence
+// the wrapper. Each screen's own fontWeight (300-900) still applies on top.
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    Montserrat_300Light,
+    Montserrat_400Regular,
+    Montserrat_500Medium,
+    Montserrat_600SemiBold,
+    Montserrat_700Bold,
+    Montserrat_800ExtraBold,
+    Montserrat_900Black,
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
+  }, [fontsLoaded]);
+
+  // Keep the splash screen up (native) / render nothing (web) until
+  // Montserrat is actually available — otherwise the very first frame
+  // flashes the system font before swapping, every single launch.
+  if (!fontsLoaded) return null;
+
   return (
     <SafeAreaProvider>
       <KitchenProvider>

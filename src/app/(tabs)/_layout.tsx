@@ -2,7 +2,8 @@ import React, { useEffect, useRef } from 'react';
 import { Tabs, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useKitchen } from '../../context/KitchenCoContext';
-import { Animated, TouchableOpacity, Text, View, StyleSheet, StatusBar } from 'react-native';
+import { Animated, TouchableOpacity, View, StyleSheet, StatusBar } from 'react-native';
+import { Text } from '../../components/AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlyToCartOverlay, FlyToCartOverlayHandle } from '../../components/FlyToCartOverlay';
 
@@ -53,6 +54,10 @@ export default function TabsLayout() {
         screenOptions={{
           tabBarActiveTintColor: theme.accent,
           tabBarInactiveTintColor: theme.textTertiary,
+          // react-navigation's bottom-tabs/header render their own internal
+          // Text, not one of ours — AppText's wrapper can't reach them, so
+          // the family has to be set directly on these style options instead.
+          tabBarLabelStyle: { fontFamily: 'Montserrat_500Medium', fontSize: 11 },
           tabBarStyle: {
             backgroundColor: theme.tabBar,
             borderTopWidth: 1,
@@ -67,6 +72,7 @@ export default function TabsLayout() {
             borderBottomColor: theme.border,
           },
           headerTitleStyle: {
+            fontFamily: 'Montserrat_900Black',
             fontWeight: '900',
             fontSize: 20,
             color: theme.text,
@@ -81,8 +87,10 @@ export default function TabsLayout() {
             href: isAdmin ? null : undefined,
             headerTitle: () => (
               <View style={styles.headerTitleContainer}>
-                <Text style={[styles.headerTitle, { color: theme.text }]}>Kitchen Co.</Text>
-                <Text style={[styles.headerSubtitle, { color: theme.textSecondary }]}>powered by CSG Group</Text>
+                <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
+                  {'your kitchen '}
+                  <Text style={styles.headerTitleAccent}>co.</Text>
+                </Text>
               </View>
             ),
             headerRight: () => (
@@ -164,16 +172,15 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   headerTitleContainer: { alignItems: 'center' },
+  // Brand wordmark rules: always lowercase, "co." solid-filled bold against a
+  // light-weight "your kitchen" — never a stylistic camelCase/title-case sub.
   headerTitle: {
-    fontSize: 22,
-    fontWeight: '900',
-    letterSpacing: -0.5,
+    fontSize: 18,
+    fontWeight: '300',
+    letterSpacing: -0.3,
   },
-  headerSubtitle: {
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 2,
-    letterSpacing: 0.3,
+  headerTitleAccent: {
+    fontWeight: '800',
   },
   headerRightContainer: {
     flexDirection: 'row',

@@ -7,15 +7,14 @@
 import React, { useState, useMemo } from "react";
 import {
   View,
-  Text,
   StyleSheet,
   TouchableOpacity,
   StatusBar,
   ScrollView,
-  TextInput,
   Modal,
   Switch,
 } from "react-native";
+import { Text, TextInput } from "../../components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   useKitchen,
@@ -54,8 +53,12 @@ export default function TabProfileScreen() {
   // since it's the effective delivery destination until the employee
   // explicitly picks a personal one instead.
   const company = user?.companyName ? companies.find(c => c.name === user.companyName) : null;
-  const companyAddress = company?.address?.distanceKm != null ? company.address : null;
-  const isCompanyAddressDefault = companyAddress != null && deliveryInfo.address?.id === `company-${company?.id}`;
+  // A company with two registered sites has each employee pick one at
+  // signup (user.companyLocation) — falls back to the primary address for
+  // anyone signed up before that choice existed, or a single-site company.
+  const rawCompanyAddress = user?.companyLocation === 2 && company?.address2 ? company.address2 : company?.address;
+  const companyAddress = rawCompanyAddress?.distanceKm != null ? rawCompanyAddress : null;
+  const isCompanyAddressDefault = companyAddress != null && deliveryInfo.address?.id === `company-${company?.id}-${user?.companyLocation ?? 1}`;
 
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [addressLabel, setAddressLabel] = useState("");
@@ -63,7 +66,6 @@ export default function TabProfileScreen() {
   const [addressSuburb, setAddressSuburb] = useState("");
   const [addressCity, setAddressCity] = useState("");
   const [addressCode, setAddressCode] = useState("");
-  const [addressDistance, setAddressDistance] = useState("");
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showDeleteCardConfirm, setShowDeleteCardConfirm] = useState<
     string | null
@@ -75,11 +77,15 @@ export default function TabProfileScreen() {
     router.replace("/login");
   };
 
-  const handleAddAddress = () => {
-    if (!addressStreet.trim() || !addressSuburb.trim() || !addressCity.trim())
-      return;
+  // A real street address has a number and a name — catches the common slip
+  // of typing just a suburb/city into the street field. No delivery-fee
+  // distance is collected from customers here anymore; that's set later
+  // (admin-side) once the address is on file.
+  const isValidStreet = (value: string) => /\d/.test(value) && /[a-zA-Z]/.test(value) && value.trim().length >= 5;
 
-    const parsedDistance = parseFloat(addressDistance);
+  const handleAddAddress = () => {
+    if (!isValidStreet(addressStreet) || !addressSuburb.trim() || !addressCity.trim())
+      return;
 
     const newAddress: DeliveryAddress = {
       id: `addr-${Date.now()}`,
@@ -89,7 +95,6 @@ export default function TabProfileScreen() {
       city: addressCity.trim(),
       code: addressCode.trim(),
       isDefault: savedAddresses.length === 0,
-      distanceKm: Number.isFinite(parsedDistance) ? parsedDistance : undefined,
     };
 
     addAddress(newAddress);
@@ -98,7 +103,6 @@ export default function TabProfileScreen() {
     setAddressSuburb("");
     setAddressCity("");
     setAddressCode("");
-    setAddressDistance("");
     setShowAddressModal(false);
   };
 
@@ -323,9 +327,9 @@ export default function TabProfileScreen() {
               onPress={() => setShowAddressModal(true)}
             >
               <Text style={styles.emptyAddressIcon}>📍</Text>
-              <Text style={styles.emptyAddressText}>No addresses saved yet</Text>
+              <Text style={styles.emptyAddressText}>No delivery address yet</Text>
               <Text style={styles.emptyAddressSubtext}>
-                Tap to add your first delivery address
+                Add one so we know where to deliver your orders
               </Text>
             </TouchableOpacity>
           ) : (
@@ -495,7 +499,7 @@ export default function TabProfileScreen() {
                 <View>
                   <Text style={styles.menuItemTitle}>Email Support</Text>
                   <Text style={styles.menuItemSubtitle}>
-                    support@kitchenco.co.za
+                    support.ykc@csggroup.co.za
                   </Text>
                 </View>
               </View>
@@ -511,7 +515,10 @@ export default function TabProfileScreen() {
                 <View>
                   <Text style={styles.menuItemTitle}>Call Us</Text>
                   <Text style={styles.menuItemSubtitle}>
-                    011 234 5678 · Mon–Fri, 08:00–17:00
+                    082 827 6570 / 068 287 9826
+                  </Text>
+                  <Text style={styles.menuItemSubtitle}>
+                    Mon–Fri, 08:00–17:00
                   </Text>
                 </View>
               </View>
@@ -628,74 +635,54 @@ export default function TabProfileScreen() {
               <Text style={styles.formLabel}>Street Address *</Text>
               <TextInput
                 style={styles.formInput}
-                placeholder="Street name and number"
+                placeholder="e.g. 12 Oak Street"
                 placeholderTextColor={theme.textTertiary}
                 value={addressStreet}
                 onChangeText={setAddressStreet}
               />
+              {addressStreet.trim().length > 0 && !isValidStreet(addressStreet) && (
+                <Text style={styles.formError}>Include the street number and name</Text>
+              )}
 
-              <View style={styles.formRow}>
-                <View style={styles.formRowHalf}>
-                  <Text style={styles.formLabel}>Suburb *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="Suburb"
-                    placeholderTextColor={theme.textTertiary}
-                    value={addressSuburb}
-                    onChangeText={setAddressSuburb}
-                  />
-                </View>
-                <View style={styles.formRowHalf}>
-                  <Text style={styles.formLabel}>City *</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="City"
-                    placeholderTextColor={theme.textTertiary}
-                    value={addressCity}
-                    onChangeText={setAddressCity}
-                  />
-                </View>
-              </View>
+              <Text style={styles.formLabel}>Suburb *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="Suburb"
+                placeholderTextColor={theme.textTertiary}
+                value={addressSuburb}
+                onChangeText={setAddressSuburb}
+              />
 
-              <View style={styles.formRow}>
-                <View style={styles.formRowHalf}>
-                  <Text style={styles.formLabel}>Postal Code</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="e.g. 2128"
-                    placeholderTextColor={theme.textTertiary}
-                    value={addressCode}
-                    onChangeText={setAddressCode}
-                    keyboardType="numeric"
-                  />
-                </View>
-                <View style={styles.formRowHalf}>
-                  <Text style={styles.formLabel}>Distance (km)</Text>
-                  <TextInput
-                    style={styles.formInput}
-                    placeholder="e.g. 14"
-                    placeholderTextColor={theme.textTertiary}
-                    value={addressDistance}
-                    onChangeText={setAddressDistance}
-                    keyboardType="numeric"
-                  />
-                </View>
-              </View>
-              <Text style={styles.formHint}>
-                Road distance from the kitchen — sets your delivery fee (R100–R350 by distance band).
-              </Text>
+              <Text style={styles.formLabel}>City *</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="City"
+                placeholderTextColor={theme.textTertiary}
+                value={addressCity}
+                onChangeText={setAddressCity}
+              />
+
+              <Text style={styles.formLabel}>Postal Code</Text>
+              <TextInput
+                style={styles.formInput}
+                placeholder="e.g. 2128"
+                placeholderTextColor={theme.textTertiary}
+                value={addressCode}
+                onChangeText={setAddressCode}
+                keyboardType="numeric"
+              />
 
               <TouchableOpacity
                 style={[
                   styles.saveAddressBtn,
-                  (!addressStreet.trim() ||
+                  (!isValidStreet(addressStreet) ||
                     !addressSuburb.trim() ||
                     !addressCity.trim()) &&
                     styles.saveAddressBtnDisabled,
                 ]}
                 onPress={handleAddAddress}
                 disabled={
-                  !addressStreet.trim() ||
+                  !isValidStreet(addressStreet) ||
                   !addressSuburb.trim() ||
                   !addressCity.trim()
                 }
@@ -1029,6 +1016,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   emptyAddressIcon: { fontSize: 32, marginBottom: 12 },
   emptyAddressText: { fontSize: 15, fontWeight: "700", color: theme.textSecondary, marginBottom: 6 },
   emptyAddressSubtext: { fontSize: 12, color: theme.textSecondary, textAlign: "center" },
+  formError: { color: theme.error, fontSize: 11.5, fontWeight: "600", marginTop: 4 },
   addressItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -1111,12 +1099,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   modalTitle: { fontSize: 22, fontWeight: "900", color: theme.text, letterSpacing: -0.5 },
   modalClose: { fontSize: 28, color: theme.textSecondary, fontWeight: "600" },
   addressForm: {},
-  formHint: {
-    fontSize: 11.5,
-    color: theme.textSecondary,
-    marginTop: 6,
-    lineHeight: 16,
-  },
   formLabel: {
     fontSize: 12,
     color: theme.textSecondary,
@@ -1135,8 +1117,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     fontSize: 15,
     color: theme.text,
   },
-  formRow: { flexDirection: "row", gap: 12 },
-  formRowHalf: { flex: 1 },
   saveAddressBtn: {
     backgroundColor: theme.accent,
     paddingVertical: 18,

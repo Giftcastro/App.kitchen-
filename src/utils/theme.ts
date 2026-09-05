@@ -40,8 +40,12 @@ export const lightColors: ThemeColors = {
   text: '#000000',
   textSecondary: '#6B6B6B',
   textTertiary: '#9E9E9E',
-  accent: '#3571B7',
-  onAccent: '#FFFFFF',
+  // Trial swap (2026-09-05) — client asked to try a sage green (#C4D29B) in
+  // place of the brand blue here. Since it's a pale/light color, onAccent
+  // flips to black for legibility, same reasoning as dark mode's pale-blue
+  // accent below — revert both to '#3571B7' / '#FFFFFF' if this doesn't stick.
+  accent: '#C4D29B',
+  onAccent: '#000000',
   success: '#1DA836',
   warning: '#E8A100',
   error: '#AF1718',

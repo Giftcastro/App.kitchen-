@@ -1,5 +1,6 @@
 import React, { useMemo, useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text } from 'react-native';
+import { Animated, Pressable, StyleSheet } from 'react-native';
+import { Text } from './AppText';
 import { ThemeColors } from '../utils/theme';
 
 interface QuickAddButtonProps {

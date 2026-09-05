@@ -1,9 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  Animated, View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Animated, View, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, StatusBar,
   ScrollView, useWindowDimensions
 } from 'react-native';
+import { Text, TextInput } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
   import { useKitchen } from '../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
@@ -12,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { findCompanyForEmail } from '../utils/companyMatch';
 import { ThemeColors } from '../utils/theme';
 import { haptics } from '../utils/haptics';
+import type { AccountType } from '../context/KitchenCoContext';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ADMIN_EMAIL = 'admin@gmail.com';
@@ -27,6 +29,13 @@ export default function LoginScreen() {
   const [name, setName] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // Signup only: is this person ordering for themselves, or as an employee
+  // of a registered company? A company employee whose employer has two
+  // registered sites gets a location picker below (see companyLocation);
+  // individuals set up their own delivery address afterwards from Profile.
+  const [signupType, setSignupType] = useState<AccountType>('individual');
+  const [companyLocation, setCompanyLocation] = useState<1 | 2>(1);
+
   // Corporate clients are matched by work-email domain — no manual
   // "which company do you work for" entry needed.
   const matchedCompany = useMemo(() => findCompanyForEmail(email, companies), [email, companies]);
@@ -39,6 +48,7 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
+  const [forgotSubmitted, setForgotSubmitted] = useState(false);
   const btnScale = useRef(new Animated.Value(1)).current;
 
   // Scales the gap above the logo with the actual screen — a fixed pixel
@@ -133,7 +143,19 @@ export default function LoginScreen() {
   const handleSignup = () => {
     if (validateSignup()) {
       const role = isAdminEmail ? 'admin' : 'customer';
-      login(email.trim(), role, name.trim(), matchedCompany ? 'company' : 'individual', matchedCompany?.name);
+      // The work-email domain match is still the source of truth for whether
+      // this is actually a company account — the Individual/Company toggle
+      // above only decides which optional section (address vs. location
+      // picker) was shown, not what gets saved.
+      const isCompanyAccount = !!matchedCompany;
+      login(
+        email.trim(),
+        role,
+        name.trim(),
+        isCompanyAccount ? 'company' : 'individual',
+        matchedCompany?.name,
+        isCompanyAccount && matchedCompany?.address2 ? companyLocation : undefined
+      );
       router.replace(role === 'admin' ? '/admin' : '/');
     } else {
       haptics.warning();
@@ -142,8 +164,11 @@ export default function LoginScreen() {
 
   const handleForgotPassword = () => {
     if (email.trim() && EMAIL_REGEX.test(email.trim())) {
-      // Simulate password reset
-      router.replace('/');
+      // Simulate a password-reset email being sent — show a confirmation
+      // instead of silently leaving the screen, so the user has some
+      // indication the action actually did something.
+      haptics.success();
+      setForgotSubmitted(true);
     } else {
       haptics.warning();
       setErrors({ email: 'Please enter your email to reset password' });
@@ -155,6 +180,7 @@ export default function LoginScreen() {
     setErrors({});
     setPassword('');
     setConfirmPassword('');
+    setForgotSubmitted(false);
   };
 
     const renderSigninForm = () => (
@@ -165,7 +191,7 @@ export default function LoginScreen() {
           <Ionicons name="mail-outline" size={16} color={focusedField === 'signinEmail' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
-            placeholder="name@gmail.com"
+            placeholder="name@company.com"
             placeholderTextColor={theme.textTertiary}
             value={email}
             onChangeText={(val) => { setEmail(val); if (errors.email) setErrors({ ...errors, email: undefined }); }}
@@ -243,6 +269,28 @@ export default function LoginScreen() {
   const renderSignupForm = () => (
     <>
       <View style={styles.inputGroup}>
+        <Text style={styles.label}>SIGNING UP AS</Text>
+        <View style={styles.signupTypeSelector}>
+          <TouchableOpacity
+            style={[styles.signupTypeBtn, signupType === 'individual' && styles.signupTypeBtnActive]}
+            onPress={() => setSignupType('individual')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: signupType === 'individual' }}
+          >
+            <Text style={[styles.signupTypeBtnText, signupType === 'individual' && styles.signupTypeBtnTextActive]}>Individual</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.signupTypeBtn, signupType === 'company' && styles.signupTypeBtnActive]}
+            onPress={() => setSignupType('company')}
+            accessibilityRole="button"
+            accessibilityState={{ selected: signupType === 'company' }}
+          >
+            <Text style={[styles.signupTypeBtnText, signupType === 'company' && styles.signupTypeBtnTextActive]}>Company</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.inputGroup}>
         <Text style={styles.label}>FULL NAME</Text>
         <View style={[styles.inputWrapper, focusedField === 'name' && styles.inputWrapperFocused, errors.name ? styles.inputWrapperError : null]}>
           <Ionicons name="person-outline" size={16} color={focusedField === 'name' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
@@ -269,7 +317,7 @@ export default function LoginScreen() {
           <Ionicons name="mail-outline" size={16} color={focusedField === 'signupEmail' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
-            placeholder="name@gmail.com"
+            placeholder="name@company.com"
             placeholderTextColor={theme.textTertiary}
             value={email}
             onChangeText={(val) => { setEmail(val); if (errors.email) setErrors({ ...errors, email: undefined }); }}
@@ -286,7 +334,7 @@ export default function LoginScreen() {
         {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
         {/* Companies are matched by work-email domain — no manual "which
             company" entry. Individuals (gmail.com etc.) just sign up normally. */}
-        {matchedCompany && (
+        {signupType === 'company' && matchedCompany && (
           <View style={styles.companyDetectedRow}>
             <Ionicons name="business" size={14} color={theme.success} />
             <Text style={styles.companyDetectedText}>
@@ -294,7 +342,43 @@ export default function LoginScreen() {
             </Text>
           </View>
         )}
+        {signupType === 'company' && !matchedCompany && email.trim().length > 0 && (
+          <Text style={styles.helpText}>
+            We couldn't match this email to a registered company — double-check the address, or contact your admin if this seems wrong.
+          </Text>
+        )}
       </View>
+
+      {/* Company staff whose employer has two registered sites pick which
+          one they deliver to — anyone whose company only has one location
+          skips this entirely. */}
+      {signupType === 'company' && matchedCompany?.address2 && (
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>YOUR LOCATION</Text>
+          <TouchableOpacity
+            style={[styles.locationOption, companyLocation === 1 && styles.locationOptionActive]}
+            onPress={() => setCompanyLocation(1)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: companyLocation === 1 }}
+          >
+            <Ionicons name={companyLocation === 1 ? 'radio-button-on' : 'radio-button-off'} size={18} color={companyLocation === 1 ? theme.accent : theme.textTertiary} />
+            <Text style={styles.locationOptionText} numberOfLines={1}>
+              {matchedCompany.address?.unit ? `${matchedCompany.address.unit}, ` : ''}{matchedCompany.address?.street}, {matchedCompany.address?.suburb}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.locationOption, companyLocation === 2 && styles.locationOptionActive]}
+            onPress={() => setCompanyLocation(2)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: companyLocation === 2 }}
+          >
+            <Ionicons name={companyLocation === 2 ? 'radio-button-on' : 'radio-button-off'} size={18} color={companyLocation === 2 ? theme.accent : theme.textTertiary} />
+            <Text style={styles.locationOptionText} numberOfLines={1}>
+              {matchedCompany.address2.unit ? `${matchedCompany.address2.unit}, ` : ''}{matchedCompany.address2.street}, {matchedCompany.address2.suburb}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       <View style={styles.inputGroup}>
         <Text style={styles.label}>PASSWORD</Text>
@@ -352,41 +436,51 @@ export default function LoginScreen() {
     </>
   );
 
-  const renderForgotForm = () => (
-    <>
-      <View style={styles.lockIconContainer}>
-        <Ionicons name="lock-closed" size={24} color={theme.text} />
-      </View>
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>EMAIL ADDRESS</Text>
-        <View style={[styles.inputWrapper, focusedField === 'forgotEmail' && styles.inputWrapperFocused, errors.email ? styles.inputWrapperError : null]}>
-          <Ionicons name="mail-outline" size={16} color={focusedField === 'forgotEmail' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your email"
-            placeholderTextColor={theme.textTertiary}
-            value={email}
-            onChangeText={(val) => { setEmail(val); if (errors.email) setErrors({ ...errors, email: undefined }); }}
-            onFocus={() => setFocusedField('forgotEmail')}
-            onBlur={() => setFocusedField(null)}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="email"
-            returnKeyType="go"
-            onSubmitEditing={handleForgotPassword}
-            accessibilityLabel="Email address"
-          />
+  const renderForgotForm = () => {
+    if (forgotSubmitted) {
+      return (
+        <View style={styles.lockIconContainer}>
+          <Ionicons name="checkmark" size={26} color={theme.success} />
         </View>
-        {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
+      );
+    }
 
-        <Text style={styles.helpText}>
-          We'll send you a link to reset your password
-        </Text>
-      </View>
-    </>
-  );
+    return (
+      <>
+        <View style={styles.lockIconContainer}>
+          <Ionicons name="lock-closed" size={24} color={theme.text} />
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>EMAIL ADDRESS</Text>
+          <View style={[styles.inputWrapper, focusedField === 'forgotEmail' && styles.inputWrapperFocused, errors.email ? styles.inputWrapperError : null]}>
+            <Ionicons name="mail-outline" size={16} color={focusedField === 'forgotEmail' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your email"
+              placeholderTextColor={theme.textTertiary}
+              value={email}
+              onChangeText={(val) => { setEmail(val); if (errors.email) setErrors({ ...errors, email: undefined }); }}
+              onFocus={() => setFocusedField('forgotEmail')}
+              onBlur={() => setFocusedField(null)}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              returnKeyType="go"
+              onSubmitEditing={handleForgotPassword}
+              accessibilityLabel="Email address"
+            />
+          </View>
+          {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
+
+          <Text style={styles.helpText}>
+            We'll send you a link to reset your password
+          </Text>
+        </View>
+      </>
+    );
+  };
 
   const renderContent = () => {
     switch (mode) {
@@ -478,12 +572,14 @@ export default function LoginScreen() {
               <Text style={styles.heading}>
                 {mode === 'signin' && 'Welcome back!'}
                 {mode === 'signup' && 'Create your account'}
-                {mode === 'forgot' && 'Reset your password'}
+                {mode === 'forgot' && (forgotSubmitted ? 'Check your email' : 'Reset your password')}
               </Text>
               <Text style={styles.subtext}>
                 {mode === 'signin' && 'Sign in to continue ordering delicious meals'}
                 {mode === 'signup' && 'Join Kitchen Co. for the best culinary experience'}
-                {mode === 'forgot' && 'Enter your email to receive reset instructions'}
+                {mode === 'forgot' && (forgotSubmitted
+                  ? `If an account exists for ${email.trim()}, we've sent a link to reset your password.`
+                  : 'Enter your email to receive reset instructions')}
               </Text>
 
               {renderContent()}
@@ -496,32 +592,34 @@ export default function LoginScreen() {
                 </View>
               )}
 
-              <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-                <TouchableOpacity
-                  style={[styles.continueBtn, isButtonDisabled() && styles.continueBtnDisabled]}
-                  onPress={handleSubmit}
-                  onPressIn={pressIn}
-                  onPressOut={pressOut}
-                  activeOpacity={0.9}
-                  disabled={isButtonDisabled()}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    mode === 'signin' ? (isAdminEmail ? 'Sign in as Admin' : 'Sign In')
-                      : mode === 'signup' ? 'Create Account'
-                      : 'Send Reset Link'
-                  }
-                  accessibilityState={{ disabled: isButtonDisabled() }}
-                >
-                  <Text style={[styles.continueBtnText, isButtonDisabled() && styles.continueBtnTextDisabled]}>
-                    {mode === 'signin' && (isAdminEmail ? 'Sign in as Admin' : 'Sign In')}
-                    {mode === 'signup' && 'Create Account'}
-                    {mode === 'forgot' && 'Send Reset Link'}
-                  </Text>
-                  {!isButtonDisabled() && (
-                    <Ionicons name="arrow-forward" size={18} color={theme.onAccent} style={styles.continueBtnIcon} />
-                  )}
-                </TouchableOpacity>
-              </Animated.View>
+              {!(mode === 'forgot' && forgotSubmitted) && (
+                <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+                  <TouchableOpacity
+                    style={[styles.continueBtn, isButtonDisabled() && styles.continueBtnDisabled]}
+                    onPress={handleSubmit}
+                    onPressIn={pressIn}
+                    onPressOut={pressOut}
+                    activeOpacity={0.9}
+                    disabled={isButtonDisabled()}
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      mode === 'signin' ? (isAdminEmail ? 'Sign in as Admin' : 'Sign In')
+                        : mode === 'signup' ? 'Create Account'
+                        : 'Send Reset Link'
+                    }
+                    accessibilityState={{ disabled: isButtonDisabled() }}
+                  >
+                    <Text style={[styles.continueBtnText, isButtonDisabled() && styles.continueBtnTextDisabled]}>
+                      {mode === 'signin' && (isAdminEmail ? 'Sign in as Admin' : 'Sign In')}
+                      {mode === 'signup' && 'Create Account'}
+                      {mode === 'forgot' && 'Send Reset Link'}
+                    </Text>
+                    {!isButtonDisabled() && (
+                      <Ionicons name="arrow-forward" size={18} color={theme.onAccent} style={styles.continueBtnIcon} />
+                    )}
+                  </TouchableOpacity>
+                </Animated.View>
+              )}
 
               {__DEV__ && (
                 <TouchableOpacity
@@ -674,6 +772,36 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   },
   companyDetectedText: { color: theme.textSecondary, fontSize: 12, fontWeight: '600' },
   companyDetectedName: { color: theme.success, fontWeight: '800' },
+
+  // Individual vs Company signup toggle
+  signupTypeSelector: {
+    flexDirection: 'row',
+    backgroundColor: theme.surfaceSecondary,
+    borderRadius: 12,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  signupTypeBtn: { flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center' },
+  signupTypeBtnActive: { backgroundColor: theme.accent },
+  signupTypeBtnText: { fontSize: 13, fontWeight: '700', color: theme.textSecondary },
+  signupTypeBtnTextActive: { color: theme.onAccent },
+
+  // Company signup: two-location picker
+  locationOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: theme.inputBg,
+    borderWidth: 1.5,
+    borderColor: theme.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 46,
+    marginBottom: 8,
+  },
+  locationOptionActive: { borderColor: theme.accent },
+  locationOptionText: { flex: 1, fontSize: 13, color: theme.text, fontWeight: '600' },
 
   // Admin hint
   adminHint: {

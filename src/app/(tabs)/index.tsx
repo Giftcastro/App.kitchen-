@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity, StatusBar, Modal, TextInput, ScrollView, useWindowDimensions, Animated, RefreshControl } from 'react-native';
+import { StyleSheet, View, FlatList, TouchableOpacity, StatusBar, Modal, ScrollView, useWindowDimensions, Animated, RefreshControl, Image } from 'react-native';
+import { Text, TextInput } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,10 +31,6 @@ const PAGE_PADDING = 16;
 const CARD_GAP = 20; // minimum horizontal gutter (actual gap grows via space-between)
 const ROW_GAP = 28; // vertical spacing between grid rows
 
-const MEAL_TYPE_ICONS: Record<string, string> = {
-  'MAIN MEAL': '🍖', 'VEGETARIAN MEAL': '🥦',
-  'HEALTHY MEAL': '🥗', 'CURRY OF THE DAY': '🍛', 'GOURMET SANDWICH': '🥙',
-};
 const MEAL_TYPE_COLORS: Record<string, string> = {
   'MAIN MEAL': '#FF7F50', 'VEGETARIAN MEAL': '#22C55E',
   'HEALTHY MEAL': '#06C167', 'CURRY OF THE DAY': '#FF9500', 'GOURMET SANDWICH': '#5AC8FA',
@@ -58,6 +55,38 @@ const STATIC_CATEGORY_COLORS: Record<string, string> = {
   'PORK SPECIALITIES': '#B45309',
   "CHEF'S MEAL OF THE DAY": '#A855F7',
 };
+
+// One real, freely-licensed (Pexels License — free for commercial use) photo
+// per Main Menu category, replacing the old per-item emoji placeholder. The
+// client asked for genuine photography here, not per-dish photos — every
+// item in a category shares that category's single image.
+const STATIC_CATEGORY_IMAGES: Record<string, string> = {
+  'CIAO ITALY': 'https://images.pexels.com/photos/5531093/pexels-photo-5531093.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'STIR FRY': 'https://images.pexels.com/photos/33145258/pexels-photo-33145258.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'POKE BOWL': 'https://images.pexels.com/photos/4770328/pexels-photo-4770328.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'WRAPS': 'https://images.pexels.com/photos/15076695/pexels-photo-15076695.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'HOT DOGS': 'https://images.pexels.com/photos/29476591/pexels-photo-29476591.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'BURGER BAR': 'https://images.pexels.com/photos/36007382/pexels-photo-36007382.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'SALAD BAR': 'https://images.pexels.com/photos/842545/pexels-photo-842545.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'SANDWICHES': 'https://images.pexels.com/photos/11256670/pexels-photo-11256670.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'FITNESS MEALS': 'https://images.pexels.com/photos/30635717/pexels-photo-30635717.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'VEGAN MEALS': 'https://images.pexels.com/photos/19647374/pexels-photo-19647374.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'SOUPS': 'https://images.pexels.com/photos/8738017/pexels-photo-8738017.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'RAMEN BOWLS': 'https://images.pexels.com/photos/31393431/pexels-photo-31393431.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'PORK SPECIALITIES': 'https://images.pexels.com/photos/15876423/pexels-photo-15876423.jpeg?auto=compress&cs=tinysrgb&w=400',
+  "CHEF'S MEAL OF THE DAY": 'https://images.pexels.com/photos/7243881/pexels-photo-7243881.jpeg?auto=compress&cs=tinysrgb&w=400',
+};
+
+// Same idea for the Today's Menu (cycle) meal types.
+const CYCLE_MEAL_TYPE_IMAGES: Record<string, string> = {
+  'MAIN MEAL': 'https://images.pexels.com/photos/38330332/pexels-photo-38330332.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'VEGETARIAN MEAL': 'https://images.pexels.com/photos/17486827/pexels-photo-17486827.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'HEALTHY MEAL': 'https://images.pexels.com/photos/25315523/pexels-photo-25315523.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'CURRY OF THE DAY': 'https://images.pexels.com/photos/33643313/pexels-photo-33643313.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'GOURMET SANDWICH': 'https://images.pexels.com/photos/19202827/pexels-photo-19202827.jpeg?auto=compress&cs=tinysrgb&w=400',
+};
+
+const FALLBACK_CATEGORY_IMAGE = STATIC_CATEGORY_IMAGES["CHEF'S MEAL OF THE DAY"];
 
 // Category names live in data as shouty caps ("CIAO ITALY") since that's how
 // the client's product list is authored — display-only title-casing here
@@ -176,46 +205,11 @@ export default function MenuScreen() {
     return (staticMenuData as any)._icons || {};
   }, []);
 
-  const getItemIcon = (itemName: string, category: string): string => {
-    const name = itemName.toLowerCase();
-    const cat = category.toLowerCase();
-
-    if (cat.includes('salad')) return '🥗';
-    if (cat.includes('poke') || cat.includes('bowl')) return '🍱';
-    if (cat.includes('stir-fry')) return '🍳';
-    if (cat.includes('italy') || cat.includes('pasta')) return '🍝';
-    if (cat.includes('wrap')) return '🌯';
-    if (cat.includes('sandwich')) return '🥪';
-    if (cat.includes('hot dog')) return '🌭';
-    if (cat.includes('burger')) return '🍔';
-    if (cat.includes('side')) return '🍟';
-    if (cat.includes('fitness')) return '💪';
-    if (cat.includes('soup')) return '🍲';
-    if (cat.includes('ramen')) return '🍜';
-    if (cat.includes('vegan')) return '🌱';
-
-    if (name.includes('tuna')) return '🐟';
-    if (name.includes('chicken')) return '🍗';
-    if (name.includes('beef')) return '🥩';
-    if (name.includes('salmon')) return '🍣';
-    if (name.includes('prawn') || name.includes('calamari')) return '🦐';
-    if (name.includes('bacon') || name.includes('macon')) return '🥓';
-    if (name.includes('cheese')) return '🧀';
-    if (name.includes('egg')) return '🥚';
-    if (name.includes('lamb')) return '🐑';
-    if (name.includes('pork')) return '🐷';
-    if (name.includes('ham')) return '🥩';
-    if (name.includes('salami')) return '🥖';
-    if (name.includes('prosciutto')) return '🥖';
-    if (name.includes('roast')) return '🍖';
-    if (name.includes('grilled')) return '🔥';
-    if (name.includes('smoked')) return '💨';
-    if (name.includes('halloumi')) return '🧀';
-    if (name.includes('tofu')) return '🧈';
-    if (name.includes('vegetable') || name.includes('veg')) return '🥬';
-
-    return '🍽️';
-  };
+  // Looks up the one real photo standing in for a category (static menu
+  // categories and cycle meal types share the same lookup) — see
+  // STATIC_CATEGORY_IMAGES / CYCLE_MEAL_TYPE_IMAGES above.
+  const getCategoryImage = (category: string): string =>
+    STATIC_CATEGORY_IMAGES[category] || CYCLE_MEAL_TYPE_IMAGES[category] || FALLBACK_CATEGORY_IMAGE;
 
   // `menus` (from context) is the single source of truth — the same data
   // admin's Meals tab reads and writes. Flatten it into the flat, per-item
@@ -448,7 +442,6 @@ export default function MenuScreen() {
   const renderGridItem = ({ item }: { item: UIReadyItem }) => {
     const qty = getItemQuantity(item.id);
     const rawPrice = item.sizes[0] ? item.sizes[0].price : 0;
-    const itemIcon = getItemIcon(item.name, item.category);
     const itemDiscounts = getItemDiscounts(item);
     const hasDiscount = itemDiscounts.length > 0;
     const discountedPrice = hasDiscount ? rawPrice * (1 - itemDiscounts[0].percentage / 100) : rawPrice;
@@ -461,32 +454,17 @@ export default function MenuScreen() {
         style={[styles.uberCard, { width: CARD_WIDTH }]}
         activeOpacity={0.9}
         onPress={() => handleAddItem(item)}
-        accessibilityRole="button"
         accessibilityLabel={`${item.name}, ${displayPrice}`}
       >
-        {/* Image Section */}
-        <View style={styles.uberImageSection}>
-          <View style={[styles.uberImageContainer, { backgroundColor: categoryColor + '1F' }, itemDiscounts.length > 0 && { backgroundColor: '#FFF3E0' }]}>
-            <Text style={styles.uberItemEmoji}>{itemIcon}</Text>
-            {itemDiscounts.length > 0 && (
-              <View style={styles.discountChipContainer}>
-                {itemDiscounts.map((disc, i) => (
-                  <View key={i} style={styles.menuDiscountBadge}>
-                    <Text style={styles.menuDiscountBadgeText}>-{disc.percentage}%</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-          {/* Quick Add Button */}
-          <View style={styles.uberQuickAddWrap}>
-            <QuickAddButton quantity={qty} onPress={() => handleAddItem(item)} theme={theme} />
-          </View>
-        </View>
+        {/* Thin category-colour accent, replacing the old empty image placeholder */}
+        <View style={[styles.uberAccentBar, { backgroundColor: categoryColor }]} />
 
         {/* Content Section */}
         <View style={styles.uberContent}>
-          <Text style={styles.uberItemName} numberOfLines={2}>{item.name}</Text>
+          <View style={styles.uberTopRow}>
+            <Text style={[styles.uberItemName, styles.uberItemNameFlex]} numberOfLines={2}>{item.name}</Text>
+            <QuickAddButton quantity={qty} onPress={() => handleAddItem(item)} theme={theme} />
+          </View>
           {item.description ? (
             <Text style={styles.uberItemDesc} numberOfLines={2}>{item.description}</Text>
           ) : null}
@@ -539,9 +517,13 @@ export default function MenuScreen() {
         keyExtractor={([cat]) => cat}
         renderItem={({ item: [category, items] }) => (
           <View style={styles.categorySection}>
-            <View style={styles.categoryHeader}>
-              <Text style={styles.categoryIcon}>{categoryIcons[category] || '🍽️'}</Text>
-              <Text style={styles.categoryTitle}>{formatCategoryLabel(category)}</Text>
+            {/* One real photo per category — shown once here at the top of that
+                category's items (this is what a category chip filters down to),
+                never per-item. */}
+            <View style={styles.categoryBanner}>
+              <Image source={{ uri: getCategoryImage(category) }} style={styles.categoryBannerImage} resizeMode="cover" />
+              <View style={styles.categoryBannerOverlay} />
+              <Text style={styles.categoryBannerTitle}>{formatCategoryLabel(category)}</Text>
             </View>
 
             {/* 2-column grid - identical layout to Today's Menu */}
@@ -616,7 +598,6 @@ export default function MenuScreen() {
       day: UpcomingWeekday,
       weekKeyStr: string
     ) => {
-      const icon = MEAL_TYPE_ICONS[meal.mealType] || '🍽️';
       const color = MEAL_TYPE_COLORS[meal.mealType] || '#8E8E93';
       const mealName = meal.mealDescription;
       const qty = getItemQuantity(`cycle-${weekKeyStr}-${day.dayName}-${meal.mealType}-${mealName.replace(/\s+/g, '')}`);
@@ -626,24 +607,19 @@ export default function MenuScreen() {
           style={[styles.uberCard, { width: CARD_WIDTH }]}
           activeOpacity={0.7}
           onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
-          accessibilityRole="button"
           accessibilityLabel={`${mealName}, R${CYCLE_ITEM_PRICE}`}
         >
-          <View style={styles.uberImageSection}>
-            <View style={[styles.cycleCardIconWrapFull, { backgroundColor: color + '18' }]}>
-              <Text style={styles.cycleCardIcon}>{icon}</Text>
-            </View>
-            <View style={styles.uberQuickAddWrap}>
+          <View style={[styles.uberAccentBar, { backgroundColor: color }]} />
+          <View style={styles.uberContent}>
+            <Text style={[styles.cycleMealType, { color }]}>{meal.mealType.replace(/_/g, ' ')}</Text>
+            <View style={styles.uberTopRow}>
+              <Text style={[styles.uberItemName, styles.uberItemNameFlex]} numberOfLines={2}>{mealName}</Text>
               <QuickAddButton
                 quantity={qty}
                 onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
                 theme={theme}
               />
             </View>
-          </View>
-          <View style={styles.uberContent}>
-            <Text style={[styles.cycleMealType, { color }]}>{meal.mealType.replace(/_/g, ' ')}</Text>
-            <Text style={styles.uberItemName} numberOfLines={2}>{mealName}</Text>
             <View style={styles.uberMetaRow}>
               <Text style={styles.uberPrice}>R{CYCLE_ITEM_PRICE}</Text>
             </View>
@@ -867,7 +843,6 @@ export default function MenuScreen() {
                 <>
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
                     <View style={styles.modalItemInfo}>
-                      <Text style={styles.modalItemIcon}>{getItemIcon(selectedItem.name, selectedItem.category)}</Text>
                       <View style={styles.modalItemDetails}>
                         <Text style={styles.modalItemName}>{selectedItem.name}</Text>
                         <Text style={styles.modalItemPrice}>R{activeSize.price.toFixed(0)}</Text>
@@ -1226,9 +1201,25 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   categoryChipTextActive: { color: theme.onAccent },
 
   categorySection: { marginBottom: 28 },
-  categoryHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, paddingHorizontal: 4 },
-  categoryIcon: { fontSize: 24, marginRight: 10 },
-  categoryTitle: { fontSize: 21, fontWeight: '800', color: theme.text, letterSpacing: -0.4 },
+  categoryBanner: {
+    height: 140,
+    borderRadius: 18,
+    overflow: 'hidden',
+    marginBottom: 16,
+    justifyContent: 'flex-end',
+  },
+  categoryBannerImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  categoryBannerOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.32)',
+  },
+  categoryBannerTitle: {
+    fontSize: 21,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.4,
+    padding: 14,
+  },
   uberGrid: {},
   uberGridColumn: {
     justifyContent: 'space-between',
@@ -1247,35 +1238,9 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
-  uberImageSection: {
-    position: 'relative',
-    height: 110,
-  },
-  uberImageContainer: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: theme.surfaceSecondary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  discountChipContainer: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    flexDirection: 'row',
-    gap: 4,
-  },
-  menuDiscountBadge: {
-    backgroundColor: '#FF9500',
-    borderRadius: 12,
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-  },
-  menuDiscountBadgeText: {
-    color: '#000000',
-    fontSize: 10,
-    fontWeight: '800',
-  },
+  // Thin category-colour accent strip — replaces the old empty image
+  // placeholder block now that items don't carry their own picture.
+  uberAccentBar: { height: 4, width: '100%' },
   menuDiscountHint: {
     fontSize: 10,
     color: '#FF9500',
@@ -1283,8 +1248,9 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     maxWidth: 100,
     textAlign: 'right',
   },
-  uberItemEmoji: { fontSize: 48 },
   uberContent: { padding: 10 },
+  uberTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 3 },
+  uberItemNameFlex: { flex: 1, marginBottom: 0 },
   uberItemName: { fontSize: 15, fontWeight: '800', color: theme.text, lineHeight: 19, marginBottom: 3, letterSpacing: -0.2 },
   uberItemDesc: { fontSize: 11, color: theme.textSecondary, lineHeight: 15, marginBottom: 8 },
   uberMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
@@ -1300,13 +1266,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   dayTitleToday: { color: theme.success },
   dayMealCount: { fontSize: 12, color: theme.textTertiary, fontWeight: '600' },
 
-  cycleCardIconWrapFull: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cycleCardIcon: { fontSize: 48 }, // matches uberItemEmoji size on Main Menu cards
   todayBadge: {
     position: 'absolute',
     top: 8,
@@ -1364,7 +1323,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.border,
   },
-  modalItemIcon: { fontSize: 40, marginRight: 12 },
   modalItemDetails: { flex: 1 },
   modalItemName: { fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 4 },
   modalItemPrice: { fontSize: 18, fontWeight: '900', color: theme.text },
@@ -1402,9 +1360,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     elevation: 6,
   },
   modalAddBtnText: { color: theme.onAccent, fontSize: 16, fontWeight: '800' },
-
-  // Quick-add button positioning wrapper (button itself lives in QuickAddButton.tsx)
-  uberQuickAddWrap: { position: 'absolute', bottom: 10, right: 10 },
 
   // Today's cycle menu — cutoff status row
   // No paddingHorizontal here — the parent ScrollView's contentContainerStyle

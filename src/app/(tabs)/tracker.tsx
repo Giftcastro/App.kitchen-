@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, Text, View, ScrollView, StatusBar, RefreshControl } from 'react-native';
+import { StyleSheet, View, ScrollView, StatusBar, RefreshControl } from 'react-native';
+import { Text } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen, CartItem } from '../../context/KitchenCoContext';
 import { Ionicons } from '@expo/vector-icons';

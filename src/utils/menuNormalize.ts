@@ -53,9 +53,9 @@ export function normalizeRawMenuItem(rawItem: any, category: string, idx: number
     const cleanPrice = typeof rawItem.price === 'number' ? rawItem.price : parseFloat(String(rawItem.price).replace(/[^\d.]/g, '')) || 0;
     parsedSizes = [{ label: 'Regular', price: cleanPrice }];
   } else if (rawItem.prices && Array.isArray(rawItem.prices)) {
-    // Two-price items are almost always a small/large portion split — label them
+    // Two-price items are almost always a standard/large portion split — label them
     // accordingly instead of the generic "Option N" so the size picker reads naturally.
-    const sizeLabels = rawItem.prices.length === 2 ? ['Small', 'Large'] : null;
+    const sizeLabels = rawItem.prices.length === 2 ? ['Standard', 'Large'] : null;
     parsedSizes = rawItem.prices.map((p: any, pIdx: number) => {
       const priceStr = typeof p === 'string' ? p : String(p);
       const price = parseFloat(priceStr.replace(/[^\d.]/g, '')) || 0;

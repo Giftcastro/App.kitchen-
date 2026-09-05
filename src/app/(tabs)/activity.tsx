@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, StatusBar, TouchableOpacity, Modal, RefreshControl } from 'react-native';
+import { View, StyleSheet, FlatList, StatusBar, TouchableOpacity, Modal, RefreshControl } from 'react-native';
+import { Text } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen } from '../../context/KitchenCoContext';
 import { useRouter } from 'expo-router';

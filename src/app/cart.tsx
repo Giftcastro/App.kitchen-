@@ -8,15 +8,14 @@
 import React, { useState, useMemo } from 'react';
 import {
   View,
-  Text,
   ScrollView,
   TouchableOpacity,
   StyleSheet,
   StatusBar,
   Platform,
-  TextInput,
   Modal,
 } from 'react-native';
+import { Text, TextInput } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen } from '../context/KitchenCoContext';
 import { useRouter } from 'expo-router';

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Text } from './AppText';
 import { useRouter } from 'expo-router';
 import { useKitchen } from '../context/KitchenCoContext';
 import { ThemeColors } from '../utils/theme';

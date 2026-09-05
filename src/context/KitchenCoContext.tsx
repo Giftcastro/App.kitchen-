@@ -4,13 +4,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeColors, ThemeMode, ResolvedScheme, getThemeColors } from '../utils/theme';
 import { buildMenuFromStaticData, NormalizedMenuItem, AddOnOption } from '../utils/menuNormalize';
 import { syncOrderReminder, cancelOrderReminder } from '../utils/orderReminders';
-import { calculateDeliveryFee } from '../utils/deliveryHelpers';
+import { calculateDeliveryFee, getItemDueDate } from '../utils/deliveryHelpers';
 import { haptics } from '../utils/haptics';
 import staticMenuData from '../data/staticMenu.json';
 
 export type { AddOnOption };
 
 const THEME_MODE_STORAGE_KEY = 'kitchenco_theme_mode';
+const KITCHEN_EMAIL_STORAGE_KEY = 'kitchenco_kitchen_email';
 
 export type AccountType = 'individual' | 'company';
 
@@ -20,6 +21,8 @@ export interface User {
   role: string;
   accountType?: AccountType;
   companyName?: string;
+  /** Which of the company's registered delivery locations (see Company.address / address2) this employee belongs to — only meaningful when accountType is 'company'. Defaults to the primary address when unset. */
+  companyLocation?: 1 | 2;
 }
 
 export interface AppUser extends User {
@@ -107,6 +110,8 @@ export interface Company {
   domains: string[];
   /** Registered delivery address for bulk/company orders. */
   address?: CompanyAddress;
+  /** A second registered site, for companies delivering to more than one location — an employee picks between the two at signup (see User.companyLocation). */
+  address2?: CompanyAddress;
   /** Fixed amount (Rand, VAT-inclusive) the company subsidizes per meal ordered by its employees. Deducted automatically at checkout, capped per item so it can't exceed that item's price. */
   mealSubsidy?: number;
 }
@@ -143,7 +148,7 @@ interface KitchenContextType {
   setAppliedDiscount: (discount: Discount | null) => void;
   activeWeek: number;
   setActiveWeek: Dispatch<SetStateAction<number>>;
-  login: (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string) => void;
+  login: (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string, companyLocation?: 1 | 2) => void;
   logout: () => void;
   addToCart: (item: CartItem) => void;
   removeFromCart: (itemId: string) => void;
@@ -193,6 +198,9 @@ interface KitchenContextType {
   calculateSubsidyAmount: (cartItems: CartItem[]) => number;
   remindersEnabled: boolean;
   setRemindersEnabled: Dispatch<SetStateAction<boolean>>;
+  /** Where the Chef tab's Production Sheet / Delivery Note "Send" dialogs default their recipient to — internal kitchen/back-of-house staff, not the corporate client. Persisted across app restarts. */
+  kitchenEmail: string;
+  setKitchenEmail: (email: string) => void;
 }
 
 export const KitchenCoContext = createContext<KitchenContextType | undefined>(undefined);
@@ -277,7 +285,22 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     setThemeModeState(mode);
     AsyncStorage.setItem(THEME_MODE_STORAGE_KEY, mode).catch(() => {});
   };
-  const resolvedScheme: ResolvedScheme = themeMode === 'system' ? (systemScheme ?? 'light') : themeMode;
+  // Internal recipient for production/delivery-note emails — the back
+  // kitchen's own inbox (or whoever's watching it), not a per-company
+  // contact, since these documents never go to the corporate client
+  // themselves. Persisted the same way as themeMode, above.
+  const [kitchenEmail, setKitchenEmailState] = useState('');
+  useEffect(() => {
+    AsyncStorage.getItem(KITCHEN_EMAIL_STORAGE_KEY).then(stored => {
+      if (stored) setKitchenEmailState(stored);
+    }).catch(() => {});
+  }, []);
+  const setKitchenEmail = (email: string) => {
+    setKitchenEmailState(email);
+    AsyncStorage.setItem(KITCHEN_EMAIL_STORAGE_KEY, email).catch(() => {});
+  };
+
+  const resolvedScheme: ResolvedScheme = themeMode === 'system' ? (systemScheme === 'dark' ? 'dark' : 'light') : themeMode;
   const isDark = resolvedScheme === 'dark';
   const theme = useMemo(() => getThemeColors(resolvedScheme), [resolvedScheme]);
 
@@ -321,8 +344,14 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       { id: 'USR-1002', name: 'Jane Smith', email: 'jane@example.com', role: 'customer', joinedDate: '28 May 2026', orderCount: 7 },
       { id: 'USR-1003', name: 'Mike Johnson', email: 'mike@example.com', role: 'customer', joinedDate: '5 Jun 2026', orderCount: 1 },
       // Demonstrates work-email domain matching — signing in with any
-      // @acmelogistics.com address auto-detects this same company.
-      { id: 'USR-1004', name: 'Sipho Dlamini', email: 'sipho@acmelogistics.com', role: 'customer', accountType: 'company', companyName: 'Acme Logistics', joinedDate: '3 Aug 2026', orderCount: 3 },
+      // @ecogra.org/@tcs.com/@rclfoods.com address auto-detects the matching
+      // real corporate client (see `companies`, below). Two Ecogra employees
+      // are seeded so the Chef tab's Order Queue has a real multi-order
+      // batch to demonstrate, not just a single-order company.
+      { id: 'USR-1004', name: 'Thandiwe Mokoena', email: 'thandiwe@ecogra.org', role: 'customer', accountType: 'company', companyName: 'Ecogra', joinedDate: '3 Aug 2026', orderCount: 3 },
+      { id: 'USR-1005', name: 'Lerato Nkosi', email: 'lerato@ecogra.org', role: 'customer', accountType: 'company', companyName: 'Ecogra', joinedDate: '10 Aug 2026', orderCount: 2 },
+      { id: 'USR-1006', name: 'Raj Naidoo', email: 'raj@tcs.com', role: 'customer', accountType: 'company', companyName: 'TATA', joinedDate: '15 Aug 2026', orderCount: 1 },
+      { id: 'USR-1007', name: 'Nomvula Dube', email: 'nomvula@rclfoods.com', role: 'customer', accountType: 'company', companyName: 'RCL', joinedDate: '20 Aug 2026', orderCount: 1 },
     ];
     
     const todayStr = new Date().toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) + ', ' + new Date().toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
@@ -342,10 +371,13 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         // A corporate bulk order placed a few days ago and pre-scheduled for
         // delivery today — the realistic case "Due Today" is meant to catch:
         // items booked for a specific date, not just orders placed today.
+        // Paired with ORD-1296 below (same company, same day) so the Chef
+        // tab's Order Queue has a real 2-order Ecogra batch to show off, not
+        // just a single order that happens to have a company attached.
         id: 'ORD-1295',
         items: [
-          { id: 'bulk-1', name: 'Chicken Aglio e Olio Penne', price: 80, category: 'CIAO ITALY', quantity: 15, selectedSize: 'Small', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
-          { id: 'bulk-2', name: 'Beef Lasagne', price: 80, category: 'CIAO ITALY', quantity: 10, selectedSize: 'Small', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+          { id: 'bulk-1', name: 'Chicken Aglio e Olio Penne', price: 80, category: 'CIAO ITALY', quantity: 15, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+          { id: 'bulk-2', name: 'Beef Lasagne', price: 80, category: 'CIAO ITALY', quantity: 10, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
         ],
         total: 2100,
         totalPrice: 2000,
@@ -353,17 +385,85 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         status: 'preparing',
         date: '26 Aug 2026, 09:10',
         timestamp: '26 Aug 2026, 09:10',
-        userEmail: 'sipho@acmelogistics.com',
-        userName: 'Sipho Dlamini',
+        userEmail: 'thandiwe@ecogra.org',
+        userName: 'Thandiwe Mokoena',
         deliveryAddress: {
-          id: 'company-acme',
-          label: 'Acme Logistics',
-          street: 'Floor 6, Suite 604, 14 Rivonia Road',
-          suburb: 'Sandton',
+          id: 'company-ecogra',
+          label: 'Ecogra',
+          street: '160 Jan Smuts Ave',
+          suburb: 'Rosebank',
           city: 'Johannesburg',
-          code: '2196',
+          code: '',
           isDefault: true,
-          distanceKm: 14,
+        },
+      },
+      {
+        id: 'ORD-1296',
+        items: [
+          { id: 'bulk-3', name: 'Chicken Napolitana Penne', price: 80, category: 'CIAO ITALY', quantity: 8, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+        ],
+        total: 740,
+        totalPrice: 640,
+        deliveryFee: 100,
+        status: 'preparing',
+        date: '27 Aug 2026, 08:50',
+        timestamp: '27 Aug 2026, 08:50',
+        userEmail: 'lerato@ecogra.org',
+        userName: 'Lerato Nkosi',
+        deliveryAddress: {
+          id: 'company-ecogra',
+          label: 'Ecogra',
+          street: '160 Jan Smuts Ave',
+          suburb: 'Rosebank',
+          city: 'Johannesburg',
+          code: '',
+          isDefault: true,
+        },
+      },
+      {
+        id: 'ORD-1297',
+        items: [
+          { id: 'bulk-4', name: 'Chicken Alfredo Linguini Pasta', price: 80, category: 'CIAO ITALY', quantity: 12, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+        ],
+        total: 1060,
+        totalPrice: 960,
+        deliveryFee: 100,
+        status: 'pending',
+        date: '28 Aug 2026, 10:15',
+        timestamp: '28 Aug 2026, 10:15',
+        userEmail: 'raj@tcs.com',
+        userName: 'Raj Naidoo',
+        deliveryAddress: {
+          id: 'company-tata',
+          label: 'TATA',
+          street: '39 Ferguson Road',
+          suburb: 'Illovo',
+          city: 'Johannesburg',
+          code: '',
+          isDefault: true,
+        },
+      },
+      {
+        id: 'ORD-1298',
+        items: [
+          { id: 'bulk-5', name: 'Beef Lasagne', price: 80, category: 'CIAO ITALY', quantity: 6, selectedSize: 'Standard', deliveryDate: todayISO, deliveryDateLabel: todayDeliveryLabel },
+        ],
+        total: 580,
+        totalPrice: 480,
+        deliveryFee: 100,
+        status: 'pending',
+        date: '29 Aug 2026, 09:30',
+        timestamp: '29 Aug 2026, 09:30',
+        userEmail: 'nomvula@rclfoods.com',
+        userName: 'Nomvula Dube',
+        deliveryAddress: {
+          id: 'company-rcl',
+          label: 'RCL',
+          street: '15 Railey Road',
+          suburb: 'Bedfordview',
+          city: 'Johannesburg',
+          code: '',
+          isDefault: true,
         },
       },
       {
@@ -532,8 +632,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     ]);
   }, []);
 
-  const login = (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string) => {
-    const newUser = { email, role, name: name || email.split('@')[0], accountType, companyName };
+  const login = (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string, companyLocation?: 1 | 2) => {
+    const newUser = { email, role, name: name || email.split('@')[0], accountType, companyName, companyLocation };
     setUser(newUser);
 
     // Track this user in allUsers for admin view
@@ -543,7 +643,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         // Refresh accountType/companyName too — a company registered after this
         // user's original signup should still get linked on their next sign-in.
         return prev.map(u =>
-          u.email === email ? { ...u, accountType, companyName } : u
+          u.email === email ? { ...u, accountType, companyName, companyLocation } : u
         );
       }
       return [...prev, {
@@ -553,6 +653,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         name: name || email.split('@')[0],
         accountType,
         companyName,
+        companyLocation,
         joinedDate: new Date().toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }),
         orderCount: 0,
       }];
@@ -658,22 +759,27 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
 
     if (user.companyName) {
       const company = companies.find(c => c.name === user.companyName);
-      if (company?.address?.distanceKm != null) {
+      // A company with two registered sites has each employee pick one at
+      // signup (User.companyLocation) — default to the primary address for
+      // anyone signed up before that choice existed, or whose company only
+      // has the one location.
+      const companyAddress = user.companyLocation === 2 && company?.address2 ? company.address2 : company?.address;
+      if (companyAddress?.distanceKm != null) {
         const resolvedAddress: DeliveryAddress = {
-          id: `company-${company.id}`,
-          label: company.name,
-          street: company.address.unit ? `${company.address.unit}, ${company.address.street}` : company.address.street,
-          suburb: company.address.suburb,
-          city: company.address.city,
-          code: company.address.code,
+          id: `company-${company!.id}-${user.companyLocation ?? 1}`,
+          label: company!.name,
+          street: companyAddress.unit ? `${companyAddress.unit}, ${companyAddress.street}` : companyAddress.street,
+          suburb: companyAddress.suburb,
+          city: companyAddress.city,
+          code: companyAddress.code,
           isDefault: true,
-          distanceKm: company.address.distanceKm,
+          distanceKm: companyAddress.distanceKm,
         };
         return {
-          distanceKm: company.address.distanceKm,
-          fee: calculateDeliveryFee(company.address.distanceKm),
+          distanceKm: companyAddress.distanceKm,
+          fee: calculateDeliveryFee(companyAddress.distanceKm),
           address: resolvedAddress,
-          addressLabel: `${company.name} — ${company.address.street}`,
+          addressLabel: `${company!.name} — ${companyAddress.street}`,
         };
       }
       return { distanceKm: null, fee: null, address: null, addressLabel: company ? `${company.name} (no delivery address on file)` : null };
@@ -841,8 +947,37 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     setCompanies(prev => prev.filter(c => c.id !== companyId));
   };
 
+  // Corporate clients get one physical delivery per batch — every employee
+  // at the same company whose order is due the same day rides in that same
+  // batch, so their status (preparing/on the way/delivered) is one shared
+  // fact, not N individually-tracked orders that happen to match. Guest/
+  // individual orders (no matched company) still update alone, since they
+  // really are delivered separately.
+  const getOrderBatchKey = (order: Order): string | null => {
+    if (!order.userEmail) return null;
+    const companyName = allUsers.find(u => u.email === order.userEmail)?.companyName;
+    if (!companyName) return null;
+    const placedAt = new Date(order.timestamp);
+    const dueDates = order.items.map(item => {
+      const d = getItemDueDate(item, placedAt);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    });
+    return `${companyName}::${dueDates.sort()[0]}`;
+  };
+
   const updateOrderStatus = (orderId: string, status: string) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    setOrders(prev => {
+      const target = prev.find(o => o.id === orderId);
+      if (!target) return prev;
+      const batchKey = getOrderBatchKey(target);
+      if (!batchKey) {
+        return prev.map(o => o.id === orderId ? { ...o, status } : o);
+      }
+      // A sibling order that's already cancelled opted out of the batch
+      // individually — leave it alone rather than reviving it via someone
+      // else's status change.
+      return prev.map(o => (o.status !== 'cancelled' && getOrderBatchKey(o) === batchKey) ? { ...o, status } : o);
+    });
   };
 
   // Delivery address management
@@ -953,6 +1088,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         calculateSubsidyAmount,
         remindersEnabled,
         setRemindersEnabled,
+        kitchenEmail,
+        setKitchenEmail,
       }}
     >
       {children}
