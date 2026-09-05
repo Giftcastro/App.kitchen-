@@ -245,7 +245,7 @@ const TAB_ICONS: Record<TabType, string> = {
 };
 
 export default function AdminScreen() {
-    const { orders, activeWeek, setActiveWeek, allUsers, discounts, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, addCompany, deleteCompany, updateOrderStatus, theme, kitchenEmail, setKitchenEmail } = useKitchen();
+    const { orders, activeWeek, setActiveWeek, allUsers, discounts, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, addCompany, updateCompany, deleteCompany, updateOrderStatus, theme, kitchenEmail, setKitchenEmail } = useKitchen();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { refreshing, refresh } = useSimulatedLoad();
   const router = useRouter();
@@ -262,6 +262,9 @@ export default function AdminScreen() {
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
   const [showAddCompany, setShowAddCompany] = useState(false);
+  // Set while the company modal is editing an existing client rather than
+  // adding a new one — the form fields below are shared by both flows.
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyDomains, setNewCompanyDomains] = useState('');
   const [newCompanyStreet, setNewCompanyStreet] = useState('');
@@ -647,7 +650,53 @@ export default function AdminScreen() {
     setShowAddDiscount(false);
   };
 
-  const handleAddCompany = () => {
+  // Clears the shared add/edit company form and closes the modal. Called on
+  // cancel too, so a half-typed edit never leaks into the next "+" tap.
+  const closeCompanyModal = () => {
+    setEditingCompanyId(null);
+    setNewCompanyName('');
+    setNewCompanyDomains('');
+    setNewCompanyStreet('');
+    setNewCompanyUnit('');
+    setNewCompanySuburb('');
+    setNewCompanyCity('');
+    setNewCompanyCode('');
+    setNewCompanyDistance('');
+    setNewCompanyInstructions('');
+    setNewCompanySubsidy('');
+    setShowSecondLocation(false);
+    setNewCompanyStreet2('');
+    setNewCompanyUnit2('');
+    setNewCompanySuburb2('');
+    setNewCompanyCity2('');
+    setNewCompanyCode2('');
+    setNewCompanyDistance2('');
+    setShowAddCompany(false);
+  };
+
+  const openEditCompany = (company: Company) => {
+    setEditingCompanyId(company.id);
+    setNewCompanyName(company.name);
+    setNewCompanyDomains(company.domains.join(', '));
+    setNewCompanyStreet(company.address?.street ?? '');
+    setNewCompanyUnit(company.address?.unit ?? '');
+    setNewCompanySuburb(company.address?.suburb ?? '');
+    setNewCompanyCity(company.address?.city ?? '');
+    setNewCompanyCode(company.address?.code ?? '');
+    setNewCompanyDistance(company.address?.distanceKm != null ? String(company.address.distanceKm) : '');
+    setNewCompanyInstructions(company.address?.instructions ?? '');
+    setNewCompanySubsidy(company.mealSubsidy != null ? String(company.mealSubsidy) : '');
+    setShowSecondLocation(!!company.address2);
+    setNewCompanyStreet2(company.address2?.street ?? '');
+    setNewCompanyUnit2(company.address2?.unit ?? '');
+    setNewCompanySuburb2(company.address2?.suburb ?? '');
+    setNewCompanyCity2(company.address2?.city ?? '');
+    setNewCompanyCode2(company.address2?.code ?? '');
+    setNewCompanyDistance2(company.address2?.distanceKm != null ? String(company.address2.distanceKm) : '');
+    setShowAddCompany(true);
+  };
+
+  const handleSaveCompany = () => {
     if (!newCompanyName.trim() || !newCompanyDomains.trim()) return;
     const domains = newCompanyDomains
       .split(',')
@@ -655,11 +704,11 @@ export default function AdminScreen() {
       .filter(Boolean);
     if (domains.length === 0) return;
     const hasAddress = newCompanyStreet.trim() && newCompanySuburb.trim() && newCompanyCity.trim();
-    const hasAddress2 = newCompanyStreet2.trim() && newCompanySuburb2.trim() && newCompanyCity2.trim();
+    const hasAddress2 = showSecondLocation && newCompanyStreet2.trim() && newCompanySuburb2.trim() && newCompanyCity2.trim();
     const parsedDistance = parseFloat(newCompanyDistance);
     const parsedDistance2 = parseFloat(newCompanyDistance2);
     const parsedSubsidy = parseFloat(newCompanySubsidy);
-    addCompany({
+    const payload = {
       name: newCompanyName.trim(),
       domains,
       address: hasAddress ? {
@@ -680,26 +729,14 @@ export default function AdminScreen() {
         distanceKm: Number.isFinite(parsedDistance2) ? parsedDistance2 : undefined,
       } : undefined,
       mealSubsidy: Number.isFinite(parsedSubsidy) && parsedSubsidy > 0 ? parsedSubsidy : undefined,
-    });
+    };
+    if (editingCompanyId) {
+      updateCompany(editingCompanyId, payload);
+    } else {
+      addCompany(payload);
+    }
     haptics.success();
-    setNewCompanyName('');
-    setNewCompanyDomains('');
-    setNewCompanyStreet('');
-    setNewCompanyUnit('');
-    setNewCompanySuburb('');
-    setNewCompanyCity('');
-    setNewCompanyCode('');
-    setNewCompanyDistance('');
-    setNewCompanyInstructions('');
-    setNewCompanySubsidy('');
-    setShowSecondLocation(false);
-    setNewCompanyStreet2('');
-    setNewCompanyUnit2('');
-    setNewCompanySuburb2('');
-    setNewCompanyCity2('');
-    setNewCompanyCode2('');
-    setNewCompanyDistance2('');
-    setShowAddCompany(false);
+    closeCompanyModal();
   };
 
   const handleAddUser = () => {
@@ -1318,7 +1355,7 @@ export default function AdminScreen() {
               </View>
               <TouchableOpacity
                 style={styles.addBtn}
-                onPress={() => setShowAddCompany(true)}
+                onPress={() => { setEditingCompanyId(null); setShowAddCompany(true); }}
                 testID="add-company-button"
                 accessibilityRole="button"
                 accessibilityLabel="Add company"
@@ -1350,6 +1387,10 @@ export default function AdminScreen() {
             ) : (
               companies.map((company, idx) => {
                 const employeeCount = employeeCountByCompany.get(company.name) ?? 0;
+                // The card stays a plain View: on react-native-web a wrapper
+                // with accessibilityRole="button" renders a real <button>, and
+                // the edit/delete buttons inside it would then be illegally
+                // nested. Editing is the pencil button instead.
                 return (
                   <View key={company.id} style={[styles.userCard, idx === 0 && { marginTop: 4 }]}>
                     <View style={[styles.userAvatar, { backgroundColor: '#5AC8FA30' }]}>
@@ -1408,14 +1449,24 @@ export default function AdminScreen() {
                         </View>
                       ) : null}
                     </View>
-                    <TouchableOpacity
-                      style={styles.deleteBtn}
-                      onPress={() => { haptics.warning(); deleteCompany(company.id); }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Delete company ${company.name}`}
-                    >
-                      <Ionicons name="trash-outline" size={18} color={theme.error} />
-                    </TouchableOpacity>
+                    <View style={styles.companyActions}>
+                      <TouchableOpacity
+                        style={styles.editBtn}
+                        onPress={() => { haptics.selection(); openEditCompany(company); }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit company ${company.name}`}
+                      >
+                        <Ionicons name="create-outline" size={18} color="#5AC8FA" />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.deleteBtn}
+                        onPress={() => { haptics.warning(); deleteCompany(company.id); }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete company ${company.name}`}
+                      >
+                        <Ionicons name="trash-outline" size={18} color={theme.error} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 );
               })
@@ -1604,8 +1655,8 @@ export default function AdminScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, styles.modalContentTall]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Add Company</Text>
-              <TouchableOpacity onPress={() => setShowAddCompany(false)} accessibilityRole="button" accessibilityLabel="Close">
+              <Text style={styles.modalTitle}>{editingCompanyId ? 'Edit Company' : 'Add Company'}</Text>
+              <TouchableOpacity onPress={closeCompanyModal} accessibilityRole="button" accessibilityLabel="Close">
                 <Ionicons name="close" size={24} color={theme.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -1779,11 +1830,11 @@ export default function AdminScreen() {
             </Text>
             </ScrollView>
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddCompany(false)} accessibilityRole="button">
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={closeCompanyModal} accessibilityRole="button">
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddCompany} accessibilityRole="button">
-                <Text style={styles.modalSaveText}>Add Company</Text>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveCompany} accessibilityRole="button" testID="save-company-button">
+                <Text style={styles.modalSaveText}>{editingCompanyId ? 'Save Changes' : 'Add Company'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -3843,6 +3894,18 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     height: 36,
     borderRadius: 12,
     backgroundColor: '#FF453A20',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  companyActions: {
+    gap: 8,
+    alignItems: 'center',
+  },
+  editBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: '#5AC8FA20',
     justifyContent: 'center',
     alignItems: 'center',
   },
