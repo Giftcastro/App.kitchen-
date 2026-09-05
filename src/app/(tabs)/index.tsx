@@ -29,6 +29,17 @@ interface UIReadyItem {
 const CYCLE_ITEM_PRICE = 80;
 const PAGE_PADDING = 16;
 const CARD_GAP = 20; // minimum horizontal gutter (actual gap grows via space-between)
+
+/**
+ * Split a list into fixed-size rows — the layout `numColumns` used to give us
+ * back when these grids were FlatLists. See the Today's Menu grid for why they
+ * are plain Views now.
+ */
+function chunkRows<T>(items: T[], size: number): T[][] {
+  const rows: T[][] = [];
+  for (let i = 0; i < items.length; i += size) rows.push(items.slice(i, i + size));
+  return rows;
+}
 const ROW_GAP = 28; // vertical spacing between grid rows
 
 const MEAL_TYPE_COLORS: Record<string, string> = {
@@ -694,16 +705,24 @@ export default function MenuScreen() {
                   <Text style={styles.emptySub}>Check back later for this week's schedule</Text>
                 </View>
               ) : meals.length > 0 ? (
-                <FlatList
-                  key={`cycle-${day.iso}-${numColumns}`}
-                  data={meals}
-                  keyExtractor={(_, idx) => `cycle-${day.iso}-${idx}`}
-                  numColumns={numColumns}
-                  columnWrapperStyle={styles.uberGridColumn}
-                  scrollEnabled={false}
-                  nestedScrollEnabled={true}
-                  renderItem={({ item: meal }) => renderCycleCard(meal, day, weekKey)}
-                />
+                // Plain rows of Views, not a nested FlatList. This grid sits
+                // inside the tab's own ScrollView, so the FlatList that used to
+                // be here ran with scrollEnabled={false} and bought no
+                // virtualisation at all — every card rendered regardless —
+                // while still mounting a nested scroll container across nearly
+                // the whole screen. On Android that container swallows vertical
+                // drags that begin on a card, so the tab only scrolled when a
+                // swipe happened to start in a gutter between cards. Views have
+                // no scroll container and nothing to intercept the gesture.
+                chunkRows(meals, numColumns).map((row, rowIdx) => (
+                  <View key={`cycle-${day.iso}-row-${rowIdx}`} style={styles.gridRow}>
+                    {row.map((meal, colIdx) => (
+                      <React.Fragment key={`cycle-${day.iso}-${rowIdx}-${colIdx}`}>
+                        {renderCycleCard(meal, day, weekKey)}
+                      </React.Fragment>
+                    ))}
+                  </View>
+                ))
               ) : (
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyEmoji}>😴</Text>
@@ -1225,6 +1244,15 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   },
   uberGrid: {},
   uberGridColumn: {
+    justifyContent: 'space-between',
+    marginBottom: ROW_GAP,
+  },
+  // Same layout FlatList produced for a `numColumns` row, but stated in full:
+  // FlatList applied `flexDirection: 'row'` itself and layered
+  // columnWrapperStyle on top, so a hand-rolled row has to set it explicitly.
+  // A short final row still sits left, exactly as it did before.
+  gridRow: {
+    flexDirection: 'row',
     justifyContent: 'space-between',
     marginBottom: ROW_GAP,
   },

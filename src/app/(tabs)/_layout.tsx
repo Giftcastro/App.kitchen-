@@ -145,16 +145,10 @@ export default function TabsLayout() {
             ),
           }}
         />
-        <Tabs.Screen
-          name="profile"
-          options={{
-            title: user ? 'Profile' : 'Sign In',
-            headerTitle: user ? 'My Profile' : 'Welcome',
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name={user ? "person" : "log-in"} size={size} color={color} />
-            ),
-          }}
-        />
+        {/* Admin sits before Profile so an admin's two-tab bar reads
+            Admin | Profile — the kitchen controls they actually work in come
+            first. Customers are unaffected: `admin` is href:null for them, so
+            their bar stays Menu | Orders | History | Profile. */}
         <Tabs.Screen
           name="admin"
           options={{
@@ -165,6 +159,16 @@ export default function TabsLayout() {
             href: user?.role === 'admin' ? undefined : null,
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="options" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="profile"
+          options={{
+            title: user ? 'Profile' : 'Sign In',
+            headerTitle: user ? 'My Profile' : 'Welcome',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name={user ? "person" : "log-in"} size={size} color={color} />
             ),
           }}
         />

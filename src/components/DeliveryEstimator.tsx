@@ -20,15 +20,17 @@ export const DeliveryEstimator: React.FC<DeliveryEstimatorProps> = ({ theme }) =
     return () => clearInterval(interval);
   }, []);
 
-  const { formattedDate, minutesLeft, open, cutoffPassed, isOpenToday } = deliveryInfo;
+  const { earliestDeliveryDate, minutesLeft, open, cutoffPassed, isOpenToday } = deliveryInfo;
 
-  // One line instead of a header + divider + separate badge repeating the
-  // same date/cutoff info three ways — same facts, said once. Each state
-  // leads with what to DO, always names the 9:00 AM cutoff driving the date
-  // (rather than leaving the reader to guess), and ends with the date it
-  // gets you.
+  // Two parts, not one sentence: a headline saying what's happening and what
+  // to do, then the delivery date on its own line. Each state still leads with
+  // the action and names the 9:00 AM cutoff driving the date rather than
+  // leaving the reader to guess — but the date no longer rides at the end of
+  // an ~80-character sentence clamped to two lines, where a 320-360px phone
+  // ellipsised away the one fact the banner exists to deliver ("...delivery
+  // Wednesday…"). A short line of its own can't be eaten by wrapping.
   const isUrgent = cutoffPassed || (minutesLeft > 0 && minutesLeft <= 60);
-  let text: string;
+  let headline: string;
   if (!open && !cutoffPassed) {
     // Two different situations were sharing one message here before: on a
     // weekday morning before 8am there's still a 9am cutoff today to hit, so
@@ -37,27 +39,41 @@ export const DeliveryEstimator: React.FC<DeliveryEstimatorProps> = ({ theme }) =
     // start of the count forward to Monday first (rollForwardToWeekday), so a
     // weekend day is never day zero — Saturday and Monday both yield the same
     // Wednesday. Naming the next cutoff day here would look like it should
-    // relate arithmetically to formattedDate and it does not — so this states
-    // only what's actually true: ordering now gets you formattedDate.
-    text = isOpenToday
-      ? `Kitchen opens 8:00 AM — order by 9:00 AM today for delivery ${formattedDate}`
-      : `Kitchen's closed for the weekend — order now for delivery ${formattedDate}`;
+    // relate arithmetically to the delivery date and it does not — so this
+    // states only what's actually true: ordering now gets you that date.
+    headline = isOpenToday
+      ? 'Kitchen opens 8:00 AM — order by 9:00 AM today'
+      : `Kitchen's closed for the weekend — order now`;
   } else if (cutoffPassed) {
-    text = `Today's 9:00 AM cutoff has passed — order now for delivery ${formattedDate}`;
+    headline = `Today's 9:00 AM cutoff has passed — order now`;
   } else if (minutesLeft > 0 && minutesLeft <= 60) {
-    text = `${minutesLeft} min left before the 9:00 AM cutoff — order now for delivery ${formattedDate}!`;
+    headline = `${minutesLeft} min left before the 9:00 AM cutoff — order now`;
   } else {
-    text = `Order by 9:00 AM today for delivery ${formattedDate}`;
+    headline = 'Order by 9:00 AM today';
   }
+
+  // Short form ("Wed, 09 Sep") rather than the estimate's long `formattedDate`
+  // ("Wednesday, 09 September"). Derived here instead of changing
+  // formattedEarliest, which other copy still wants spelled out in full.
+  const shortDate = earliestDeliveryDate.toLocaleDateString('en-ZA', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
 
   return (
     <View style={[styles.row, isUrgent && styles.rowUrgent]}>
       <View style={[styles.iconWrapper, isUrgent && styles.iconWrapperUrgent]}>
         <Ionicons name="bicycle" size={16} color={isUrgent ? '#8A6D00' : theme.onAccent} />
       </View>
-      <Text style={[styles.text, isUrgent && styles.textUrgent]} numberOfLines={2}>
-        {isUrgent ? '⚠️ ' : ''}{text}
-      </Text>
+      <View style={styles.copy}>
+        <Text style={[styles.text, isUrgent && styles.textUrgent]} numberOfLines={2}>
+          {isUrgent ? '⚠️ ' : ''}{headline}
+        </Text>
+        <Text style={[styles.delivery, isUrgent && styles.textUrgent]} numberOfLines={1}>
+          Delivery {shortDate}
+        </Text>
+      </View>
     </View>
   );
 };
@@ -85,6 +101,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     marginRight: 10,
   },
   iconWrapperUrgent: { backgroundColor: '#FFFFFF' },
-  text: { flex: 1, fontSize: 12.5, fontWeight: '700', color: theme.text },
+  copy: { flex: 1 },
+  text: { fontSize: 12.5, fontWeight: '700', color: theme.text },
+  delivery: { fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginTop: 2 },
   textUrgent: { color: '#8A6D00' },
 });

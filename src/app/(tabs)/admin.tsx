@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, TouchableOpacity, StatusBar, ScrollView, Modal, Dimensions, RefreshControl, Linking, Platform } from 'react-native';
 import { Text, TextInput } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -30,6 +30,26 @@ const STATUS_LABELS: Record<string, string> = {
 
 /** Forward progression a kitchen order moves through — cancelled is a separate, manual action. */
 const STATUS_FLOW = ['pending', 'preparing', 'on_the_way', 'delivered'];
+
+/**
+ * Rows of the dashboard's Order Status Breakdown. Colors come from
+ * STATUS_COLORS so this chart can never drift from the status badges shown
+ * elsewhere. The labels are spelled out here rather than read from
+ * STATUS_LABELS because this chart has always said "Pending" where the order
+ * badges say "Received" — worth reconciling one day, but not by silently
+ * relabelling the chart underneath whoever reads it.
+ */
+const BREAKDOWN_STATUSES: { status: string; label: string }[] = [
+  { status: 'pending', label: 'Pending' },
+  { status: 'preparing', label: 'Preparing' },
+  { status: 'on_the_way', label: 'On The Way' },
+  { status: 'delivered', label: 'Delivered' },
+  { status: 'cancelled', label: 'Cancelled' },
+];
+
+/** Most columns the revenue trend will draw, and the plot height in px. */
+const MAX_TREND_BUCKETS = 12;
+const TREND_PLOT_HEIGHT = 88;
 
 // Deterministic pastel tag per menu category (SANDWICHES, SALAD BAR, ...) for
 // the Special Requests manifest — same category always gets the same color
@@ -264,6 +284,19 @@ export default function AdminScreen() {
   const [showKitchenEmailModal, setShowKitchenEmailModal] = useState(false);
   const [kitchenEmailDraft, setKitchenEmailDraft] = useState('');
   const [kitchenEmailError, setKitchenEmailError] = useState('');
+  // Which revenue-trend column is currently being read. Held as an index
+  // rather than a bucket key and validated at render time, so switching the
+  // reporting period just falls back to the summary caption — no reset needed.
+  const [selectedBucket, setSelectedBucket] = useState<number | null>(null);
+  // Scroll target for the Chef tab's "show this client in the sheet" jump.
+  const scrollRef = useRef<ScrollView>(null);
+  // Shared by the Dashboard's Kitchen Notifications card and the Chef tab's
+  // "no kitchen email set" warning, so both open the editor the same way.
+  const openKitchenEmailModal = () => {
+    setKitchenEmailDraft(kitchenEmail);
+    setKitchenEmailError('');
+    setShowKitchenEmailModal(true);
+  };
   const [dateFilter, setDateFilter] = useState<DateFilterKey>('all');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
@@ -350,17 +383,87 @@ export default function AdminScreen() {
   // full orders array 5x). Respects the reporting-period filter above.
   const totalUsers = filteredUsers.length;
   const totalOrders = filteredOrders.length;
-  const { pendingOrders, preparingOrders, onTheWayOrders, deliveredCount, revenue } = useMemo(() => {
-    let pending = 0, preparing = 0, onTheWay = 0, delivered = 0, rev = 0;
+  // Counts keyed by status instead of one named accumulator per status. Adding
+  // a row to the breakdown is then a data change rather than a code change —
+  // `cancelled` was previously accumulated nowhere and so was missing from the
+  // chart entirely, which is exactly the drift this shape avoids.
+  const { byStatus, revenue } = useMemo(() => {
+    const counts: Record<string, number> = {};
+    let rev = 0;
     for (const o of filteredOrders) {
-      if (o.status === 'pending') pending++;
-      else if (o.status === 'preparing') preparing++;
-      else if (o.status === 'on_the_way') onTheWay++;
-      else if (o.status === 'delivered') delivered++;
+      counts[o.status] = (counts[o.status] || 0) + 1;
       rev += o.total;
     }
-    return { pendingOrders: pending, preparingOrders: preparing, onTheWayOrders: onTheWay, deliveredCount: delivered, revenue: rev };
+    return { byStatus: counts, revenue: rev };
   }, [filteredOrders]);
+  const pendingOrders = byStatus.pending || 0;
+  const preparingOrders = byStatus.preparing || 0;
+
+  // Revenue trend — one column per time bucket across the reporting period.
+  // The bucket unit widens with the window (daily, then weekly, then monthly)
+  // so a 6-month view is a dozen readable columns rather than 180 hairlines,
+  // and only the most recent MAX_TREND_BUCKETS are kept. Returns null when
+  // there is nothing worth drawing: one column is a stat, not a chart.
+  const revenueTrend = useMemo(() => {
+    const dated = filteredOrders
+      .map(o => ({ at: new Date(o.timestamp), total: o.total }))
+      .filter(x => !isNaN(x.at.getTime()))
+      .sort((a, b) => a.at.getTime() - b.at.getTime());
+    if (dated.length === 0) return null;
+
+    const start = dateRange ? dateRange.start : dated[0].at;
+    const end = dateRange ? dateRange.end : dated[dated.length - 1].at;
+    const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+    const unit: 'day' | 'week' | 'month' =
+      spanDays <= MAX_TREND_BUCKETS ? 'day'
+        : spanDays <= MAX_TREND_BUCKETS * 7 ? 'week'
+          : 'month';
+
+    // Normalise a date to the start of its bucket so everything in the same
+    // day/week/month collapses onto one key. Weeks run Monday-first, matching
+    // how the kitchen already talks about its menu cycle.
+    const bucketStart = (d: Date) => {
+      const b = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      if (unit === 'week') b.setDate(b.getDate() - ((b.getDay() + 6) % 7));
+      else if (unit === 'month') b.setDate(1);
+      return b;
+    };
+
+    const totals = new Map<number, number>();
+    dated.forEach(({ at, total }) => {
+      const k = bucketStart(at).getTime();
+      totals.set(k, (totals.get(k) || 0) + total);
+    });
+
+    // Walk the window itself rather than only the buckets that have orders, so
+    // a quiet week reads as a gap in the trend instead of vanishing and making
+    // the surrounding weeks look adjacent.
+    const buckets: { key: number; label: string; total: number }[] = [];
+    const cursor = bucketStart(start);
+    const lastBucket = bucketStart(end);
+    while (cursor.getTime() <= lastBucket.getTime() && buckets.length < 400) {
+      buckets.push({
+        key: cursor.getTime(),
+        label: unit === 'month'
+          ? cursor.toLocaleDateString('en-ZA', { month: 'short', year: '2-digit' })
+          : cursor.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' }),
+        total: totals.get(cursor.getTime()) || 0,
+      });
+      if (unit === 'day') cursor.setDate(cursor.getDate() + 1);
+      else if (unit === 'week') cursor.setDate(cursor.getDate() + 7);
+      else cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    const recent = buckets.slice(-MAX_TREND_BUCKETS);
+    if (recent.length < 2) return null;
+    return {
+      buckets: recent,
+      max: Math.max(...recent.map(b => b.total)),
+      total: recent.reduce((sum, b) => sum + b.total, 0),
+      unit,
+      unitLabel: unit === 'day' ? 'Daily' : unit === 'week' ? 'Weekly' : 'Monthly',
+    };
+  }, [filteredOrders, dateRange]);
 
   // Orders with at least one item due for delivery TODAY — delivery date
   // lives per-item (not per-order, since one order can mix items scheduled
@@ -671,6 +774,7 @@ export default function AdminScreen() {
       </ScrollView>
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -762,89 +866,59 @@ export default function AdminScreen() {
               </ScrollView>
             </View>
 
-            {/* Stats Grid - Modern Cards */}
+            {/* Stats Grid — one config row per card. Each now opens the tab it
+                summarises, matching the "Today at a Glance" tiles above, which
+                were already tappable while these four looked identical and did
+                nothing. Colors are carried over verbatim from the four
+                hand-written cards this replaced — including the Revenue card's
+                black accent bar and light icon wrap, which disappear/glare in
+                dark mode. That is a known defect left as-is on purpose; it is
+                now a one-line change here rather than a hunt through JSX. */}
             <View style={styles.statsGrid}>
-              <View style={styles.statCard}>
-                <View style={[styles.statAccentBar, { backgroundColor: '#5AC8FA' }]} />
-                <View style={[styles.statIconWrap, { backgroundColor: '#5AC8FA20' }]}>
-                  <Ionicons name="people" size={18} color="#5AC8FA" />
-                </View>
-                <Text style={styles.statNumber}>{totalUsers}</Text>
-                <Text style={styles.statLabel}>Total Users</Text>
-              </View>
-
-              <View style={styles.statCard}>
-                <View style={[styles.statAccentBar, { backgroundColor: '#22C55E' }]} />
-                <View style={[styles.statIconWrap, { backgroundColor: '#22C55E20' }]}>
-                  <Ionicons name="receipt" size={18} color="#22C55E" />
-                </View>
-                <Text style={styles.statNumber}>{totalOrders}</Text>
-                <Text style={styles.statLabel}>Total Orders</Text>
-              </View>
-
-              <View style={styles.statCard}>
-                <View style={[styles.statAccentBar, { backgroundColor: '#FF9500' }]} />
-                <View style={[styles.statIconWrap, { backgroundColor: '#FF950020' }]}>
-                  <Ionicons name="time" size={18} color="#FF9500" />
-                </View>
-                <Text style={styles.statNumber}>{pendingOrders + preparingOrders}</Text>
-                <Text style={styles.statLabel}>In Progress</Text>
-              </View>
-
-              <View style={styles.statCard}>
-                <View style={[styles.statAccentBar, { backgroundColor: '#000000' }]} />
-                <View style={[styles.statIconWrap, { backgroundColor: '#F6F6F6' }]}>
-                  <Ionicons name="cash" size={18} color="#000000" />
-                </View>
-                <Text style={styles.statNumber}>R{revenue.toFixed(0)}</Text>
-                <Text style={styles.statLabel}>Revenue</Text>
-              </View>
+              {([
+                { key: 'users', icon: 'people', color: '#5AC8FA', iconBg: '#5AC8FA20', value: String(totalUsers), label: 'Total Users', tab: 'users' },
+                { key: 'orders', icon: 'receipt', color: '#22C55E', iconBg: '#22C55E20', value: String(totalOrders), label: 'Total Orders', tab: 'orders' },
+                { key: 'progress', icon: 'time', color: '#FF9500', iconBg: '#FF950020', value: String(pendingOrders + preparingOrders), label: 'In Progress', tab: 'chef' },
+                { key: 'revenue', icon: 'cash', color: '#000000', iconBg: '#F6F6F6', value: `R${revenue.toFixed(0)}`, label: 'Revenue', tab: 'orders' },
+              ] as { key: string; icon: string; color: string; iconBg: string; value: string; label: string; tab: TabType }[]).map(card => (
+                <TouchableOpacity
+                  key={card.key}
+                  style={styles.statCard}
+                  onPress={() => { haptics.selection(); setSelectedTab(card.tab); }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${card.label}: ${card.value}`}
+                >
+                  <View style={[styles.statAccentBar, { backgroundColor: card.color }]} />
+                  <View style={[styles.statIconWrap, { backgroundColor: card.iconBg }]}>
+                    <Ionicons name={card.icon as any} size={18} color={card.color} />
+                  </View>
+                  <Text style={styles.statNumber}>{card.value}</Text>
+                  <Text style={styles.statLabel}>{card.label}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
             {/* Order Status Breakdown */}
             <View style={styles.sectionCard}>
               <Text style={styles.sectionCardTitle}>Order Status Breakdown</Text>
               <View style={styles.breakdownContainer}>
-                <View style={styles.breakdownRow}>
-                  <View style={styles.breakdownLeft}>
-                    <View style={[styles.breakdownDot, { backgroundColor: '#FF9500' }]} />
-                    <Text style={styles.breakdownLabel}>Pending</Text>
-                  </View>
-                  <View style={styles.breakdownBarBg}>
-                    <View style={[styles.breakdownBarFill, { width: `${totalOrders > 0 ? (pendingOrders / totalOrders) * 100 : 0}%`, backgroundColor: '#FF9500' }]} />
-                  </View>
-                  <Text style={styles.breakdownCount}>{pendingOrders}</Text>
-                </View>
-                <View style={styles.breakdownRow}>
-                  <View style={styles.breakdownLeft}>
-                    <View style={[styles.breakdownDot, { backgroundColor: '#5AC8FA' }]} />
-                    <Text style={styles.breakdownLabel}>Preparing</Text>
-                  </View>
-                  <View style={styles.breakdownBarBg}>
-                    <View style={[styles.breakdownBarFill, { width: `${totalOrders > 0 ? (preparingOrders / totalOrders) * 100 : 0}%`, backgroundColor: '#5AC8FA' }]} />
-                  </View>
-                  <Text style={styles.breakdownCount}>{preparingOrders}</Text>
-                </View>
-                <View style={styles.breakdownRow}>
-                  <View style={styles.breakdownLeft}>
-                    <View style={[styles.breakdownDot, { backgroundColor: '#22C55E' }]} />
-                    <Text style={styles.breakdownLabel}>On The Way</Text>
-                  </View>
-                  <View style={styles.breakdownBarBg}>
-                    <View style={[styles.breakdownBarFill, { width: `${totalOrders > 0 ? (onTheWayOrders / totalOrders) * 100 : 0}%`, backgroundColor: '#22C55E' }]} />
-                  </View>
-                  <Text style={styles.breakdownCount}>{onTheWayOrders}</Text>
-                </View>
-                <View style={styles.breakdownRow}>
-                  <View style={styles.breakdownLeft}>
-                    <View style={[styles.breakdownDot, { backgroundColor: '#6B6B6B' }]} />
-                    <Text style={styles.breakdownLabel}>Delivered</Text>
-                  </View>
-                  <View style={styles.breakdownBarBg}>
-                    <View style={[styles.breakdownBarFill, { width: `${totalOrders > 0 ? (deliveredCount / totalOrders) * 100 : 0}%`, backgroundColor: '#6B6B6B' }]} />
-                  </View>
-                  <Text style={styles.breakdownCount}>{deliveredCount}</Text>
-                </View>
+                {BREAKDOWN_STATUSES.map(({ status, label }) => {
+                  const count = byStatus[status] || 0;
+                  const color = STATUS_COLORS[status];
+                  return (
+                    <View key={status} style={styles.breakdownRow}>
+                      <View style={styles.breakdownLeft}>
+                        <View style={[styles.breakdownDot, { backgroundColor: color }]} />
+                        <Text style={styles.breakdownLabel}>{label}</Text>
+                      </View>
+                      <View style={styles.breakdownBarBg}>
+                        <View style={[styles.breakdownBarFill, { width: `${totalOrders > 0 ? (count / totalOrders) * 100 : 0}%`, backgroundColor: color }]} />
+                      </View>
+                      <Text style={styles.breakdownCount}>{count}</Text>
+                    </View>
+                  );
+                })}
               </View>
             </View>
 
@@ -877,13 +951,67 @@ export default function AdminScreen() {
               </View>
               <TouchableOpacity
                 style={styles.weekCardBtn}
-                onPress={() => { setKitchenEmailDraft(kitchenEmail); setKitchenEmailError(''); setShowKitchenEmailModal(true); }}
+                onPress={openKitchenEmailModal}
                 accessibilityRole="button"
                 accessibilityLabel="Edit kitchen notification email"
               >
                 <Text style={styles.weekCardBtnText}>{kitchenEmail ? 'Change' : 'Set'}</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Revenue Trend — one series, so no legend: the card title names
+                it. Past buckets sit in the de-emphasis ink with the most
+                recent one in full ink, which is the "current period" emphasis
+                a trend strip exists for. Values are read by tapping a column
+                (touch's answer to hover) rather than printing a number above
+                every bar, and only the first and last bucket are labelled. */}
+            {revenueTrend && (
+              <View style={styles.sectionCard}>
+                <Text style={styles.sectionCardTitle}>Revenue Trend</Text>
+                <Text style={styles.trendCaption}>
+                  {selectedBucket !== null && revenueTrend.buckets[selectedBucket]
+                    ? `${revenueTrend.buckets[selectedBucket].label} · R${revenueTrend.buckets[selectedBucket].total.toFixed(0)}`
+                    : `${revenueTrend.unitLabel} · R${revenueTrend.total.toFixed(0)} across ${revenueTrend.buckets.length} ${revenueTrend.unit === 'day' ? 'days' : revenueTrend.unit === 'week' ? 'weeks' : 'months'}`}
+                </Text>
+                <View style={styles.trendPlot}>
+                  {revenueTrend.buckets.map((bucket, idx) => {
+                    // Exactly one column carries full ink, and it is whichever
+                    // one the caption is describing: the tapped bucket while a
+                    // selection is active, otherwise the most recent period.
+                    // Emphasising both at once made "selected" and "latest"
+                    // indistinguishable.
+                    const hasSelection = selectedBucket !== null && !!revenueTrend.buckets[selectedBucket];
+                    const isCurrent = hasSelection
+                      ? selectedBucket === idx
+                      : idx === revenueTrend.buckets.length - 1;
+                    const pct = revenueTrend.max > 0 ? bucket.total / revenueTrend.max : 0;
+                    return (
+                      <TouchableOpacity
+                        key={bucket.key}
+                        style={styles.trendColumn}
+                        onPress={() => { haptics.selection(); setSelectedBucket(selectedBucket === idx ? null : idx); }}
+                        activeOpacity={0.7}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${bucket.label}: R${bucket.total.toFixed(0)}`}
+                      >
+                        <View
+                          style={[
+                            styles.trendBar,
+                            { height: bucket.total > 0 ? Math.max(3, pct * TREND_PLOT_HEIGHT) : 0 },
+                            isCurrent && styles.trendBarCurrent,
+                          ]}
+                        />
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                <View style={styles.trendAxis} />
+                <View style={styles.trendAxisLabels}>
+                  <Text style={styles.trendAxisLabel}>{revenueTrend.buckets[0].label}</Text>
+                  <Text style={styles.trendAxisLabel}>{revenueTrend.buckets[revenueTrend.buckets.length - 1].label}</Text>
+                </View>
+              </View>
+            )}
 
             {/* Revenue by Category */}
             {revenueByCategory.length > 0 && (
@@ -1089,7 +1217,16 @@ export default function AdminScreen() {
         )}
 
         {selectedTab === 'chef' && (
-          <ChefSection orders={orders} updateOrderStatus={updateOrderStatus} theme={theme} allUsers={allUsers} companies={companies} kitchenEmail={kitchenEmail} />
+          <ChefSection
+            orders={orders}
+            updateOrderStatus={updateOrderStatus}
+            theme={theme}
+            allUsers={allUsers}
+            companies={companies}
+            kitchenEmail={kitchenEmail}
+            onEditKitchenEmail={openKitchenEmailModal}
+            scrollToTop={() => scrollRef.current?.scrollTo({ y: 0, animated: true })}
+          />
         )}
 
         {selectedTab === 'weeks' && (
@@ -2107,6 +2244,16 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
 
 const UNASSIGNED_CLIENT = 'Individual / Guest';
 
+/**
+ * yyyy-mm-dd key for a date. Used to scope the Chef tab's per-day working
+ * state (prep check-offs, collapsed client sections) and to batch orders by
+ * due date, so the same calendar day always yields the same key regardless
+ * of the time-of-day carried on the Date.
+ */
+function dateKeyOf(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors; allUsers: AppUser[] }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
@@ -2307,7 +2454,7 @@ function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders:
  * order queue with status controls, stripped of everything a chef doesn't
  * need (revenue, discounts, company/user management).
  */
-function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, kitchenEmail }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors; allUsers: AppUser[]; companies: Company[]; kitchenEmail: string }) {
+function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, kitchenEmail, onEditKitchenEmail, scrollToTop }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors; allUsers: AppUser[]; companies: Company[]; kitchenEmail: string; onEditKitchenEmail: () => void; scrollToTop: () => void }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const activeOrders = useMemo(
     () => orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled'),
@@ -2339,6 +2486,21 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
       next.setDate(next.getDate() + deltaDays);
       return next;
     });
+  };
+
+  // The chef's live working state for the sheet on screen. Every key is
+  // prefixed with the production date so stepping to another day never
+  // carries one day's ticks or collapsed sections onto another, and stepping
+  // back finds them where they were left. In-memory only, like the orders
+  // themselves — this is a service-time aid, not a production record.
+  const prodDateKey = dateKeyOf(prodDate);
+  const [prepDone, setPrepDone] = useState<Record<string, boolean>>({});
+  const [clientCollapse, setClientCollapse] = useState<Record<string, boolean>>({});
+  const [flaggedOnly, setFlaggedOnly] = useState(false);
+
+  const togglePrepDone = (key: string) => {
+    haptics.selection();
+    setPrepDone(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const emailToCompany = useMemo(() => {
@@ -2418,6 +2580,10 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
           total: categories.reduce((sum, c) => sum + c.subtotal, 0),
           categories,
           rows: sortedRows,
+          // How many of this client's rows carry a special request — surfaced
+          // as a badge and a filter, so an allergy or a removal can't get
+          // lost partway down a long manifest.
+          flagged: sortedRows.filter(r => r.notes).length,
         };
       })
       .sort((a, b) => {
@@ -2430,8 +2596,24 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
         .sort((a, b) => b[1] - a[1])
         .map(([name, qty]) => ({ name, qty })),
       clients,
+      flaggedTotal: clients.reduce((sum, c) => sum + c.flagged, 0),
     };
   }, [orders, prodDate, emailToCompany, companyByName]);
+
+  // Day-level prep progress across every client on the sheet — the same
+  // per-line counting the client headers do, rolled up so the kitchen can see
+  // how far through the day it is without opening each section in turn.
+  const prepSummary = useMemo(() => {
+    let lines = 0;
+    let done = 0;
+    productionSheet.clients.forEach(client => {
+      client.categories.forEach(cat => cat.items.forEach(item => {
+        lines++;
+        if (prepDone[`${prodDateKey}|${client.name}|${item.name}`]) done++;
+      }));
+    });
+    return { lines, done };
+  }, [productionSheet, prepDone, prodDateKey]);
 
   // "Send" dialog — two documents, one dialog. `sendModalClient` is either
   // one client's name (a per-client Delivery Note: address, category totals,
@@ -2558,11 +2740,21 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
       status: string;
       items: { id: string; quantity: number; name: string; selectedSize?: string; addOns?: AddOnOption[] }[];
       updateTargetId: string;
+      /** Earliest due date across the entry's items — drives both the card's
+       *  due badge and the queue's ordering. */
+      dueDate: Date;
     }
-    const batches = new Map<string, { companyName: string; orders: Order[]; dueToday: boolean }>();
+    const batches = new Map<string, { companyName: string; orders: Order[]; dueToday: boolean; dueDate: Date }>();
     const singles: QueueEntry[] = [];
 
     ordersWithDueToday.forEach(({ order, dueToday }) => {
+      const placedAt = new Date(order.timestamp);
+      const dueDates = order.items
+        .map(item => getItemDueDate(item, placedAt))
+        .sort((a, b) => a.getTime() - b.getTime());
+      // An order with no items can't have a due date of its own; fall back to
+      // when it was placed so it still sorts and renders somewhere sane.
+      const earliestDue = dueDates[0] ?? placedAt;
       const companyName = order.userEmail ? emailToCompany.get(order.userEmail) : undefined;
       if (!companyName) {
         singles.push({
@@ -2574,18 +2766,12 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
           status: order.status,
           items: order.items,
           updateTargetId: order.id,
+          dueDate: earliestDue,
         });
         return;
       }
-      const placedAt = new Date(order.timestamp);
-      const dueDates = order.items
-        .map(item => {
-          const d = getItemDueDate(item, placedAt);
-          return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        })
-        .sort();
-      const batchKey = `${companyName}::${dueDates[0]}`;
-      const entry = batches.get(batchKey) ?? { companyName, orders: [], dueToday: false };
+      const batchKey = `${companyName}::${dateKeyOf(earliestDue)}`;
+      const entry = batches.get(batchKey) ?? { companyName, orders: [], dueToday: false, dueDate: earliestDue };
       entry.orders.push(order);
       entry.dueToday = entry.dueToday || dueToday;
       batches.set(batchKey, entry);
@@ -2603,24 +2789,51 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
         status: b.orders[0].status,
         items: Array.from(itemMap.entries()).map(([name, quantity], i) => ({ id: `${key}-${i}`, quantity, name })),
         updateTargetId: b.orders[0].id,
+        dueDate: b.dueDate,
       };
     });
 
-    // Due-today entries float to the top; the rest stay in their existing order.
-    return [...batchEntries, ...singles].sort((a, b) => (a.dueToday === b.dueToday ? 0 : a.dueToday ? -1 : 1));
+    // Soonest-due first, so anything already overdue surfaces above today's
+    // work and today's above the rest — the order a kitchen actually cooks in.
+    return [...batchEntries, ...singles].sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());
   }, [ordersWithDueToday, emailToCompany]);
 
-  if (activeOrders.length === 0) {
-    return (
-      <View style={styles.emptyState}>
-        <View style={styles.emptyIconWrap}>
-          <Ionicons name="restaurant-outline" size={40} color={theme.textSecondary} />
-        </View>
-        <Text style={styles.emptyTitle}>Nothing to prep</Text>
-        <Text style={styles.emptySub}>Active orders will show up here for the kitchen</Text>
-      </View>
-    );
-  }
+  // Deliberately no early return on an empty queue. The Production Sheet
+  // spans past and future days and includes delivered orders on purpose, so
+  // once a day's orders are all delivered the chef must still be able to step
+  // back and read that day's sheet — bailing out here made it unreachable.
+  // The empty state now lives inside the Order Queue, which is the only part
+  // that actually depends on there being active orders.
+  const todayKey = dateKeyOf(new Date());
+  // Past two clients on one day the sheet gets long, so sections start
+  // collapsed and the chef opens whichever one is being packed. One or two
+  // clients stay open, where collapsing would only cost a tap.
+  const defaultCollapsed = productionSheet.clients.length > 2;
+
+  // "Collapse all" flips to "Expand all" once everything is shut. Reads the
+  // same override-or-default the sections themselves use, so the button always
+  // describes what will actually happen rather than tracking its own flag.
+  const allCollapsed = productionSheet.clients.length > 0
+    && productionSheet.clients.every(c => clientCollapse[`${prodDateKey}|${c.name}`] ?? defaultCollapsed);
+  const toggleAllClients = () => {
+    haptics.selection();
+    setClientCollapse(prev => {
+      const next = { ...prev };
+      productionSheet.clients.forEach(c => { next[`${prodDateKey}|${c.name}`] = !allCollapsed; });
+      return next;
+    });
+  };
+
+  // Jump from a queue card to that client's section of the Production Sheet.
+  // The queue spans days, so this moves the sheet to the entry's own due date
+  // before expanding it — keying the override off that date, not the one
+  // currently on screen — and scrolls back up, since the sheet sits above.
+  const showClientInSheet = (clientName: string, dueDate: Date) => {
+    haptics.selection();
+    setProdDate(dueDate);
+    setClientCollapse(prev => ({ ...prev, [`${dateKeyOf(dueDate)}|${clientName}`]: false }));
+    scrollToTop();
+  };
 
   return (
     <>
@@ -2673,10 +2886,59 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
           </TouchableOpacity>
         </View>
 
+        {prepSummary.lines > 0 && (
+          <View style={styles.prodSummaryRow}>
+            <Text style={[styles.prodSummaryText, prepSummary.done === prepSummary.lines && styles.prodProgressDone]}>
+              {prepSummary.done}/{prepSummary.lines} prepped
+            </Text>
+            <TouchableOpacity
+              onPress={toggleAllClients}
+              accessibilityRole="button"
+              accessibilityLabel={allCollapsed ? 'Expand all clients' : 'Collapse all clients'}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.prodSummaryAction}>{allCollapsed ? 'Expand all' : 'Collapse all'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {!kitchenEmail && (
+          <TouchableOpacity
+            style={styles.kitchenEmailWarning}
+            onPress={onEditKitchenEmail}
+            accessibilityRole="button"
+            accessibilityLabel="Set the kitchen notification email"
+          >
+            <Ionicons name="alert-circle" size={14} color={theme.warning} />
+            <Text style={styles.kitchenEmailWarningText}>
+              No kitchen email set — Send will open with a blank recipient. Tap to set one.
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {productionSheet.grandTotal.length === 0 ? (
           <Text style={styles.emptySub}>No items due on this day</Text>
         ) : (
           <>
+            {productionSheet.flaggedTotal > 0 && (
+              <TouchableOpacity
+                style={[styles.flagChip, flaggedOnly && styles.flagChipActive]}
+                onPress={() => { haptics.selection(); setFlaggedOnly(v => !v); }}
+                accessibilityRole="switch"
+                // aria-checked for the same reason as the prep rows below:
+                // react-native-web 0.21 drops accessibilityState, leaving a
+                // switch with no on/off state in the DOM.
+                aria-checked={flaggedOnly}
+                accessibilityLabel="Show only items carrying a special request"
+              >
+                <Ionicons name="flag" size={11} color={flaggedOnly ? theme.white : theme.error} />
+                <Text style={[styles.flagChipText, flaggedOnly && styles.flagChipTextActive]}>
+                  {productionSheet.flaggedTotal} special request{productionSheet.flaggedTotal === 1 ? '' : 's'}
+                  {flaggedOnly ? ' · showing only these' : ''}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <Text style={[styles.prodClientHeader, { marginTop: 0 }]}>Grand Total</Text>
             {productionSheet.grandTotal.map((item, idx) => (
               <View key={item.name} style={[styles.prepListRow, idx === 0 && { borderTopWidth: 0 }]}>
@@ -2685,76 +2947,176 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
               </View>
             ))}
 
-            {productionSheet.clients.map(client => (
-              <View key={client.name}>
-                <View style={styles.prodClientHeaderRow}>
-                  <Text style={[styles.prodClientHeader, { marginTop: 0, marginBottom: 0 }]}>{client.name} · {client.total}x</Text>
-                  <TouchableOpacity
-                    onPress={() => openSendModal(client.name)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Send ${client.name} delivery note`}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  >
-                    <Ionicons name="mail-outline" size={16} color={theme.textSecondary} />
-                  </TouchableOpacity>
-                </View>
-                {client.address ? <Text style={styles.prodAddressText}>{client.address}</Text> : null}
-
-                <Text style={styles.prodSubLabel}>Prep Totals</Text>
-                {client.categories.map(cat => (
-                  <View key={cat.category}>
-                    <Text style={styles.prodCategoryLabel}>{cat.category}</Text>
-                    {cat.items.map((item, idx) => (
-                      <View key={item.name} style={[styles.prepListRow, idx === 0 && { borderTopWidth: 0 }]}>
-                        <Text style={styles.prepListQty}>{item.qty}x</Text>
-                        <Text style={styles.prepListName} numberOfLines={1}>{item.name}</Text>
-                      </View>
-                    ))}
-                  </View>
-                ))}
-
-                <Text style={styles.prodSubLabel}>Special Requests</Text>
-                {client.rows.map((row, idx) => {
-                  const colors = getCategoryColor(row.category);
-                  return (
-                    <View key={`${row.customerName}-${row.itemName}-${idx}`} style={[styles.manifestRow, idx === 0 && { borderTopWidth: 0 }]}>
-                      <View style={styles.manifestRowTop}>
-                        <View style={[styles.categoryPill, { backgroundColor: colors.bg }]}>
-                          <Text style={[styles.categoryPillText, { color: colors.text }]} numberOfLines={1}>{row.category}</Text>
+            {productionSheet.clients.map(client => {
+              const collapseKey = `${prodDateKey}|${client.name}`;
+              const collapsed = clientCollapse[collapseKey] ?? defaultCollapsed;
+              // Prep progress counts distinct dish lines, not portions — a
+              // chef ticks off "Beef Lasagne" once the whole tray is done,
+              // not once per portion in it.
+              const prepLines = client.categories.reduce((sum, cat) => sum + cat.items.length, 0);
+              const prepDoneCount = client.categories.reduce(
+                (sum, cat) => sum + cat.items.filter(i => prepDone[`${prodDateKey}|${client.name}|${i.name}`]).length,
+                0
+              );
+              const visibleRows = flaggedOnly ? client.rows.filter(row => row.notes) : client.rows;
+              return (
+                <View key={client.name}>
+                  <View style={styles.prodClientHeaderRow}>
+                    <TouchableOpacity
+                      style={styles.prodClientHeaderLeft}
+                      onPress={() => {
+                        haptics.selection();
+                        setClientCollapse(prev => ({ ...prev, [collapseKey]: !collapsed }));
+                      }}
+                      accessibilityRole="button"
+                      // aria-expanded, not accessibilityState: react-native-web
+                      // 0.21 drops accessibilityState entirely, so the collapse
+                      // state would never reach the DOM. The aria-* props map on
+                      // native too (RN 0.71+), so this is the portable form.
+                      aria-expanded={!collapsed}
+                      accessibilityLabel={`${client.name}, ${client.total} items, ${prepDoneCount} of ${prepLines} prepped`}
+                    >
+                      <Ionicons name={collapsed ? 'chevron-forward' : 'chevron-down'} size={14} color={theme.textSecondary} />
+                      <Text
+                        style={[styles.prodClientHeader, { marginTop: 0, marginBottom: 0, flexShrink: 1 }]}
+                        numberOfLines={1}
+                      >
+                        {client.name} · {client.total}x
+                      </Text>
+                      {client.flagged > 0 && (
+                        <View style={styles.flagBadge}>
+                          <Text style={styles.flagBadgeText}>{client.flagged}</Text>
                         </View>
-                        <Text style={styles.manifestQty}>{row.qty}x</Text>
-                        <Text style={styles.manifestItem} numberOfLines={1}>{row.itemName}</Text>
+                      )}
+                      {prepLines > 0 && (
+                        <Text style={[styles.prodProgress, prepDoneCount === prepLines && styles.prodProgressDone]}>
+                          {prepDoneCount}/{prepLines}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => openSendModal(client.name)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Send ${client.name} delivery note`}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="mail-outline" size={16} color={theme.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                  {client.address ? <Text style={styles.prodAddressText}>{client.address}</Text> : null}
+
+                  {!collapsed && (
+                    <>
+                      <Text style={styles.prodSubLabel}>Prep Totals</Text>
+                      {client.categories.map(cat => (
+                        <View key={cat.category}>
+                          <Text style={styles.prodCategoryLabel}>{cat.category}</Text>
+                          {cat.items.map((item, idx) => {
+                            const doneKey = `${prodDateKey}|${client.name}|${item.name}`;
+                            const done = !!prepDone[doneKey];
+                            return (
+                              <TouchableOpacity
+                                key={item.name}
+                                style={[styles.prepListRow, idx === 0 && { borderTopWidth: 0 }]}
+                                onPress={() => togglePrepDone(doneKey)}
+                                activeOpacity={0.6}
+                                accessibilityRole="checkbox"
+                                // Same reason as the client header above —
+                                // without this the row lands in the DOM as a
+                                // checkbox that never announces whether it is
+                                // ticked.
+                                aria-checked={done}
+                                accessibilityLabel={`${item.qty} ${item.name}`}
+                              >
+                                <Ionicons
+                                  name={done ? 'checkbox' : 'square-outline'}
+                                  size={18}
+                                  color={done ? theme.success : theme.textTertiary}
+                                />
+                                <Text style={[styles.prepListQty, done && styles.prepDoneText]}>{item.qty}x</Text>
+                                <Text style={[styles.prepListName, done && styles.prepDoneText]} numberOfLines={1}>{item.name}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      ))}
+
+                      <View style={styles.prodSubLabelRow}>
+                        <Text style={styles.prodSubLabel}>Special Requests</Text>
+                        {client.flagged > 0 && <Text style={styles.prodSubLabelCount}>{client.flagged} flagged</Text>}
                       </View>
-                      <Text style={styles.manifestName}>{row.customerName}</Text>
-                      {row.notes ? <Text style={styles.manifestNotes}>📝 {row.notes}</Text> : null}
-                    </View>
-                  );
-                })}
-              </View>
-            ))}
+                      {visibleRows.length === 0 ? (
+                        <Text style={styles.emptySub}>
+                          {flaggedOnly ? 'No special requests for this client' : 'Nothing to pack for this client'}
+                        </Text>
+                      ) : visibleRows.map((row, idx) => {
+                        const colors = getCategoryColor(row.category);
+                        return (
+                          <View key={`${row.customerName}-${row.itemName}-${idx}`} style={[styles.manifestRow, idx === 0 && { borderTopWidth: 0 }]}>
+                            <View style={styles.manifestRowTop}>
+                              <View style={[styles.categoryPill, { backgroundColor: colors.bg }]}>
+                                <Text style={[styles.categoryPillText, { color: colors.text }]} numberOfLines={1}>{row.category}</Text>
+                              </View>
+                              <Text style={styles.manifestQty}>{row.qty}x</Text>
+                              <Text style={styles.manifestItem} numberOfLines={1}>{row.itemName}</Text>
+                            </View>
+                            <Text style={styles.manifestName}>{row.customerName}</Text>
+                            {row.notes ? <Text style={styles.manifestNotes}>📝 {row.notes}</Text> : null}
+                          </View>
+                        );
+                      })}
+                    </>
+                  )}
+                </View>
+              );
+            })}
           </>
         )}
       </View>
 
       <Text style={styles.chefQueueTitle}>Order Queue</Text>
+      {queueEntries.length === 0 && (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="restaurant-outline" size={40} color={theme.textSecondary} />
+          </View>
+          <Text style={styles.emptyTitle}>Nothing to prep</Text>
+          <Text style={styles.emptySub}>Active orders will show up here for the kitchen</Text>
+        </View>
+      )}
       {queueEntries.map((entry, idx) => {
         const flowIdx = STATUS_FLOW.indexOf(entry.status);
         const isTerminal = entry.status === 'delivered' || entry.status === 'cancelled';
+        const isOverdue = !entry.dueToday && dateKeyOf(entry.dueDate) < todayKey;
         return (
           <View key={entry.key} style={[styles.orderCard, idx === 0 && { marginTop: 4 }]}>
             <View style={styles.orderCardHeader}>
-              <View style={styles.orderCardLeft}>
+              <TouchableOpacity
+                style={styles.orderCardLeft}
+                onPress={() => showClientInSheet(entry.isBatch ? entry.title : UNASSIGNED_CLIENT, entry.dueDate)}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`Show ${entry.isBatch ? entry.title : UNASSIGNED_CLIENT} in the production sheet`}
+              >
                 <View style={styles.chefOrderIdRow}>
                   {entry.isBatch && <Ionicons name="business" size={13} color={theme.textSecondary} style={{ marginRight: 4 }} />}
                   <Text style={styles.orderCardId}>{entry.title}</Text>
-                  {entry.dueToday && (
+                  <Ionicons name="open-outline" size={12} color={theme.textTertiary} />
+                  {entry.dueToday ? (
                     <View style={styles.dueTodayBadge}>
                       <Text style={styles.dueTodayBadgeText}>DUE TODAY</Text>
+                    </View>
+                  ) : (
+                    <View style={[styles.dueDateBadge, isOverdue && styles.dueOverdueBadge]}>
+                      <Text style={[styles.dueDateBadgeText, isOverdue && styles.dueOverdueBadgeText]}>
+                        {isOverdue ? 'OVERDUE · ' : 'DUE '}
+                        {entry.dueDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' }).toUpperCase()}
+                      </Text>
                     </View>
                   )}
                 </View>
                 <Text style={styles.orderCardUser}>{entry.subtitle}</Text>
-              </View>
+              </TouchableOpacity>
               <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[entry.status] || '#6B6B6B') + '20' }]}>
                 <Text style={[styles.statusBadgeText, { color: STATUS_COLORS[entry.status] || '#6B6B6B' }]}>
                   {STATUS_LABELS[entry.status] || entry.status}
@@ -3167,6 +3529,66 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   chefOrderIdRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dueTodayBadge: { backgroundColor: '#FFF3C4', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   dueTodayBadgeText: { fontSize: 9, fontWeight: '800', color: '#8A6D00', letterSpacing: 0.3 },
+  dueDateBadge: { backgroundColor: theme.surfaceSecondary, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  dueDateBadgeText: { fontSize: 9, fontWeight: '800', color: theme.textSecondary, letterSpacing: 0.3 },
+  dueOverdueBadge: { backgroundColor: theme.error + '20' },
+  dueOverdueBadgeText: { color: theme.error },
+  prodClientHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
+  prodProgress: { fontSize: 11, fontWeight: '800', color: theme.textTertiary },
+  prodProgressDone: { color: theme.success },
+  prepDoneText: { textDecorationLine: 'line-through', color: theme.textTertiary },
+  prodSubLabelRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
+  prodSubLabelCount: { fontSize: 11, fontWeight: '800', color: theme.error },
+  flagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: theme.surfaceSecondary,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 14,
+  },
+  flagChipActive: { backgroundColor: theme.error },
+  flagChipText: { fontSize: 11, fontWeight: '800', color: theme.error, letterSpacing: 0.2 },
+  flagChipTextActive: { color: theme.white },
+  flagBadge: {
+    backgroundColor: theme.error,
+    borderRadius: 999,
+    minWidth: 16,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    alignItems: 'center',
+  },
+  flagBadgeText: { fontSize: 9, fontWeight: '900', color: theme.white },
+  prodSummaryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  prodSummaryText: { fontSize: 12, fontWeight: '800', color: theme.textSecondary },
+  prodSummaryAction: { fontSize: 12, fontWeight: '800', color: theme.text, textDecorationLine: 'underline' },
+  kitchenEmailWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: theme.warning + '1F',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 14,
+  },
+  kitchenEmailWarningText: { flex: 1, fontSize: 11, fontWeight: '700', color: theme.text },
+
+  // Revenue trend: a de-emphasis-ink column strip with the current period in
+  // full ink. Bars cap at 24px wide and carry a 4px rounded data-end, the
+  // baseline is a solid hairline, and the axis labels live outside the plot
+  // height so the card grows to include them rather than clipping them.
+  trendCaption: { fontSize: 12, fontWeight: '700', color: theme.textSecondary, marginTop: -8, marginBottom: 16 },
+  trendPlot: { flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: TREND_PLOT_HEIGHT },
+  trendColumn: { flex: 1, height: '100%', justifyContent: 'flex-end', alignItems: 'center' },
+  trendBar: { width: '100%', maxWidth: 24, backgroundColor: theme.textTertiary, borderTopLeftRadius: 4, borderTopRightRadius: 4 },
+  trendBarCurrent: { backgroundColor: theme.text },
+  trendAxis: { height: 1, backgroundColor: theme.border },
+  trendAxisLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  trendAxisLabel: { fontSize: 10, fontWeight: '700', color: theme.textTertiary },
 
   // Section Card
   sectionCard: {
