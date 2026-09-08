@@ -32,3 +32,6 @@ qa-*.txt
 # Misc
 .env
 .env.local
+# QA tooling output (screenshots, dumps) — scripts are versioned, results are not
+tools/_qa-output/
+tools/shots/

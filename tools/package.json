@@ -1,0 +1,9 @@
+{
+  "name": "shot-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Screenshot helper for verifying app rendering",
+  "dependencies": {
+    "puppeteer-core": "^25.8.0"
+  }
+}
