@@ -1331,7 +1331,7 @@ export default function AdminScreen() {
                         <Text style={styles.breakdownLabel} numberOfLines={1}>{category}</Text>
                       </View>
                       <View style={styles.breakdownBarBg}>
-                        <View style={[styles.breakdownBarFill, { width: `${pct}%`, backgroundColor: '#000000' }]} />
+                        <View style={[styles.breakdownBarFill, { width: `${pct}%`, backgroundColor: theme.text }]} />
                       </View>
                       <Text style={[styles.breakdownCount, { width: 56 }]}>R{total.toFixed(0)}</Text>
                     </View>
@@ -2168,7 +2168,6 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
   const { menus, addMenuItem, updateMenuItem, deleteMenuItem, setMenuItemActive } = useKitchen();
   const { width: screenWidth } = useWindowDimensions();
   const styles = useMemo(() => createStyles(theme, screenWidth), [theme, screenWidth]);
-  const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);

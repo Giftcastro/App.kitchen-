@@ -99,7 +99,11 @@ const labels = (page, re) => page.evaluate((src) => {
   // they just reported missing. The reference build got that for free (its
   // dispute set status to 'unfulfilled'); ours cannot, because status is
   // shared across a company+day batch, so the gate is explicit and worth a test.
-  const report2 = (await labels(page, '^Report an issue with order'))[0];
+  // A DIFFERENT order from the one rated above (which is the first). Disputing
+  // the already-rated card would make the "prompt is hidden" check pass for the
+  // wrong reason — that card shows its submitted rating, not a prompt, either way.
+  const reportable = await labels(page, '^Report an issue with order');
+  const report2 = reportable[reportable.length - 1];
   if (report2) {
     const orderRef = report2.replace('Report an issue with order ', '');
     await clickLabel(page, report2, 1600);
@@ -124,6 +128,32 @@ const labels = (page, re) => page.evaluate((src) => {
     check('a disputed order stops offering Report Issue',
       !(await labels(page, '^Report an issue with order')).includes(report2));
     await page.screenshot({ path: OUT + 'disputed.png' });
+  }
+
+  // Feedback must outlive a reload. Orders themselves are seeded demo data and
+  // deliberately reset, so this is the one thing re-attached from storage by
+  // order id — a customer losing their rating on refresh is a real bug.
+  const ticketBefore = ((await bodyText(page)).match(/Non-Delivery Ticket: TCK-\d+/) || [])[0];
+  await page.reload({ waitUntil: 'networkidle2', timeout: 180000 });
+  await sleep(7000);
+  await clickLabel(page, 'Developer: skip login', 4000);
+  await clickLabel(page, 'Confirm delivery day', 3500);
+  const tabAgain = await page.evaluate(() => {
+    const el = Array.from(document.querySelectorAll('[role="tab"]')).find((e) => (e.textContent || '').replace(/[\uE000-\uF8FF]/g, '').trim() === 'Orders');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  if (tabAgain) {
+    await page.mouse.click(tabAgain.x, tabAgain.y);
+    await sleep(2500);
+    const reloaded = await bodyText(page);
+    check('a submitted rating survives a reload', reloaded.includes('Your Rating'),
+      reloaded.includes('Your Rating') ? 'restored' : 'lost on refresh');
+    check('a logged dispute survives a reload',
+      Boolean(ticketBefore) && reloaded.includes(ticketBefore),
+      ticketBefore ? ticketBefore + (reloaded.includes(ticketBefore) ? ' restored' : ' LOST') : '(no ticket to check)');
+    await page.screenshot({ path: OUT + 'after-reload.png' });
   }
 
   log(errors.length ? 'PAGE ERRORS: ' + JSON.stringify(errors.slice(0, 3)) : 'no page errors');

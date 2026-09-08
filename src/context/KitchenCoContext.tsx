@@ -12,6 +12,20 @@ export type { AddOnOption };
 
 const THEME_MODE_STORAGE_KEY = 'kitchenco_theme_mode';
 const KITCHEN_EMAIL_STORAGE_KEY = 'kitchenco_kitchen_email';
+/**
+ * Customer feedback (ratings + non-delivery tickets), keyed by order id.
+ *
+ * Only the feedback is persisted, not the orders themselves. Orders are seeded
+ * demo data that is meant to reset on reload — persisting them would freeze the
+ * fixture at whatever the first run produced and make seed edits invisible.
+ * Feedback is the one thing a customer would be rightly annoyed to lose, and
+ * re-attaching it by order id keeps the seed resettable. Order ids are stable
+ * (ORD-####, see nextOrderNumber), so a rating left on a seeded order survives.
+ */
+const ORDER_FEEDBACK_STORAGE_KEY = 'kitchenco_order_feedback_v1';
+
+/** What we keep per order between launches. */
+type PersistedOrderFeedback = { rating?: OrderRating; dispute?: DisputeInfo };
 
 /**
  * Sequential source for new order numbers.
@@ -659,6 +673,29 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>(() => getDemoSeedData().orders);
+
+  // Re-attach persisted feedback once, on mount. Anything for an order id that
+  // no longer exists is simply not applied — it stays in storage harmlessly in
+  // case that order comes back (e.g. a seed change).
+  useEffect(() => {
+    AsyncStorage.getItem(ORDER_FEEDBACK_STORAGE_KEY).then(stored => {
+      if (!stored) return;
+      const saved: Record<string, PersistedOrderFeedback> = JSON.parse(stored);
+      setOrders(prev => prev.map(o => (saved[o.id] ? { ...o, ...saved[o.id] } : o)));
+    }).catch(() => {
+      // Corrupt or unreadable payload: carry on with unannotated orders rather
+      // than failing the whole provider.
+    });
+  }, []);
+
+  /** Mirrors one order's feedback into storage, merged with what is already there. */
+  const persistOrderFeedback = (orderId: string, feedback: PersistedOrderFeedback) => {
+    AsyncStorage.getItem(ORDER_FEEDBACK_STORAGE_KEY).then(stored => {
+      const saved: Record<string, PersistedOrderFeedback> = stored ? JSON.parse(stored) : {};
+      saved[orderId] = { ...saved[orderId], ...feedback };
+      return AsyncStorage.setItem(ORDER_FEEDBACK_STORAGE_KEY, JSON.stringify(saved));
+    }).catch(() => {});
+  };
   // A manual "this week is Week N" choice is stored as an offset from the
   // calendar anchor, not as the week number itself — see getCycleWeekForDate.
   const [cycleWeekOffset, setCycleWeekOffset] = useState<number>(0);
@@ -1237,26 +1274,27 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   };
 
   const submitOrderRating = (orderId: string, rating: number, feedback?: string) => {
-    setOrders(prev => prev.map(o => o.id === orderId
-      ? { ...o, rating: { rating, feedback: feedback?.trim() || undefined, submittedAt: new Date().toISOString() } }
-      : o));
+    const entry: OrderRating = {
+      rating,
+      feedback: feedback?.trim() || undefined,
+      submittedAt: new Date().toISOString(),
+    };
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, rating: entry } : o));
+    persistOrderFeedback(orderId, { rating: entry });
   };
 
   const reportOrderNonDelivery = (orderId: string, reason?: string) => {
     const supportTicketRef = `TCK-${Math.floor(10000 + Math.random() * 90000)}`;
+    const entry: DisputeInfo = {
+      reportedAt: new Date().toISOString(),
+      reason: reason?.trim() || 'Meal not present in designated floor pantry cooler at 12:00 PM',
+      supportTicketRef,
+      status: 'investigating',
+    };
     // Per-order only — see the note on the context type: a batch's shared
     // status must not flip because one person's meal went missing.
-    setOrders(prev => prev.map(o => o.id === orderId
-      ? {
-          ...o,
-          dispute: {
-            reportedAt: new Date().toISOString(),
-            reason: reason?.trim() || 'Meal not present in designated floor pantry cooler at 12:00 PM',
-            supportTicketRef,
-            status: 'investigating' as const,
-          },
-        }
-      : o));
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, dispute: entry } : o));
+    persistOrderFeedback(orderId, { dispute: entry });
     return supportTicketRef;
   };
 

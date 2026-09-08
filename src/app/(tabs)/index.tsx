@@ -15,7 +15,6 @@ import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { APP_MAX_WIDTH, ThemeColors } from '../../utils/theme';
 import { legacyTypography } from '../../utils/legacyTypography';
 
-import staticMenuData from '../../data/staticMenu.json';
 import cycleMenuData from '../../data/cycleMenu.json';
 
 // This screen keeps the pre-KitchenCo prototype's RobotoCondensed body type
@@ -121,9 +120,16 @@ export default function MenuScreen() {
   // resetting to Standard Classics.
   const { view: viewParam } = useLocalSearchParams<{ view?: string }>();
   const [menuView, setMenuView] = useState<'main' | 'today'>(viewParam === 'today' ? 'today' : 'main');
-  useEffect(() => {
+  // Adjusted during render rather than in an effect: an effect renders the
+  // stale toggle first and corrects it on a second pass (and trips
+  // react-hooks/set-state-in-effect). Tracking the last synced value is React's
+  // documented pattern for "adjust state when a prop changes" — the toggle
+  // below still sets menuView directly, so this only reacts to a NEW ?view=.
+  const [syncedViewParam, setSyncedViewParam] = useState(viewParam);
+  if (viewParam !== syncedViewParam) {
+    setSyncedViewParam(viewParam);
     if (viewParam === 'today' || viewParam === 'main') setMenuView(viewParam);
-  }, [viewParam]);
+  }
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<any>(null);

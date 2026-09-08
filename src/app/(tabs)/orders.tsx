@@ -620,9 +620,11 @@ export default function TabOrdersScreen() {
           </View>
         )}
 
-        {/* Post-delivery block — only once the meal has actually landed, and
-            not while a non-delivery ticket on it is still open. */}
-        {isDelivered && !disputeOpen && (
+        {/* Post-delivery block — only once the meal has actually landed. An
+            open ticket suppresses the *prompt* (don't ask someone to rate a
+            meal they just reported missing) but never hides a rating they had
+            already submitted: that is their data, not a question. */}
+        {isDelivered && (hasRating || !disputeOpen) && (
           <View style={styles.ratingSection}>
             {hasRating ? (
               <View style={styles.ratedContainer}>
