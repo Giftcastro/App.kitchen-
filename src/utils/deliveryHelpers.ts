@@ -337,3 +337,69 @@ export function calculateDeliveryFee(distanceKm: number): number | null {
   }
   return null;
 }
+// ============================================================
+// Rotating cycle menu (client review, Sep 2026)
+// ============================================================
+// The kitchen runs an 8-week rotating menu (src/data/cycleMenu.json). It used
+// to advance only when an admin opened Kitchen Controls → Menu Cycles and
+// picked the new week by hand, which meant the customer-facing menu silently
+// went stale the moment nobody remembered to click. The client asked for it to
+// rotate on its own, so which week is live is now derived from the calendar.
+//
+// The rotation is anchored to a fixed Monday and repeats every 8 weeks, so any
+// date — today, or one three weeks out — resolves to exactly one rotation week
+// with no state to keep in sync.
+
+/** Number of distinct weeks in the rotation (matches cycleMenu.json's keys). */
+export const CYCLE_WEEK_COUNT = 8;
+
+/**
+ * The Monday that "Week 1" starts on. Chosen as the week the auto-rotation
+ * shipped, so the live menu did not jump the day this landed — Week 1 was
+ * what the admin had selected at the time.
+ *
+ * Moving this shifts the entire rotation. To re-align the cycle without
+ * touching it, an admin picks a week in Kitchen Controls → Menu Cycles, which
+ * stores an offset from this anchor instead (see `cycleWeekOffset` in the
+ * Kitchen context).
+ */
+export const CYCLE_ANCHOR_MONDAY = '2026-09-07';
+
+/** Midnight on the Monday of the week containing `date` (local time). */
+export function startOfWeekMonday(date: Date): Date {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  // getDay(): Sun=0..Sat=6 — shift so Monday is 0.
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d;
+}
+
+/**
+ * Which rotation week (1..CYCLE_WEEK_COUNT) a given date falls in.
+ *
+ * `offset` nudges the whole rotation forward by that many weeks and is how an
+ * admin's manual "this week is Week N" choice is stored — as a shift applied
+ * to every date alike, so future dates keep projecting correctly instead of
+ * only the current week being right.
+ */
+export function getCycleWeekForDate(date: Date = new Date(), offset: number = 0): number {
+  const anchor = startOfWeekMonday(new Date(`${CYCLE_ANCHOR_MONDAY}T00:00:00`));
+  const target = startOfWeekMonday(date);
+  const MS_PER_WEEK = 7 * 24 * 60 * 60 * 1000;
+  // Rounded, not floored: a DST transition inside the span would otherwise
+  // leave the difference an hour short of a whole number of weeks.
+  const weeksSinceAnchor = Math.round((target.getTime() - anchor.getTime()) / MS_PER_WEEK);
+  // Double modulo so dates before the anchor wrap to a positive week too.
+  const index = (((weeksSinceAnchor + offset) % CYCLE_WEEK_COUNT) + CYCLE_WEEK_COUNT) % CYCLE_WEEK_COUNT;
+  return index + 1;
+}
+
+/**
+ * The offset that makes `date`'s week resolve to `week`. Used when an admin
+ * overrides which week is live: we store the shift, not the week number, so
+ * the rotation keeps advancing from the corrected position by itself.
+ */
+export function getCycleOffsetForWeek(week: number, date: Date = new Date()): number {
+  const natural = getCycleWeekForDate(date, 0);
+  return (((week - natural) % CYCLE_WEEK_COUNT) + CYCLE_WEEK_COUNT) % CYCLE_WEEK_COUNT;
+}

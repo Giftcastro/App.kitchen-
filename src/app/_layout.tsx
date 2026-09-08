@@ -29,11 +29,21 @@ LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 // router.replace() in a useEffect — the latter can fire before the root
 // navigator has finished mounting and throws.
 function RootLayoutNavigation() {
-  const { user, theme } = useKitchen();
+  const { user, orderingForDate, theme } = useKitchen();
   const segments = useSegments();
 
   // Determine if the user is currently looking at the login page
   const inAuthGroup = segments[0] === 'login';
+  const inDatePicker = segments[0] === 'select-date';
+
+  // A customer must choose the day they're ordering for before the menu will
+  // show them anything (client review, Sep 2026) — the menu no longer carries
+  // a date row of its own, so this is the only place that choice gets made.
+  // Admins are exempt: they reach the customer Menu tab via "Preview App" to
+  // check their own menu edits, not to order, and shouldn't be stopped by a
+  // delivery-day prompt on the way in.
+  const needsDeliveryDay =
+    !!user && user.role !== 'admin' && !orderingForDate && !inAuthGroup && !inDatePicker;
 
   // Render the active route/page template inside a responsive centered frame.
   // Phones stay at mobile width; tablets widen the frame (TABLET_MAX_WIDTH)
@@ -47,6 +57,7 @@ function RootLayoutNavigation() {
             mounted and registered; swapping it out for Redirect would tear
             down the very navigator the redirect target lives in. */}
         {!user && !inAuthGroup && <Redirect href="/login" />}
+        {needsDeliveryDay && <Redirect href="/select-date" />}
         {user && inAuthGroup && (
           // Logged in but still sitting on the login page — send them to
           // their home screen. Admins go straight to Kitchen Controls since

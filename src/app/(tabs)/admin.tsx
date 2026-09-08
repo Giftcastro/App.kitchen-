@@ -12,13 +12,22 @@ import { haptics } from '../../utils/haptics';
 import * as Print from 'expo-print';
 import * as MailComposer from 'expo-mail-composer';
 
-const STATUS_COLORS: Record<string, string> = {
-  pending: '#FF9500',
-  preparing: '#5AC8FA',
-  on_the_way: '#22C55E',
-  delivered: '#6B6B6B',
-  cancelled: '#FF453A',
-};
+// Order-status colours, matching activity.tsx's getStatusColor. Colour is
+// spent only where it carries meaning in the black-and-white repaint: amber
+// for "needs accepting", blue while out for delivery, green on arrival, red
+// for cancelled — work in hand and finished orders stay grey.
+//
+// A function rather than a plain map because these come from the theme, and
+// this module is evaluated before any theme exists.
+function getStatusColors(theme: ThemeColors): Record<string, string> {
+  return {
+    pending: theme.warning,
+    preparing: theme.textSecondary,
+    on_the_way: theme.info,
+    delivered: theme.success,
+    cancelled: theme.error,
+  };
+}
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Received',
@@ -116,7 +125,6 @@ function buildDeliveryNoteHtml(clientName: string, dateLabel: string, addressLin
   h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: -0.3px; }
   .meta { font-size: 12px; color: #444444; }
   .brand { font-weight: 800; font-size: 14px; text-align: right; }
-  .brand-sub { font-size: 8px; color: #666666; letter-spacing: 0.5px; }
   table { width: 100%; border-collapse: collapse; font-size: 11px; }
   th { text-align: left; background: #111111; color: #ffffff; padding: 7px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
   td { padding: 6px 8px; border-bottom: 1px solid #e2e2e2; vertical-align: top; }
@@ -132,7 +140,6 @@ function buildDeliveryNoteHtml(clientName: string, dateLabel: string, addressLin
     </div>
     <div>
       <div class="brand">your kitchen co.</div>
-      <div class="brand-sub">POWERED BY CSG FOODS</div>
     </div>
   </div>
   <table>
@@ -149,7 +156,9 @@ function buildDeliveryNoteHtml(clientName: string, dateLabel: string, addressLin
 function buildProductionSheetHtml(
   dateLabel: string,
   grandTotal: { name: string; qty: number }[],
-  clients: { name: string; address?: string; total: number; categories: { category: string; items: { name: string; qty: number }[] }[] }[]
+  clients: { name: string; address?: string; total: number; categories: { category: string; items: { name: string; qty: number }[] }[] }[],
+  /** Client the sheet is narrowed to, or null/undefined for every client. Printed in the header so a scoped sheet can't be mistaken for the whole day's cook. */
+  scopeLabel?: string | null
 ): string {
   const grandRows = grandTotal.map(g => `<tr><td>${escapeHtml(g.name)}</td><td class="qty">${g.qty}</td></tr>`).join('');
   const clientSections = clients.map(client => {
@@ -181,7 +190,6 @@ function buildProductionSheetHtml(
   .client-total { font-weight: 400; color: #666666; font-size: 12px; }
   .meta { font-size: 12px; color: #444444; }
   .brand { font-weight: 800; font-size: 14px; text-align: right; }
-  .brand-sub { font-size: 8px; color: #666666; letter-spacing: 0.5px; }
   table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 8px; }
   th { text-align: left; background: #111111; color: #ffffff; padding: 7px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
   td { padding: 6px 8px; border-bottom: 1px solid #e2e2e2; vertical-align: top; }
@@ -194,11 +202,10 @@ function buildProductionSheetHtml(
   <div class="header">
     <div>
       <h1>PRODUCTION SHEET</h1>
-      <div class="meta">${escapeHtml(dateLabel)} · All Clients</div>
+      <div class="meta">${escapeHtml(dateLabel)} · ${escapeHtml(scopeLabel || 'All Clients')}</div>
     </div>
     <div>
       <div class="brand">your kitchen co.</div>
-      <div class="brand-sub">POWERED BY CSG FOODS</div>
     </div>
   </div>
   <table>
@@ -229,7 +236,7 @@ const DATE_FILTER_PRESETS: { key: DateFilterKey; label: string; days?: number }[
   { key: 'custom', label: 'Custom' },
 ];
 
-type TabType = 'dashboard' | 'users' | 'orders' | 'chef' | 'weeks' | 'meals' | 'discounts' | 'companies';
+type TabType = 'dashboard' | 'users' | 'orders' | 'chef' | 'weeks' | 'meals' | 'discounts' | 'companies' | 'notify';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -242,11 +249,13 @@ const TAB_ICONS: Record<TabType, string> = {
   meals: 'restaurant',
   discounts: 'pricetag',
   companies: 'business',
+  notify: 'notifications',
 };
 
 export default function AdminScreen() {
-    const { orders, activeWeek, setActiveWeek, allUsers, discounts, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, addCompany, updateCompany, deleteCompany, updateOrderStatus, theme, kitchenEmail, setKitchenEmail } = useKitchen();
+    const { orders, activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRotation, allUsers, discounts, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, addCompany, updateCompany, deleteCompany, updateOrderStatus, theme, kitchenEmail, setKitchenEmail } = useKitchen();
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const STATUS_COLORS = useMemo(() => getStatusColors(theme), [theme]);
   const { refreshing, refresh } = useSimulatedLoad();
   const router = useRouter();
   const [selectedTab, setSelectedTab] = useState<TabType>('dashboard');
@@ -534,6 +543,21 @@ export default function AdminScreen() {
   // Order Status Breakdown, which *should* respect the selected period.
   const pendingOrdersLive = useMemo(() => orders.filter(o => o.status === 'pending').length, [orders]);
 
+  // Live operational figures for the four tiles the client asked to see on the
+  // dashboard (Sep 2026 review). Deliberately NOT scoped by the Reporting
+  // Period below: these answer "what is happening right now", and quietly
+  // reinterpreting "Today's Deliveries" as "the last 6 months" when someone
+  // changes the period would make them read as the wrong number entirely.
+  const liveStats = useMemo(() => {
+    const todayRevenue = dueTodayOrders.reduce((sum, { order }) => sum + order.total, 0);
+    const activeOrders = orders.filter(
+      o => o.status === 'pending' || o.status === 'preparing' || o.status === 'on_the_way'
+    ).length;
+    // Customers, not staff — an admin account is not a registered customer.
+    const registeredCustomers = allUsers.filter(u => u.role !== 'admin').length;
+    return { todayRevenue, activeOrders, registeredCustomers };
+  }, [dueTodayOrders, orders, allUsers]);
+
   // Reporting aggregates for the Dashboard — this is the exact shape of data
   // that'll eventually feed the Power BI embed (Section 2.4 of the SLA):
   // revenue by category, top-selling items, and revenue by corporate client.
@@ -616,7 +640,7 @@ export default function AdminScreen() {
       .sort((a, b) => b.revenue - a.revenue);
   }, [companies, orderStatsByCompany]);
 
-    const tabs: TabType[] = ['dashboard', 'users', 'orders', 'chef', 'weeks', 'meals', 'discounts', 'companies'];
+    const tabs: TabType[] = ['dashboard', 'users', 'orders', 'chef', 'weeks', 'meals', 'discounts', 'companies', 'notify'];
 
   // Menu categories for discount targeting — sourced from the same live
   // `menus` data admin's Meals tab edits, so a newly-added item can be
@@ -868,8 +892,42 @@ export default function AdminScreen() {
               )}
             </View>
 
+            {/* Live operational tiles. These sit ABOVE Reporting Period on
+                purpose — like "Today at a Glance", they always show the current
+                state and are never re-scoped by the period picker below. */}
+            <View style={styles.liveStatsGrid}>
+              {([
+                {
+                  key: 'today-revenue',
+                  icon: 'cash-outline',
+                  value: `R${liveStats.todayRevenue.toFixed(2)}`,
+                  label: "Today's Deliveries Revenue",
+                  tab: 'orders',
+                },
+                { key: 'active', icon: 'flame-outline', value: String(liveStats.activeOrders), label: 'Active Orders', tab: 'chef' },
+                { key: 'companies', icon: 'business-outline', value: String(companies.length), label: 'Client Companies', tab: 'companies' },
+                { key: 'customers', icon: 'people-outline', value: String(liveStats.registeredCustomers), label: 'Registered Customers', tab: 'users' },
+              ] as { key: string; icon: string; value: string; label: string; tab: TabType }[]).map(tile => (
+                <TouchableOpacity
+                  key={tile.key}
+                  style={styles.liveStatCard}
+                  onPress={() => { haptics.selection(); setSelectedTab(tile.tab); }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${tile.label}: ${tile.value}`}
+                >
+                  <View style={styles.liveStatTop}>
+                    <Ionicons name={tile.icon as any} size={14} color={theme.textSecondary} />
+                    <Text style={styles.liveStatLabel} numberOfLines={2}>{tile.label}</Text>
+                  </View>
+                  <Text style={styles.liveStatValue} numberOfLines={1} adjustsFontSizeToFit>{tile.value}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
             {/* Reporting Period — scopes everything below (stats, breakdowns,
-                revenue, recent orders); "Today at a Glance" above stays live. */}
+                revenue, recent orders); "Today at a Glance" and the live tiles
+                above stay live. */}
             <View style={styles.sectionCard}>
               <Text style={styles.sectionCardTitle}>Reporting Period</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryPickerRow}>
@@ -963,7 +1021,7 @@ export default function AdminScreen() {
             <View style={styles.weekCard}>
               <View style={styles.weekCardLeft}>
                 <View style={styles.weekCardIconWrap}>
-                  <Ionicons name="calendar" size={24} color="#22C55E" />
+                  <Ionicons name="calendar" size={24} color={theme.text} />
                 </View>
                 <View>
                   <Text style={styles.weekCardLabel}>Active Menu Cycle</Text>
@@ -978,8 +1036,8 @@ export default function AdminScreen() {
             {/* Kitchen Notifications — where Chef tab "Send" (Production Sheet / Delivery Note) defaults its recipient. Internal back-of-house inbox, not a client contact. */}
             <View style={styles.weekCard}>
               <View style={styles.weekCardLeft}>
-                <View style={[styles.weekCardIconWrap, { backgroundColor: '#5AC8FA20' }]}>
-                  <Ionicons name="mail" size={22} color="#5AC8FA" />
+                <View style={[styles.weekCardIconWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                  <Ionicons name="mail" size={22} color={theme.textSecondary} />
                 </View>
                 <View>
                   <Text style={styles.weekCardLabel}>Kitchen Notifications</Text>
@@ -1119,7 +1177,7 @@ export default function AdminScreen() {
                   <View key={c.company.id} style={[styles.recentOrderItem, idx === 0 && { borderTopWidth: 0 }]}>
                     <View style={styles.recentOrderLeft}>
                       <View style={styles.companyStatIcon}>
-                        <Ionicons name="business" size={14} color="#5AC8FA" />
+                        <Ionicons name="business" size={14} color={theme.textSecondary} />
                       </View>
                       <View>
                         <Text style={styles.recentOrderId}>{c.company.name}</Text>
@@ -1167,7 +1225,7 @@ export default function AdminScreen() {
             <View style={styles.biCard}>
               <View style={styles.biCardHeader}>
                 <View style={styles.biIconWrap}>
-                  <Ionicons name="bar-chart" size={20} color="#FFD60A" />
+                  <Ionicons name="bar-chart" size={20} color={theme.text} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.biTitle}>Advanced Reporting</Text>
@@ -1210,8 +1268,8 @@ export default function AdminScreen() {
             ) : (
               allUsers.map((user, idx) => (
                 <View key={user.id} style={[styles.userCard, idx === 0 && { marginTop: 4 }]}>
-                  <View style={[styles.userAvatar, { backgroundColor: user.role === 'admin' ? '#FFD60A30' : '#5AC8FA30' }]}>
-                    <Text style={[styles.userAvatarText, { color: user.role === 'admin' ? '#FFD60A' : '#5AC8FA' }]}>
+                  <View style={[styles.userAvatar, { backgroundColor: user.role === 'admin' ? theme.surfaceSecondary : theme.surfaceSecondary }]}>
+                    <Text style={[styles.userAvatarText, { color: user.role === 'admin' ? theme.text : theme.textSecondary }]}>
                       {(user.name || 'U').charAt(0).toUpperCase()}
                     </Text>
                   </View>
@@ -1225,7 +1283,7 @@ export default function AdminScreen() {
                       )}
                       {user.companyName && (
                         <View style={styles.companyBadge}>
-                          <Ionicons name="business" size={10} color="#5AC8FA" />
+                          <Ionicons name="business" size={10} color={theme.textSecondary} />
                           <Text style={styles.companyBadgeText}>{user.companyName}</Text>
                         </View>
                       )}
@@ -1266,8 +1324,18 @@ export default function AdminScreen() {
           />
         )}
 
+        {selectedTab === 'notify' && (
+          <NotifySection theme={theme} companies={companies} />
+        )}
+
         {selectedTab === 'weeks' && (
-          <WeeksSection activeWeek={activeWeek} setActiveWeek={setActiveWeek} theme={theme} />
+          <WeeksSection
+            activeWeek={activeWeek}
+            setActiveWeek={setActiveWeek}
+            cycleWeekOffset={cycleWeekOffset}
+            resetCycleRotation={resetCycleRotation}
+            theme={theme}
+          />
         )}
 
         {selectedTab === 'meals' && (
@@ -1322,7 +1390,7 @@ export default function AdminScreen() {
                   </View>
                   {discount.company && (
                     <View style={styles.discountCompanyRow}>
-                      <Ionicons name="business" size={12} color="#5AC8FA" />
+                      <Ionicons name="business" size={12} color={theme.textSecondary} />
                       <Text style={styles.discountCompanyText}>{discount.company} only</Text>
                     </View>
                   )}
@@ -1366,7 +1434,7 @@ export default function AdminScreen() {
 
             <View style={styles.infoCard}>
               <View style={styles.infoIconWrap}>
-                <Ionicons name="information-circle" size={22} color="#5AC8FA" />
+                <Ionicons name="information-circle" size={22} color="#000000" />
               </View>
               <View style={styles.infoContent}>
                 <Text style={styles.infoTitle}>How this works</Text>
@@ -1393,8 +1461,8 @@ export default function AdminScreen() {
                 // nested. Editing is the pencil button instead.
                 return (
                   <View key={company.id} style={[styles.userCard, idx === 0 && { marginTop: 4 }]}>
-                    <View style={[styles.userAvatar, { backgroundColor: '#5AC8FA30' }]}>
-                      <Ionicons name="business" size={20} color="#5AC8FA" />
+                    <View style={[styles.userAvatar, { backgroundColor: theme.surfaceSecondary }]}>
+                      <Ionicons name="business" size={20} color={theme.textSecondary} />
                     </View>
                     <View style={styles.userInfo}>
                       <Text style={styles.userName}>{company.name}</Text>
@@ -1402,8 +1470,8 @@ export default function AdminScreen() {
                       <Text style={styles.userMeta}>{employeeCount} user{employeeCount === 1 ? '' : 's'} matched</Text>
                       {company.mealSubsidy ? (
                         <View style={styles.companyAddressRow}>
-                          <Ionicons name="cash" size={11} color="#22C55E" />
-                          <Text style={[styles.companyAddressText, { color: '#22C55E' }]} numberOfLines={1}>
+                          <Ionicons name="cash" size={11} color={theme.success} />
+                          <Text style={[styles.companyAddressText, { color: theme.success }]} numberOfLines={1}>
                             R{company.mealSubsidy.toFixed(2)} meal subsidy (incl. VAT)
                           </Text>
                         </View>
@@ -1419,15 +1487,15 @@ export default function AdminScreen() {
                           </View>
                           {company.address.instructions ? (
                             <View style={styles.companyAddressRow}>
-                              <Ionicons name="information-circle" size={11} color="#5AC8FA" />
-                              <Text style={[styles.companyAddressText, { color: '#5AC8FA' }]} numberOfLines={1}>
+                              <Ionicons name="information-circle" size={11} color={theme.textSecondary} />
+                              <Text style={[styles.companyAddressText, { color: theme.textSecondary }]} numberOfLines={1}>
                                 {company.address.instructions}
                               </Text>
                             </View>
                           ) : null}
                           <View style={styles.companyAddressRow}>
-                            <Ionicons name="bicycle" size={11} color={company.address.distanceKm != null ? '#22C55E' : '#FF9500'} />
-                            <Text style={[styles.companyAddressText, { color: company.address.distanceKm != null ? '#22C55E' : '#FF9500' }]} numberOfLines={1}>
+                            <Ionicons name="bicycle" size={11} color={company.address.distanceKm != null ? theme.textSecondary : theme.warning} />
+                            <Text style={[styles.companyAddressText, { color: company.address.distanceKm != null ? theme.textSecondary : theme.warning }]} numberOfLines={1}>
                               {company.address.distanceKm != null
                                 ? `${company.address.distanceKm}km · R${calculateDeliveryFee(company.address.distanceKm) ?? '—'} delivery fee`
                                 : 'Add a distance to set the delivery fee'}
@@ -1456,7 +1524,7 @@ export default function AdminScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`Edit company ${company.name}`}
                       >
-                        <Ionicons name="create-outline" size={18} color="#5AC8FA" />
+                        <Ionicons name="create-outline" size={18} color={theme.textSecondary} />
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.deleteBtn}
@@ -1922,7 +1990,7 @@ export default function AdminScreen() {
 }
 
 function MealsSection({ theme }: { theme: ThemeColors }) {
-  const { menus, addMenuItem, updateMenuItem, deleteMenuItem } = useKitchen();
+  const { menus, addMenuItem, updateMenuItem, deleteMenuItem, setMenuItemActive } = useKitchen();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -2086,7 +2154,14 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
           <View key={cat.id} style={styles.menuCategorySection}>
             <View style={styles.menuCategoryHeader}>
               <Text style={styles.menuCategoryTitle}>{cat.name}</Text>
-              <Text style={styles.menuCategoryCount}>{cat.items.length} items</Text>
+              {/* Counts what customers can actually order, calling out anything
+                  switched off so a short menu is never a mystery. */}
+              <Text style={styles.menuCategoryCount}>
+                {cat.items.filter((i: any) => i.active).length} live
+                {cat.items.some((i: any) => !i.active)
+                  ? ` · ${cat.items.filter((i: any) => !i.active).length} off`
+                  : ''}
+              </Text>
             </View>
             {cat.items.length === 0 ? (
               <View style={styles.menuEmptyItems}>
@@ -2099,23 +2174,43 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
                 const displayPrice = sizes.length > 1
                   ? `R${sizes[0].price.toFixed(0)} - R${sizes[sizes.length - 1].price.toFixed(0)}`
                   : `R${(sizes[0]?.price || 0).toFixed(2)}`;
+                const isLive = item.active !== false;
                 return (
-                  <View key={itemId} style={styles.menuItemCard}>
+                  <View key={itemId} style={[styles.menuItemCard, !isLive && styles.menuItemCardOff]}>
                     <View style={styles.menuItemInfo}>
-                      <Text style={styles.menuItemName}>{item.name}</Text>
+                      <View style={styles.menuItemNameRow}>
+                        <Text style={[styles.menuItemName, !isLive && styles.menuItemNameOff]} numberOfLines={1}>{item.name}</Text>
+                        {!isLive && (
+                          <View style={styles.menuOffBadge}>
+                            <Text style={styles.menuOffBadgeText}>OFF MENU</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={styles.menuItemPrice}>{displayPrice}</Text>
                       {item.description ? (
                         <Text style={styles.menuItemDesc} numberOfLines={2}>{item.description}</Text>
                       ) : null}
                     </View>
                     <View style={styles.menuItemActions}>
+                      {/* One tap pulls a dish from the customer menu without
+                          deleting it — for the ingredient that ran out today. */}
+                      <TouchableOpacity
+                        style={[styles.discountToggle, isLive && styles.discountToggleOn]}
+                        onPress={() => { haptics.selection(); setMenuItemActive(cat.id, itemId, !isLive); }}
+                        accessibilityRole="switch"
+                        accessibilityState={{ checked: isLive }}
+                        aria-checked={isLive}
+                        accessibilityLabel={`${item.name} available to order`}
+                      >
+                        <View style={[styles.discountToggleCircle, isLive && styles.discountToggleCircleOn]} />
+                      </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.menuEditBtn}
                         onPress={() => openEditModal(cat.id, { ...item, id: itemId })}
                         accessibilityRole="button"
                         accessibilityLabel={`Edit ${item.name}`}
                       >
-                        <Ionicons name="create-outline" size={18} color="#5AC8FA" />
+                        <Ionicons name="create-outline" size={18} color={theme.textSecondary} />
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.menuDeleteBtn}
@@ -2307,6 +2402,7 @@ function dateKeyOf(d: Date) {
 
 function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors; allUsers: AppUser[] }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const STATUS_COLORS = useMemo(() => getStatusColors(theme), [theme]);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   // Company groups start collapsed — a client with hundreds of employees
   // ordering shouldn't dump hundreds of order cards onto the screen the
@@ -2507,6 +2603,7 @@ function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders:
  */
 function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, kitchenEmail, onEditKitchenEmail, scrollToTop }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors; allUsers: AppUser[]; companies: Company[]; kitchenEmail: string; onEditKitchenEmail: () => void; scrollToTop: () => void }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
+  const STATUS_COLORS = useMemo(() => getStatusColors(theme), [theme]);
   const activeOrders = useMemo(
     () => orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled'),
     [orders]
@@ -2548,6 +2645,15 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
   const [prepDone, setPrepDone] = useState<Record<string, boolean>>({});
   const [clientCollapse, setClientCollapse] = useState<Record<string, boolean>>({});
   const [flaggedOnly, setFlaggedOnly] = useState(false);
+  // Which client the Production Sheet is narrowed to, or null for every client
+  // at once. The client asked to be able to print production for ALL orders or
+  // for one company/address, and this is the single control both the on-screen
+  // sheet and the emailed PDF read — so what gets sent is always what is being
+  // looked at, rather than a second scope chosen inside the send dialog.
+  const [prodScope, setProdScope] = useState<string | null>(null);
+  // Which queue entries are ticked for a bulk status change. Holds entry keys
+  // (a company+day batch, or a single order), not order ids.
+  const [selectedQueueKeys, setSelectedQueueKeys] = useState<Set<string>>(new Set());
 
   const togglePrepDone = (key: string) => {
     haptics.selection();
@@ -2651,20 +2757,44 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
     };
   }, [orders, prodDate, emailToCompany, companyByName]);
 
+  // The sheet as currently scoped. A scope naming a client who has nothing on
+  // the selected day falls back to "all clients" rather than showing an empty
+  // sheet — stepping to another day must never strand the view.
+  const activeScope = productionSheet.clients.some(c => c.name === prodScope) ? prodScope : null;
+
+  const scopedSheet = useMemo(() => {
+    if (!activeScope) return productionSheet;
+    const clients = productionSheet.clients.filter(c => c.name === activeScope);
+    // Recomputed, not sliced: the grand total is the cooking quantity, so
+    // narrowing to one client has to re-sum that client's own lines rather
+    // than keep the whole day's numbers next to one company's breakdown.
+    const grand = new Map<string, number>();
+    clients.forEach(c => c.categories.forEach(cat => cat.items.forEach(i => {
+      grand.set(i.name, (grand.get(i.name) || 0) + i.qty);
+    })));
+    return {
+      grandTotal: Array.from(grand.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, qty]) => ({ name, qty })),
+      clients,
+      flaggedTotal: clients.reduce((sum, c) => sum + c.flagged, 0),
+    };
+  }, [productionSheet, activeScope]);
+
   // Day-level prep progress across every client on the sheet — the same
   // per-line counting the client headers do, rolled up so the kitchen can see
   // how far through the day it is without opening each section in turn.
   const prepSummary = useMemo(() => {
     let lines = 0;
     let done = 0;
-    productionSheet.clients.forEach(client => {
+    scopedSheet.clients.forEach(client => {
       client.categories.forEach(cat => cat.items.forEach(item => {
         lines++;
         if (prepDone[`${prodDateKey}|${client.name}|${item.name}`]) done++;
       }));
     });
     return { lines, done };
-  }, [productionSheet, prepDone, prodDateKey]);
+  }, [scopedSheet, prepDone, prodDateKey]);
 
   // "Send" dialog — two documents, one dialog. `sendModalClient` is either
   // one client's name (a per-client Delivery Note: address, category totals,
@@ -2707,10 +2837,10 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
     let buildHtml: () => string;
 
     if (isWholeSheet) {
-      subject = `Production Sheet — ${dateLabel}`;
-      const lines: string[] = ['PRODUCTION SHEET', dateLabel, ''];
-      productionSheet.grandTotal.forEach(item => lines.push(`  ${item.qty}x  ${item.name}`));
-      productionSheet.clients.forEach(client => {
+      subject = `Production Sheet — ${activeScope ? `${activeScope} — ` : ''}${dateLabel}`;
+      const lines: string[] = ['PRODUCTION SHEET', activeScope || 'All clients', dateLabel, ''];
+      scopedSheet.grandTotal.forEach(item => lines.push(`  ${item.qty}x  ${item.name}`));
+      scopedSheet.clients.forEach(client => {
         lines.push('', `${client.name.toUpperCase()} · ${client.total}x`);
         client.categories.forEach(cat => {
           lines.push(cat.category);
@@ -2718,9 +2848,9 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
         });
       });
       body = lines.join('\n');
-      buildHtml = () => buildProductionSheetHtml(dateLabel, productionSheet.grandTotal, productionSheet.clients);
+      buildHtml = () => buildProductionSheetHtml(dateLabel, scopedSheet.grandTotal, scopedSheet.clients, activeScope);
     } else {
-      const client = productionSheet.clients.find(c => c.name === sendModalClient);
+      const client = scopedSheet.clients.find(c => c.name === sendModalClient);
       if (!client) return;
       const company = companyByName.get(client.name);
       const addressLine = company?.address
@@ -2859,20 +2989,65 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
   // Past two clients on one day the sheet gets long, so sections start
   // collapsed and the chef opens whichever one is being packed. One or two
   // clients stay open, where collapsing would only cost a tap.
-  const defaultCollapsed = productionSheet.clients.length > 2;
+  const defaultCollapsed = scopedSheet.clients.length > 2;
 
   // "Collapse all" flips to "Expand all" once everything is shut. Reads the
   // same override-or-default the sections themselves use, so the button always
   // describes what will actually happen rather than tracking its own flag.
-  const allCollapsed = productionSheet.clients.length > 0
-    && productionSheet.clients.every(c => clientCollapse[`${prodDateKey}|${c.name}`] ?? defaultCollapsed);
+  const allCollapsed = scopedSheet.clients.length > 0
+    && scopedSheet.clients.every(c => clientCollapse[`${prodDateKey}|${c.name}`] ?? defaultCollapsed);
   const toggleAllClients = () => {
     haptics.selection();
     setClientCollapse(prev => {
       const next = { ...prev };
-      productionSheet.clients.forEach(c => { next[`${prodDateKey}|${c.name}`] = !allCollapsed; });
+      scopedSheet.clients.forEach(c => { next[`${prodDateKey}|${c.name}`] = !allCollapsed; });
       return next;
     });
+  };
+
+  // Bulk status control. Only entries that can still move are selectable —
+  // delivered and cancelled orders have nowhere left to go, and including them
+  // would make "select all" quietly no-op on part of the queue.
+  const selectableEntries = useMemo(
+    () => queueEntries.filter(e => e.status !== 'delivered' && e.status !== 'cancelled'),
+    [queueEntries]
+  );
+  // Keys can disappear between renders (an order is delivered, the day rolls
+  // over), so the live selection is always intersected with what is actually
+  // on screen rather than trusted as-is.
+  const liveSelection = useMemo(
+    () => selectableEntries.filter(e => selectedQueueKeys.has(e.key)),
+    [selectableEntries, selectedQueueKeys]
+  );
+  const allSelected = selectableEntries.length > 0 && liveSelection.length === selectableEntries.length;
+
+  const toggleQueueSelection = (key: string) => {
+    haptics.selection();
+    setSelectedQueueKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    haptics.selection();
+    setSelectedQueueKeys(allSelected ? new Set() : new Set(selectableEntries.map(e => e.key)));
+  };
+
+  /**
+   * Moves every selected entry to `status`.
+   *
+   * Each entry is pushed through `updateOrderStatus` with its own
+   * `updateTargetId` — never by writing a status directly — because a
+   * corporate entry is one physical delivery batch and that function is what
+   * carries the change across every sibling order in it.
+   */
+  const applyBulkStatus = (status: string) => {
+    if (liveSelection.length === 0) return;
+    haptics.success();
+    liveSelection.forEach(entry => updateOrderStatus(entry.updateTargetId, status));
+    setSelectedQueueKeys(new Set());
   };
 
   // Jump from a queue card to that client's section of the Production Sheet.
@@ -2907,7 +3082,7 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
             <TouchableOpacity
               onPress={() => openSendModal(PRODUCTION_SHEET_SENTINEL)}
               accessibilityRole="button"
-              accessibilityLabel="Send the whole day's production sheet to the kitchen"
+              accessibilityLabel={activeScope ? `Send the ${activeScope} production sheet to the kitchen` : "Send the whole day's production sheet to the kitchen"}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Ionicons name="mail-outline" size={16} color={theme.textSecondary} />
@@ -2936,6 +3111,42 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
             <Ionicons name="chevron-forward" size={18} color={theme.text} />
           </TouchableOpacity>
         </View>
+
+        {/* Print/send scope: the whole day's cook, or one company's. Only shown
+            once there is more than one client on the day — with a single client
+            the two options are the same sheet. */}
+        {productionSheet.clients.length > 1 && (
+          <View style={styles.prodScopeRow}>
+            <TouchableOpacity
+              style={[styles.prodScopeChip, !activeScope && styles.prodScopeChipActive]}
+              onPress={() => { haptics.selection(); setProdScope(null); }}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: !activeScope }}
+              aria-checked={!activeScope}
+              accessibilityLabel="Show all clients in the production sheet"
+            >
+              <Text style={[styles.prodScopeChipText, !activeScope && styles.prodScopeChipTextActive]}>All orders</Text>
+            </TouchableOpacity>
+            {productionSheet.clients.map(c => {
+              const isOn = activeScope === c.name;
+              return (
+                <TouchableOpacity
+                  key={c.name}
+                  style={[styles.prodScopeChip, isOn && styles.prodScopeChipActive]}
+                  onPress={() => { haptics.selection(); setProdScope(isOn ? null : c.name); }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: isOn }}
+                  aria-checked={isOn}
+                  accessibilityLabel={`Show only ${c.name} in the production sheet`}
+                >
+                  <Text style={[styles.prodScopeChipText, isOn && styles.prodScopeChipTextActive]} numberOfLines={1}>
+                    {c.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
 
         {prepSummary.lines > 0 && (
           <View style={styles.prodSummaryRow}>
@@ -2967,11 +3178,11 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
           </TouchableOpacity>
         )}
 
-        {productionSheet.grandTotal.length === 0 ? (
+        {scopedSheet.grandTotal.length === 0 ? (
           <Text style={styles.emptySub}>No items due on this day</Text>
         ) : (
           <>
-            {productionSheet.flaggedTotal > 0 && (
+            {scopedSheet.flaggedTotal > 0 && (
               <TouchableOpacity
                 style={[styles.flagChip, flaggedOnly && styles.flagChipActive]}
                 onPress={() => { haptics.selection(); setFlaggedOnly(v => !v); }}
@@ -2984,21 +3195,21 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
               >
                 <Ionicons name="flag" size={11} color={flaggedOnly ? theme.white : theme.error} />
                 <Text style={[styles.flagChipText, flaggedOnly && styles.flagChipTextActive]}>
-                  {productionSheet.flaggedTotal} special request{productionSheet.flaggedTotal === 1 ? '' : 's'}
+                  {scopedSheet.flaggedTotal} special request{scopedSheet.flaggedTotal === 1 ? '' : 's'}
                   {flaggedOnly ? ' · showing only these' : ''}
                 </Text>
               </TouchableOpacity>
             )}
 
             <Text style={[styles.prodClientHeader, { marginTop: 0 }]}>Grand Total</Text>
-            {productionSheet.grandTotal.map((item, idx) => (
+            {scopedSheet.grandTotal.map((item, idx) => (
               <View key={item.name} style={[styles.prepListRow, idx === 0 && { borderTopWidth: 0 }]}>
                 <Text style={styles.prepListQty}>{item.qty}x</Text>
                 <Text style={styles.prepListName} numberOfLines={1}>{item.name}</Text>
               </View>
             ))}
 
-            {productionSheet.clients.map(client => {
+            {scopedSheet.clients.map(client => {
               const collapseKey = `${prodDateKey}|${client.name}`;
               const collapsed = clientCollapse[collapseKey] ?? defaultCollapsed;
               // Prep progress counts distinct dish lines, not portions — a
@@ -3125,7 +3336,42 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
         )}
       </View>
 
-      <Text style={styles.chefQueueTitle}>Order Queue</Text>
+      <View style={styles.chefQueueHeader}>
+        <Text style={styles.chefQueueTitle}>Order Queue</Text>
+        {selectableEntries.length > 0 && (
+          <TouchableOpacity
+            onPress={toggleSelectAll}
+            accessibilityRole="button"
+            accessibilityLabel={allSelected ? 'Clear selection' : 'Select all orders'}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.chefSelectAllText}>{allSelected ? 'Clear' : 'Select all'}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Bulk status bar — appears only with something selected, so the queue
+          stays uncluttered when the kitchen is working order by order. */}
+      {liveSelection.length > 0 && (
+        <View style={styles.bulkBar}>
+          <Text style={styles.bulkBarCount}>
+            {liveSelection.length} selected · move all to
+          </Text>
+          <View style={styles.bulkBarChips}>
+            {STATUS_FLOW.map(status => (
+              <TouchableOpacity
+                key={status}
+                style={styles.bulkBarChip}
+                onPress={() => applyBulkStatus(status)}
+                accessibilityRole="button"
+                accessibilityLabel={`Move ${liveSelection.length} selected orders to ${STATUS_LABELS[status]}`}
+              >
+                <Text style={styles.bulkBarChipText}>{STATUS_LABELS[status]}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
       {queueEntries.length === 0 && (
         <View style={styles.emptyState}>
           <View style={styles.emptyIconWrap}>
@@ -3139,9 +3385,23 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
         const flowIdx = STATUS_FLOW.indexOf(entry.status);
         const isTerminal = entry.status === 'delivered' || entry.status === 'cancelled';
         const isOverdue = !entry.dueToday && dateKeyOf(entry.dueDate) < todayKey;
+        const isSelected = selectedQueueKeys.has(entry.key);
         return (
-          <View key={entry.key} style={[styles.orderCard, idx === 0 && { marginTop: 4 }]}>
+          <View key={entry.key} style={[styles.orderCard, idx === 0 && { marginTop: 4 }, isSelected && styles.orderCardSelected]}>
             <View style={styles.orderCardHeader}>
+              {!isTerminal && (
+                <TouchableOpacity
+                  style={[styles.queueCheckbox, isSelected && styles.queueCheckboxOn]}
+                  onPress={() => toggleQueueSelection(entry.key)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: isSelected }}
+                  aria-checked={isSelected}
+                  accessibilityLabel={`Select ${entry.title} for a bulk status change`}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  {isSelected && <Ionicons name="checkmark" size={13} color={theme.onAccent} />}
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={styles.orderCardLeft}
                 onPress={() => showClientInSheet(entry.isBatch ? entry.title : UNASSIGNED_CLIENT, entry.dueDate)}
@@ -3245,7 +3505,7 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
               </TouchableOpacity>
             </View>
             <Text style={styles.modalHint}>
-              {sendModalClient === PRODUCTION_SHEET_SENTINEL ? 'All clients' : sendModalClient} · {prodDate.toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' })}
+              {sendModalClient === PRODUCTION_SHEET_SENTINEL ? (activeScope || 'All clients') : sendModalClient} · {prodDate.toLocaleDateString('en-ZA', { weekday: 'short', day: 'numeric', month: 'short' })}
             </Text>
             <TextInput
               style={[styles.modalInput, sendEmailError ? styles.modalInputError : null]}
@@ -3276,17 +3536,216 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
   );
 }
 
-function WeeksSection({ activeWeek, setActiveWeek, theme }: { activeWeek: number; setActiveWeek: (w: number) => void; theme: ThemeColors }) {
+/**
+ * Kitchen Controls → Menu Cycles.
+ *
+ * The 8-week rotation now advances by itself off the calendar (client review,
+ * Sep 2026 — it previously only moved when someone came in here and clicked).
+ * Picking a week is therefore no longer "set the live week" but "re-align the
+ * rotation": it shifts the whole cycle so this week becomes the one chosen,
+ * and the rotation carries on advancing from there. `Back to automatic` drops
+ * that shift.
+ */
+/**
+ * Kitchen Controls → Notifications.
+ *
+ * Lets the kitchen send a message to customers — a menu change, a delivery
+ * delay, a holiday closure — addressed either to everyone or to one corporate
+ * client. Added in the Sep 2026 client review.
+ *
+ * Delivery is in-app: a sent announcement appears as a banner on the menu of
+ * every customer it is addressed to (see `visibleAnnouncements` in the Kitchen
+ * context), and is also raised on this device's notification tray. There is no
+ * backend in this project to push to other devices — that is Stage 2 of the
+ * SLA — so this composes and delivers what it honestly can rather than
+ * implying messages leave the device.
+ */
+function NotifySection({ theme, companies }: { theme: ThemeColors; companies: Company[] }) {
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const weeks = [1, 2, 3, 4, 5, 6, 7, 8];
+  const { announcements, sendAnnouncement, deleteAnnouncement } = useKitchen();
+
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  // null = every customer; otherwise a company name.
+  const [target, setTarget] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  // Confirmation lives in the screen, not an Alert — Alert.alert is a
+  // documented no-op on React Native Web, same reason MealsSection uses
+  // in-app dialogs.
+  const [justSent, setJustSent] = useState(false);
+
+  const handleSend = () => {
+    if (!title.trim()) {
+      setError('Give the notification a title');
+      return;
+    }
+    if (!body.trim()) {
+      setError('Write the message customers will read');
+      return;
+    }
+    sendAnnouncement({ title: title.trim(), body: body.trim(), companyName: target });
+    haptics.success();
+    setTitle('');
+    setBody('');
+    setError('');
+    setJustSent(true);
+  };
 
   return (
     <>
       <View style={styles.pageHeader}>
         <View>
-          <Text style={styles.greeting}>Menu Cycles</Text>
-          <Text style={styles.greetingSub}>Select which week is active</Text>
+          <Text style={styles.greeting}>Notifications</Text>
+          <Text style={styles.greetingSub}>Send a message to your customers</Text>
         </View>
+      </View>
+
+      <View style={styles.sectionCard}>
+        <Text style={styles.sectionCardTitle}>New notification</Text>
+
+        <Text style={styles.notifyFieldLabel}>SEND TO</Text>
+        <View style={styles.notifyTargetRow}>
+          <TouchableOpacity
+            style={[styles.prodScopeChip, target === null && styles.prodScopeChipActive]}
+            onPress={() => { haptics.selection(); setTarget(null); }}
+            accessibilityRole="radio"
+            accessibilityState={{ selected: target === null }}
+            aria-checked={target === null}
+            accessibilityLabel="Send to all customers"
+          >
+            <Text style={[styles.prodScopeChipText, target === null && styles.prodScopeChipTextActive]}>
+              All customers
+            </Text>
+          </TouchableOpacity>
+          {companies.map(c => {
+            const isOn = target === c.name;
+            return (
+              <TouchableOpacity
+                key={c.id}
+                style={[styles.prodScopeChip, isOn && styles.prodScopeChipActive]}
+                onPress={() => { haptics.selection(); setTarget(isOn ? null : c.name); }}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: isOn }}
+                aria-checked={isOn}
+                accessibilityLabel={`Send only to ${c.name}`}
+              >
+                <Text style={[styles.prodScopeChipText, isOn && styles.prodScopeChipTextActive]} numberOfLines={1}>
+                  {c.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <Text style={styles.notifyFieldLabel}>TITLE</Text>
+        <TextInput
+          style={styles.modalInput}
+          placeholder="e.g. Friday menu update"
+          placeholderTextColor={theme.textTertiary}
+          value={title}
+          onChangeText={(v) => { setTitle(v); setError(''); setJustSent(false); }}
+          accessibilityLabel="Notification title"
+        />
+
+        <Text style={styles.notifyFieldLabel}>MESSAGE</Text>
+        <TextInput
+          style={[styles.modalInput, styles.notifyBodyInput]}
+          placeholder="What do your customers need to know?"
+          placeholderTextColor={theme.textTertiary}
+          value={body}
+          onChangeText={(v) => { setBody(v); setError(''); setJustSent(false); }}
+          multiline
+          numberOfLines={4}
+          textAlignVertical="top"
+          accessibilityLabel="Notification message"
+        />
+
+        {error ? <Text style={styles.modalFieldError}>{error}</Text> : null}
+        {justSent ? (
+          <Text style={styles.notifySentNoteOk}>Sent — customers will see it on their menu.</Text>
+        ) : null}
+
+        <Text style={styles.modalHint}>
+          Customers see this as a banner on their menu the next time they open the app, and it is raised on this device's notifications. It is not emailed.
+        </Text>
+
+        <TouchableOpacity
+          style={styles.notifySendBtn}
+          onPress={handleSend}
+          accessibilityRole="button"
+          accessibilityLabel="Send notification"
+        >
+          <Ionicons name="send" size={15} color={theme.onAccent} />
+          <Text style={styles.notifySendBtnText}>Send notification</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.chefQueueTitle}>Sent</Text>
+      {announcements.length === 0 ? (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="notifications-outline" size={40} color={theme.textSecondary} />
+          </View>
+          <Text style={styles.emptyTitle}>Nothing sent yet</Text>
+          <Text style={styles.emptySub}>Notifications you send will be listed here</Text>
+        </View>
+      ) : (
+        announcements.map(a => (
+          <View key={a.id} style={styles.notifyCard}>
+            <View style={styles.notifyCardMain}>
+              <View style={styles.notifyCardTopRow}>
+                <Text style={styles.notifyCardTitle} numberOfLines={1}>{a.title}</Text>
+                <View style={styles.notifyAudienceBadge}>
+                  <Text style={styles.notifyAudienceText} numberOfLines={1}>
+                    {a.companyName || 'All customers'}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.notifyCardBody}>{a.body}</Text>
+              <Text style={styles.notifyCardDate}>
+                {new Date(a.sentAt).toLocaleString('en-ZA', {
+                  day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
+                })}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.deleteBtn}
+              onPress={() => { haptics.warning(); deleteAnnouncement(a.id); }}
+              accessibilityRole="button"
+              accessibilityLabel={`Delete notification ${a.title}`}
+            >
+              <Ionicons name="trash-outline" size={18} color={theme.error} />
+            </TouchableOpacity>
+          </View>
+        ))
+      )}
+    </>
+  );
+}
+
+function WeeksSection({ activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRotation, theme }: { activeWeek: number; setActiveWeek: (w: number) => void; cycleWeekOffset: number; resetCycleRotation: () => void; theme: ThemeColors }) {
+  const styles = useMemo(() => createStyles(theme), [theme]);
+  const weeks = [1, 2, 3, 4, 5, 6, 7, 8];
+  const isAuto = cycleWeekOffset === 0;
+
+  return (
+    <>
+      <View style={styles.pageHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.greeting}>Menu Cycles</Text>
+          <Text style={styles.greetingSub}>Rotates automatically every Monday</Text>
+        </View>
+        {!isAuto && (
+          <TouchableOpacity
+            style={styles.cycleResetBtn}
+            onPress={() => { haptics.selection(); resetCycleRotation(); }}
+            accessibilityRole="button"
+            accessibilityLabel="Put the menu cycle back on automatic rotation"
+          >
+            <Ionicons name="refresh" size={13} color={theme.text} />
+            <Text style={styles.cycleResetText}>Back to automatic</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.weeksGrid}>
@@ -3310,7 +3769,7 @@ function WeeksSection({ activeWeek, setActiveWeek, theme }: { activeWeek: number
               </Text>
               {isActive && (
                 <View style={styles.weekGridCheck}>
-                  <Ionicons name="checkmark-circle" size={20} color="#22C55E" />
+                  <Ionicons name="checkmark-circle" size={20} color={theme.text} />
                 </View>
               )}
             </TouchableOpacity>
@@ -3320,12 +3779,14 @@ function WeeksSection({ activeWeek, setActiveWeek, theme }: { activeWeek: number
 
       <View style={styles.infoCard}>
         <View style={styles.infoIconWrap}>
-          <Ionicons name="information-circle" size={22} color="#5AC8FA" />
+          <Ionicons name={isAuto ? 'sync' : 'hand-left'} size={22} color="#000000" />
         </View>
         <View style={styles.infoContent}>
-          <Text style={styles.infoTitle}>Currently Active</Text>
+          <Text style={styles.infoTitle}>Week {activeWeek} is live</Text>
           <Text style={styles.infoText}>
-            Week <Text style={{ color: '#22C55E', fontWeight: '800' }}>{activeWeek}</Text> menu is being shown to customers
+            {isAuto
+              ? 'Customers are seeing this week’s menu. It advances to the next week on its own every Monday — nothing to click.'
+              : `Re-aligned by ${cycleWeekOffset} week${cycleWeekOffset === 1 ? '' : 's'}. It still advances on its own every Monday, just from this corrected position.`}
           </Text>
         </View>
       </View>
@@ -3812,13 +4273,13 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
 
   // Users
   addBtn: {
-    backgroundColor: '#22C55E',
+    backgroundColor: theme.accent,
     width: 42,
     height: 42,
     borderRadius: 21,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#22C55E',
+    shadowColor: theme.black,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 8,
@@ -3873,12 +4334,12 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#5AC8FA20',
+    backgroundColor: theme.surfaceSecondary,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
   },
-  companyBadgeText: { color: '#5AC8FA', fontSize: 10, fontWeight: '800' },
+  companyBadgeText: { color: theme.textSecondary, fontSize: 10, fontWeight: '800' },
   userEmail: {
     fontSize: 12,
     color: theme.textSecondary,
@@ -3905,7 +4366,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
-    backgroundColor: '#5AC8FA20',
+    backgroundColor: theme.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -4083,8 +4544,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     justifyContent: 'center',
   },
   weekGridCardActive: {
-    borderColor: '#22C55E',
-    backgroundColor: '#EAF7EE',
+    borderColor: theme.accent,
+    backgroundColor: theme.surfaceSecondary,
   },
   weekGridNumber: {
     fontSize: 26,
@@ -4124,11 +4585,25 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#5AC8FA20',
+    backgroundColor: theme.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   infoContent: { flex: 1 },
+  // Sits in the page header, so it follows the app surface rather than
+  // infoCard's fixed light-blue tint.
+  cycleResetBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  cycleResetText: { fontSize: 11, fontWeight: '700', color: theme.text },
   // infoCard's background is a fixed light-blue tint in both themes (see
   // infoCard above) — its text must stay literal dark too, or it goes
   // invisible against that tint once theme.text/textSecondary flip to white.
@@ -4229,8 +4704,132 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   discountToggleCircleOn: {
     backgroundColor: theme.white,
   },
+  // An off-menu dish stays legible but visibly stood down, so the list still
+  // reads as one inventory rather than two.
+  menuItemCardOff: { opacity: 0.55 },
+  menuItemNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  menuItemNameOff: { flexShrink: 1, textDecorationLine: 'line-through' },
+  menuOffBadge: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 4,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  menuOffBadgeText: { fontSize: 8, fontWeight: '800', color: theme.textSecondary, letterSpacing: 0.5 },
+
+  // Two-up grid of live operational tiles. Theme tokens throughout — unlike
+  // the period-scoped statsGrid below, whose literal colors carry a known
+  // dark-mode defect that is being left alone deliberately.
+  liveStatsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 },
+  liveStatCard: {
+    flexGrow: 1,
+    flexBasis: '46%',
+    minWidth: 140,
+    backgroundColor: theme.cardBg,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 14,
+    padding: 14,
+    gap: 10,
+  },
+  liveStatTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  liveStatLabel: { flex: 1, fontSize: 11, fontWeight: '600', color: theme.textSecondary, lineHeight: 15 },
+  liveStatValue: { fontSize: 22, fontWeight: '900', color: theme.text, letterSpacing: -0.6 },
+
+  // Notifications tab
+  notifyFieldLabel: { fontSize: 10, fontWeight: '800', color: theme.textTertiary, letterSpacing: 1, marginTop: 14, marginBottom: 8 },
+  notifyTargetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  notifyBodyInput: { height: 96, paddingTop: 12 },
+  notifySentNoteOk: { fontSize: 12, fontWeight: '700', color: theme.success, marginTop: 10 },
+  notifySendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: theme.accent,
+    borderRadius: 10,
+    paddingVertical: 14,
+    marginTop: 16,
+  },
+  notifySendBtnText: { fontSize: 14, fontWeight: '700', color: theme.onAccent },
+  notifyCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: theme.cardBg,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 10,
+  },
+  notifyCardMain: { flex: 1 },
+  notifyCardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  notifyCardTitle: { flexShrink: 1, fontSize: 14, fontWeight: '800', color: theme.text },
+  notifyAudienceBadge: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    maxWidth: '55%',
+  },
+  notifyAudienceText: { fontSize: 9, fontWeight: '800', color: theme.textSecondary, letterSpacing: 0.3 },
+  notifyCardBody: { fontSize: 12, color: theme.textSecondary, lineHeight: 18 },
+  notifyCardDate: { fontSize: 10, color: theme.textTertiary, marginTop: 8, fontWeight: '600' },
+
+  chefQueueHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  chefSelectAllText: { fontSize: 12, fontWeight: '700', color: theme.text, textDecorationLine: 'underline' },
+  bulkBar: {
+    backgroundColor: theme.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 10,
+    gap: 10,
+  },
+  bulkBarCount: { fontSize: 11, fontWeight: '800', color: theme.textSecondary, letterSpacing: 0.4, textTransform: 'uppercase' },
+  bulkBarChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  bulkBarChip: {
+    backgroundColor: theme.accent,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  bulkBarChipText: { fontSize: 11, fontWeight: '700', color: theme.onAccent },
+  orderCardSelected: { borderColor: theme.accent },
+  queueCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    marginTop: 2,
+  },
+  queueCheckboxOn: { backgroundColor: theme.accent, borderColor: theme.accent },
+
+  prodScopeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  prodScopeChip: {
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    maxWidth: '100%',
+  },
+  prodScopeChipActive: { backgroundColor: theme.accent, borderColor: theme.accent },
+  prodScopeChipText: { fontSize: 11, fontWeight: '700', color: theme.textSecondary },
+  prodScopeChipTextActive: { color: theme.onAccent },
+
   discountCompanyRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10 },
-  discountCompanyText: { color: '#5AC8FA', fontSize: 12, fontWeight: '700' },
+  discountCompanyText: { color: theme.textSecondary, fontSize: 12, fontWeight: '700' },
   discountBottomRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -4323,7 +4922,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 10,
-    backgroundColor: '#5AC8FA20',
+    backgroundColor: theme.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -4355,8 +4954,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     marginRight: 8,
   },
   categoryPickerChipActive: {
-    backgroundColor: '#22C55E',
-    borderColor: '#22C55E',
+    backgroundColor: theme.accent,
+    borderColor: theme.accent,
   },
   categoryPickerChipText: {
     fontSize: 13,
@@ -4364,7 +4963,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     color: theme.textSecondary,
   },
   categoryPickerChipTextActive: {
-    color: '#000000',
+    color: theme.onAccent,
   },
 
   // Modals
@@ -4503,7 +5102,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 10,
-    backgroundColor: '#5AC8FA20',
+    backgroundColor: theme.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -4522,7 +5121,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#FFD60A20',
+    backgroundColor: 'rgba(0,0,0,0.08)',
     justifyContent: 'center',
     alignItems: 'center',
   },

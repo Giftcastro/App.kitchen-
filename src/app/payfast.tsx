@@ -25,6 +25,8 @@ export default function PayFastSandboxScreen() {
   const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
   const webViewRef = useRef<WebView>(null);
+  // Guards against a duplicate order — see handleNavigationStateChange below.
+  const hasPlacedOrderRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showCardForm, setShowCardForm] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -280,6 +282,16 @@ export default function PayFastSandboxScreen() {
     const { url } = navState;
 
     if (url.startsWith(RETURN_URL)) {
+      // WebView's onNavigationStateChange can fire more than once for the
+      // same URL (e.g. once as the address bar updates mid-load, again once
+      // it finishes) — without a synchronous guard here, a second overlapping
+      // call re-enters this branch while the first is still awaiting the
+      // notification/email steps below, before placeOrder()'s cart has been
+      // cleared, and places a second identical order. A ref, not state: it
+      // has to take effect immediately, not after the next render.
+      if (hasPlacedOrderRef.current) return;
+      hasPlacedOrderRef.current = true;
+
       // 1. Send system push notification
       setIsLoading(false);
       await triggerSuccessNotification();

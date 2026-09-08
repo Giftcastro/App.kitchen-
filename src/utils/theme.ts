@@ -26,12 +26,20 @@ export interface ThemeColors {
   statusBarStyle: 'light-content' | 'dark-content';
 }
 
-// Uber-style light theme: white/near-white surfaces, with the brand's
-// "Mediterranean + Berry" primary blue (#3571B7) as the accent — buttons,
-// active states, prices — and the brand's secondary red (#AF1718) standing
-// in for the error/destructive color. Everything else stays semantic
-// (success/warning/info), matching how the reference app reserves color for
-// status rather than decoration.
+// Black-and-white theme (client review, Sep 2026): "keep the overall feel
+// black and white", with only subtle pops of colour.
+//
+// So `accent` — which paints every primary button, active chip and selected
+// state in the app — is plain black here and plain white in dark mode, and
+// the only colours left anywhere are the semantic status ones below:
+// success/warning/error/info. Those are the pops, and they are reserved for
+// things that genuinely carry meaning (an order status, a saving, a cutoff
+// warning, a destructive action) rather than for decoration.
+//
+// Two earlier accents live in the history here: the brand blue #3571B7 and a
+// sage green #C4D29B trialled on 2026-09-05. Both are superseded — reinstating
+// either means changing `accent`/`onAccent` in both palettes together, since
+// anything drawn on top of the accent reads `onAccent` for its colour.
 export const lightColors: ThemeColors = {
   background: '#FFFFFF',
   surface: '#FFFFFF',
@@ -40,12 +48,8 @@ export const lightColors: ThemeColors = {
   text: '#000000',
   textSecondary: '#6B6B6B',
   textTertiary: '#9E9E9E',
-  // Trial swap (2026-09-05) — client asked to try a sage green (#C4D29B) in
-  // place of the brand blue here. Since it's a pale/light color, onAccent
-  // flips to black for legibility, same reasoning as dark mode's pale-blue
-  // accent below — revert both to '#3571B7' / '#FFFFFF' if this doesn't stick.
-  accent: '#C4D29B',
-  onAccent: '#000000',
+  accent: '#000000',
+  onAccent: '#FFFFFF',
   success: '#1DA836',
   warning: '#E8A100',
   error: '#AF1718',
@@ -60,13 +64,12 @@ export const lightColors: ThemeColors = {
   statusBarStyle: 'dark-content',
 };
 
-// Dark theme mirrors the same brand logic with near-black surfaces. `accent`
-// swaps to the palette's paler blue (#B6DFF8) here — the light-mode blue
-// reads fine on white but loses too much contrast against a near-black
-// background — so anything painting text/icons on top of `accent` must use
-// `onAccent`, not a hardcoded white, or it renders invisible in this mode.
-// `error` is likewise brightened from the brand red for the same reason,
-// following the same lighten-for-dark-mode pattern already used below for
+// Dark theme mirrors the same logic against near-black surfaces. `accent`
+// inverts to white here — light mode's black accent would vanish into the
+// background — so anything painting text or icons on top of `accent` must use
+// `onAccent`, never a hardcoded white, or it renders invisible in one mode or
+// the other. `error` is likewise brightened from the brand red, following the
+// same lighten-for-dark-mode pattern already used below for
 // success/warning/info.
 export const darkColors: ThemeColors = {
   background: '#0B0B0B',
@@ -76,7 +79,7 @@ export const darkColors: ThemeColors = {
   text: '#FFFFFF',
   textSecondary: '#A0A0A0',
   textTertiary: '#6B6B6B',
-  accent: '#B6DFF8',
+  accent: '#FFFFFF',
   onAccent: '#000000',
   success: '#22C55E',
   warning: '#F5A623',

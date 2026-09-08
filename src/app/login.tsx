@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   Animated, View, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, StatusBar,
-  ScrollView, useWindowDimensions
+  ScrollView, useWindowDimensions, Modal,
 } from 'react-native';
 import { Text, TextInput } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,7 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { findCompanyForEmail } from '../utils/companyMatch';
 import { ThemeColors } from '../utils/theme';
 import { haptics } from '../utils/haptics';
-import type { AccountType } from '../context/KitchenCoContext';
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ADMIN_EMAIL = 'admin@gmail.com';
@@ -29,15 +28,31 @@ export default function LoginScreen() {
   const [name, setName] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Signup only: is this person ordering for themselves, or as an employee
-  // of a registered company? A company employee whose employer has two
-  // registered sites gets a location picker below (see companyLocation);
-  // individuals set up their own delivery address afterwards from Profile.
-  const [signupType, setSignupType] = useState<AccountType>('individual');
-  const [companyLocation, setCompanyLocation] = useState<1 | 2>(1);
+  // Signup: "Select your company" is a real open dropdown over every
+  // registered company (client's explicit call) — not narrowed to the
+  // email's domain. `domainMatch` only pre-fills the field as a convenience
+  // default before the user has touched the picker; once they've opened it
+  // and picked anything (including "No company"), that choice wins outright,
+  // domain match or not.
+  const domainMatch = useMemo(() => findCompanyForEmail(email, companies), [email, companies]);
+  const NO_COMPANY = '__none__';
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const selectedCompany = useMemo(() => {
+    if (selectedCompanyId === NO_COMPANY) return undefined;
+    if (selectedCompanyId) return companies.find(c => c.id === selectedCompanyId);
+    return domainMatch;
+  }, [selectedCompanyId, companies, domainMatch]);
+  const [showCompanyPicker, setShowCompanyPicker] = useState(false);
 
-  // Corporate clients are matched by work-email domain — no manual
-  // "which company do you work for" entry needed.
+  // A company employee whose employer has two registered sites picks which
+  // one they deliver to (see companyLocation); individuals set up their own
+  // delivery address afterwards from Profile.
+  const [companyLocation, setCompanyLocation] = useState<1 | 2>(1);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+
+  // Sign-in only: re-checked on every login (see handleSignin) so a company
+  // registered after someone's original signup still links retroactively —
+  // no picker UI there, just the single best match.
   const matchedCompany = useMemo(() => findCompanyForEmail(email, companies), [email, companies]);
 
   // Mode states
@@ -71,7 +86,7 @@ export default function LoginScreen() {
   const isCompactHeight = windowHeight < 700;
   const glowSize = isCompactHeight ? 100 : 130;
   const glowInnerSize = isCompactHeight ? 60 : 78;
-  const brandMarginBottom = isCompactHeight ? 20 : 32;
+  const brandMarginBottom = isCompactHeight ? 32 : 48;
   const sectionMarginBottom = isCompactHeight ? 10 : 14;
 
   const pressIn = () => {
@@ -118,8 +133,8 @@ export default function LoginScreen() {
 
     if (!password) {
       newErrors.password = 'Please enter your password';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+    } else if (password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters';
     }
 
     if (password !== confirmPassword) {
@@ -146,18 +161,18 @@ export default function LoginScreen() {
   const handleSignup = () => {
     if (validateSignup()) {
       const role = isAdminEmail ? 'admin' : 'customer';
-      // The work-email domain match is still the source of truth for whether
-      // this is actually a company account — the Individual/Company toggle
-      // above only decides which optional section (address vs. location
-      // picker) was shown, not what gets saved.
-      const isCompanyAccount = !!matchedCompany;
+      // Whether this is a company account is still driven entirely by the
+      // work-email domain match, not a manual toggle — selectedCompany is
+      // just which of the (usually one) domain-eligible companies the
+      // picker below landed on.
+      const isCompanyAccount = !!selectedCompany;
       login(
         email.trim(),
         role,
         name.trim(),
         isCompanyAccount ? 'company' : 'individual',
-        matchedCompany?.name,
-        isCompanyAccount && matchedCompany?.address2 ? companyLocation : undefined
+        selectedCompany?.name,
+        isCompanyAccount && selectedCompany?.address2 ? companyLocation : undefined
       );
       router.replace(role === 'admin' ? '/admin' : '/');
     } else {
@@ -189,12 +204,10 @@ export default function LoginScreen() {
     const renderSigninForm = () => (
     <>
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>EMAIL ADDRESS</Text>
         <View style={[styles.inputWrapper, focusedField === 'signinEmail' && styles.inputWrapperFocused, errors.email ? styles.inputWrapperError : null]}>
-          <Ionicons name="mail-outline" size={16} color={focusedField === 'signinEmail' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
-            placeholder="name@company.com"
+            placeholder="Email Address (e.g., alex@example.com)"
             placeholderTextColor={theme.textTertiary}
             value={email}
             onChangeText={(val) => { setEmail(val); if (errors.email) setErrors({ ...errors, email: undefined }); }}
@@ -212,12 +225,10 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>PASSWORD</Text>
         <View style={[styles.inputWrapper, focusedField === 'signinPassword' && styles.inputWrapperFocused, errors.password ? styles.inputWrapperError : null]}>
-          <Ionicons name="lock-closed-outline" size={16} color={focusedField === 'signinPassword' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
-            placeholder="Your password"
+            placeholder="Password (e.g., ••••••••)"
             placeholderTextColor={theme.textTertiary}
             value={password}
             onChangeText={(val) => { setPassword(val); if (errors.password) setErrors({ ...errors, password: undefined }); }}
@@ -272,34 +283,10 @@ export default function LoginScreen() {
   const renderSignupForm = () => (
     <>
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>SIGNING UP AS</Text>
-        <View style={styles.signupTypeSelector}>
-          <TouchableOpacity
-            style={[styles.signupTypeBtn, signupType === 'individual' && styles.signupTypeBtnActive]}
-            onPress={() => setSignupType('individual')}
-            accessibilityRole="button"
-            accessibilityState={{ selected: signupType === 'individual' }}
-          >
-            <Text style={[styles.signupTypeBtnText, signupType === 'individual' && styles.signupTypeBtnTextActive]}>Individual</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.signupTypeBtn, signupType === 'company' && styles.signupTypeBtnActive]}
-            onPress={() => setSignupType('company')}
-            accessibilityRole="button"
-            accessibilityState={{ selected: signupType === 'company' }}
-          >
-            <Text style={[styles.signupTypeBtnText, signupType === 'company' && styles.signupTypeBtnTextActive]}>Company</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.inputGroup}>
-        <Text style={styles.label}>FULL NAME</Text>
         <View style={[styles.inputWrapper, focusedField === 'name' && styles.inputWrapperFocused, errors.name ? styles.inputWrapperError : null]}>
-          <Ionicons name="person-outline" size={16} color={focusedField === 'name' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
-            placeholder="John Doe"
+            placeholder="Full Name (e.g., John Doe)"
             placeholderTextColor={theme.textTertiary}
             value={name}
             onChangeText={(val) => { setName(val); if (errors.name) setErrors({ ...errors, name: undefined }); }}
@@ -315,15 +302,19 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>EMAIL ADDRESS</Text>
         <View style={[styles.inputWrapper, focusedField === 'signupEmail' && styles.inputWrapperFocused, errors.email ? styles.inputWrapperError : null]}>
-          <Ionicons name="mail-outline" size={16} color={focusedField === 'signupEmail' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
-            placeholder="name@company.com"
+            placeholder="Email Address (e.g., john.doe@example.com)"
             placeholderTextColor={theme.textTertiary}
             value={email}
-            onChangeText={(val) => { setEmail(val); if (errors.email) setErrors({ ...errors, email: undefined }); }}
+            onChangeText={(val) => {
+              setEmail(val);
+              if (errors.email) setErrors({ ...errors, email: undefined });
+              // The company field is a free choice, not tied to the email
+              // domain (client's call) — editing the email here deliberately
+              // does not touch whatever was already picked below.
+            }}
             onFocus={() => setFocusedField('signupEmail')}
             onBlur={() => setFocusedField(null)}
             keyboardType="email-address"
@@ -335,61 +326,13 @@ export default function LoginScreen() {
           />
         </View>
         {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
-        {/* Companies are matched by work-email domain — no manual "which
-            company" entry. Individuals (gmail.com etc.) just sign up normally. */}
-        {signupType === 'company' && matchedCompany && (
-          <View style={styles.companyDetectedRow}>
-            <Ionicons name="business" size={14} color={theme.success} />
-            <Text style={styles.companyDetectedText}>
-              Joining as <Text style={styles.companyDetectedName}>{matchedCompany.name}</Text>
-            </Text>
-          </View>
-        )}
-        {signupType === 'company' && !matchedCompany && email.trim().length > 0 && (
-          <Text style={styles.helpText}>
-            We couldn't match this email to a registered company — double-check the address, or contact your admin if this seems wrong.
-          </Text>
-        )}
       </View>
 
-      {/* Company staff whose employer has two registered sites pick which
-          one they deliver to — anyone whose company only has one location
-          skips this entirely. */}
-      {signupType === 'company' && matchedCompany?.address2 && (
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>YOUR LOCATION</Text>
-          <TouchableOpacity
-            style={[styles.locationOption, companyLocation === 1 && styles.locationOptionActive]}
-            onPress={() => setCompanyLocation(1)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: companyLocation === 1 }}
-          >
-            <Ionicons name={companyLocation === 1 ? 'radio-button-on' : 'radio-button-off'} size={18} color={companyLocation === 1 ? theme.accent : theme.textTertiary} />
-            <Text style={styles.locationOptionText} numberOfLines={1}>
-              {matchedCompany.address?.unit ? `${matchedCompany.address.unit}, ` : ''}{matchedCompany.address?.street}, {matchedCompany.address?.suburb}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.locationOption, companyLocation === 2 && styles.locationOptionActive]}
-            onPress={() => setCompanyLocation(2)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: companyLocation === 2 }}
-          >
-            <Ionicons name={companyLocation === 2 ? 'radio-button-on' : 'radio-button-off'} size={18} color={companyLocation === 2 ? theme.accent : theme.textTertiary} />
-            <Text style={styles.locationOptionText} numberOfLines={1}>
-              {matchedCompany.address2.unit ? `${matchedCompany.address2.unit}, ` : ''}{matchedCompany.address2.street}, {matchedCompany.address2.suburb}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>PASSWORD</Text>
         <View style={[styles.inputWrapper, focusedField === 'signupPassword' && styles.inputWrapperFocused, errors.password ? styles.inputWrapperError : null]}>
-          <Ionicons name="lock-closed-outline" size={16} color={focusedField === 'signupPassword' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
-            placeholder="Create a password"
+            placeholder="Password (min. 8 characters)"
             placeholderTextColor={theme.textTertiary}
             value={password}
             onChangeText={(val) => { setPassword(val); if (errors.password) setErrors({ ...errors, password: undefined }); }}
@@ -414,12 +357,10 @@ export default function LoginScreen() {
       </View>
 
       <View style={styles.inputGroup}>
-        <Text style={styles.label}>CONFIRM PASSWORD</Text>
         <View style={[styles.inputWrapper, focusedField === 'confirmPassword' && styles.inputWrapperFocused, errors.confirmPassword ? styles.inputWrapperError : null]}>
-          <Ionicons name="lock-closed-outline" size={16} color={focusedField === 'confirmPassword' ? theme.text : theme.textSecondary} style={{ marginRight: 10 }} />
           <TextInput
             style={styles.input}
-            placeholder="Confirm your password"
+            placeholder="Confirm Password (match your password)"
             placeholderTextColor={theme.textTertiary}
             value={confirmPassword}
             onChangeText={(val) => { setConfirmPassword(val); if (errors.confirmPassword) setErrors({ ...errors, confirmPassword: undefined }); }}
@@ -436,6 +377,49 @@ export default function LoginScreen() {
         </View>
         {errors.confirmPassword && <Text style={styles.fieldError}>{errors.confirmPassword}</Text>}
       </View>
+
+      {/* Open dropdown over every registered company (client's explicit
+          call) — not narrowed to the email's domain. Pre-filled from the
+          domain match as a convenience default until the user opens this and
+          picks something themselves, including "No company" outright. */}
+      <View style={styles.inputGroup}>
+        <TouchableOpacity
+          style={[styles.inputWrapper, styles.selectWrapper]}
+          onPress={() => { haptics.selection(); setShowCompanyPicker(true); }}
+          accessibilityRole="button"
+          accessibilityLabel={selectedCompany ? `Company: ${selectedCompany.name}. Change` : 'Select your company'}
+        >
+          <Text style={[styles.selectValue, !selectedCompany && selectedCompanyId !== NO_COMPANY && styles.selectPlaceholder]} numberOfLines={1}>
+            {selectedCompany
+              ? selectedCompany.name
+              : selectedCompanyId === NO_COMPANY
+                ? 'No Company (Individual)'
+                : 'Select your company'}
+          </Text>
+          <Ionicons name="chevron-down" size={16} color={theme.textTertiary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Company staff whose employer has two registered sites pick which
+          one they deliver to — anyone whose company only has one location
+          skips this entirely. */}
+      {selectedCompany?.address2 && (
+        <View style={styles.inputGroup}>
+          <TouchableOpacity
+            style={[styles.inputWrapper, styles.selectWrapper]}
+            onPress={() => { haptics.selection(); setShowLocationPicker(true); }}
+            accessibilityRole="button"
+            accessibilityLabel="Select your delivery location"
+          >
+            <Text style={styles.selectValue} numberOfLines={1}>
+              {companyLocation === 1
+                ? `${selectedCompany.address?.unit ? selectedCompany.address.unit + ', ' : ''}${selectedCompany.address?.street}, ${selectedCompany.address?.suburb}`
+                : `${selectedCompany.address2.unit ? selectedCompany.address2.unit + ', ' : ''}${selectedCompany.address2.street}, ${selectedCompany.address2.suburb}`}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color={theme.textTertiary} />
+          </TouchableOpacity>
+        </View>
+      )}
     </>
   );
 
@@ -546,40 +530,20 @@ export default function LoginScreen() {
               <KitchenLogo compact variant={isDark ? 'onDark' : 'onLight'} />
             </View>
 
-            {/* Mode Selector */}
-            <View style={[styles.modeSelector, { marginBottom: sectionMarginBottom }]}>
-              <TouchableOpacity
-                style={[styles.modeBtn, mode === 'signin' && styles.modeBtnActive]}
-                onPress={() => handleModeChange('signin')}
-                accessibilityRole="button"
-                accessibilityState={{ selected: mode === 'signin' }}
-              >
-                <Text style={[styles.modeBtnText, mode === 'signin' && styles.modeBtnTextActive]}>
-                  Sign In
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modeBtn, mode === 'signup' && styles.modeBtnActive]}
-                onPress={() => handleModeChange('signup')}
-                accessibilityRole="button"
-                accessibilityState={{ selected: mode === 'signup' }}
-              >
-                <Text style={[styles.modeBtnText, mode === 'signup' && styles.modeBtnTextActive]}>
-                  Sign Up
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Form */}
+            {/* Form. No Sign In/Sign Up tab selector above the form — the
+                client's Sep 2026 reference (Nhlanhla's login mockup) drives
+                mode entirely from the heading + the link at the bottom of
+                the form instead, so this now matches that. */}
             <View style={[styles.formSection, { marginBottom: sectionMarginBottom }]}>
-              <Text style={styles.heading}>
-                {mode === 'signin' && 'Welcome back!'}
-                {mode === 'signup' && 'Create your account'}
-                {mode === 'forgot' && (forgotSubmitted ? 'Check your email' : 'Reset your password')}
-              </Text>
-              <Text style={styles.subtext}>
-                {mode === 'signin' && 'Sign in to continue ordering delicious meals'}
-                {mode === 'signup' && 'Join Kitchen Co. for the best culinary experience'}
+              {mode !== 'signin' && (
+                <Text style={styles.heading}>
+                  {mode === 'signup' && 'Create Account'}
+                  {mode === 'forgot' && (forgotSubmitted ? 'Check your email' : 'Reset your password')}
+                </Text>
+              )}
+              <Text style={[styles.subtext, mode === 'signin' && styles.subtextStandalone]}>
+                {mode === 'signin' && 'Sign in to continue'}
+                {mode === 'signup' && 'Join Kitchen Co. today'}
                 {mode === 'forgot' && (forgotSubmitted
                   ? `If an account exists for ${email.trim()}, we've sent a link to reset your password.`
                   : 'Enter your email to receive reset instructions')}
@@ -607,17 +571,23 @@ export default function LoginScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={
                       mode === 'signin' ? (isAdminEmail ? 'Sign in as Admin' : 'Sign In')
-                        : mode === 'signup' ? 'Create Account'
+                        : mode === 'signup' ? 'Get Started'
                         : 'Send Reset Link'
                     }
                     accessibilityState={{ disabled: isButtonDisabled() }}
                   >
+                    {mode === 'signin' && (
+                      <Ionicons name="lock-closed" size={16} color={theme.onAccent} style={styles.continueBtnLeadIcon} />
+                    )}
+                    {mode === 'signup' && (
+                      <Ionicons name="rocket" size={16} color={theme.onAccent} style={styles.continueBtnLeadIcon} />
+                    )}
                     <Text style={[styles.continueBtnText, isButtonDisabled() && styles.continueBtnTextDisabled]}>
-                      {mode === 'signin' && (isAdminEmail ? 'Sign in as Admin' : 'Sign In')}
-                      {mode === 'signup' && 'Create Account'}
+                      {mode === 'signin' && (isAdminEmail ? 'SIGN IN AS ADMIN' : 'SECURE LOGIN')}
+                      {mode === 'signup' && 'GET STARTED'}
                       {mode === 'forgot' && 'Send Reset Link'}
                     </Text>
-                    {!isButtonDisabled() && (
+                    {mode === 'forgot' && !isButtonDisabled() && (
                       <Ionicons name="arrow-forward" size={18} color={theme.onAccent} style={styles.continueBtnIcon} />
                     )}
                   </TouchableOpacity>
@@ -678,6 +648,116 @@ export default function LoginScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
+      {/* Company picker — every registered company, open choice (client's
+          explicit call), plus an explicit "No company" for individuals. */}
+      <Modal visible={showCompanyPicker} animationType="slide" transparent onRequestClose={() => setShowCompanyPicker(false)}>
+        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowCompanyPicker(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.pickerSheet} onPress={() => {}}>
+            <View style={styles.pickerHandle} />
+            <Text style={styles.pickerTitle}>Select your company</Text>
+            <ScrollView style={styles.pickerList} bounces={false}>
+              <TouchableOpacity
+                style={styles.pickerRow}
+                onPress={() => { haptics.selection(); setSelectedCompanyId(NO_COMPANY); setShowCompanyPicker(false); }}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityState={{ selected: !selectedCompany && selectedCompanyId === NO_COMPANY }}
+              >
+                <View style={styles.pickerRowIconWrap}>
+                  <Ionicons name="person-outline" size={16} color={theme.textSecondary} />
+                </View>
+                <Text style={styles.pickerRowText}>No Company (Individual)</Text>
+                {!selectedCompany && selectedCompanyId === NO_COMPANY && (
+                  <View style={styles.pickerCheckBadge}>
+                    <Ionicons name="checkmark" size={13} color={theme.onAccent} />
+                  </View>
+                )}
+              </TouchableOpacity>
+              {companies.map(co => (
+                <TouchableOpacity
+                  key={co.id}
+                  style={styles.pickerRow}
+                  onPress={() => { haptics.selection(); setSelectedCompanyId(co.id); setCompanyLocation(1); setShowCompanyPicker(false); }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: selectedCompany?.id === co.id }}
+                >
+                  <View style={styles.pickerRowIconWrap}>
+                    <Ionicons name="business" size={16} color={theme.textSecondary} />
+                  </View>
+                  <Text style={styles.pickerRowText} numberOfLines={1}>{co.name}</Text>
+                  {selectedCompany?.id === co.id && (
+                    <View style={styles.pickerCheckBadge}>
+                      <Ionicons name="checkmark" size={13} color={theme.onAccent} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.pickerCancelBtn} onPress={() => setShowCompanyPicker(false)} accessibilityRole="button">
+              <Text style={styles.pickerCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Delivery-site picker — only reachable when the selected company has
+          a second registered address (see selectedCompany?.address2 above). */}
+      <Modal visible={showLocationPicker} animationType="slide" transparent onRequestClose={() => setShowLocationPicker(false)}>
+        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowLocationPicker(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.pickerSheet} onPress={() => {}}>
+            <View style={styles.pickerHandle} />
+            <Text style={styles.pickerTitle}>Select your delivery location</Text>
+            <View style={styles.pickerList}>
+              {selectedCompany?.address && (
+                <TouchableOpacity
+                  style={styles.pickerRow}
+                  onPress={() => { haptics.selection(); setCompanyLocation(1); setShowLocationPicker(false); }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: companyLocation === 1 }}
+                >
+                  <View style={styles.pickerRowIconWrap}>
+                    <Ionicons name="location" size={16} color={theme.textSecondary} />
+                  </View>
+                  <Text style={styles.pickerRowText} numberOfLines={1}>
+                    {selectedCompany.address.unit ? `${selectedCompany.address.unit}, ` : ''}{selectedCompany.address.street}, {selectedCompany.address.suburb}
+                  </Text>
+                  {companyLocation === 1 && (
+                    <View style={styles.pickerCheckBadge}>
+                      <Ionicons name="checkmark" size={13} color={theme.onAccent} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+              {selectedCompany?.address2 && (
+                <TouchableOpacity
+                  style={styles.pickerRow}
+                  onPress={() => { haptics.selection(); setCompanyLocation(2); setShowLocationPicker(false); }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: companyLocation === 2 }}
+                >
+                  <View style={styles.pickerRowIconWrap}>
+                    <Ionicons name="location" size={16} color={theme.textSecondary} />
+                  </View>
+                  <Text style={styles.pickerRowText} numberOfLines={1}>
+                    {selectedCompany.address2.unit ? `${selectedCompany.address2.unit}, ` : ''}{selectedCompany.address2.street}, {selectedCompany.address2.suburb}
+                  </Text>
+                  {companyLocation === 2 && (
+                    <View style={styles.pickerCheckBadge}>
+                      <Ionicons name="checkmark" size={13} color={theme.onAccent} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+            </View>
+            <TouchableOpacity style={styles.pickerCancelBtn} onPress={() => setShowLocationPicker(false)} accessibilityRole="button">
+              <Text style={styles.pickerCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -710,34 +790,14 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     backgroundColor: '#00000008',
   },
 
-  // Mode Selector
-  modeSelector: {
-    flexDirection: 'row',
-    backgroundColor: theme.surfaceSecondary,
-    borderRadius: 14,
-    padding: 3,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  modeBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 11,
-    alignItems: 'center',
-  },
-    modeBtnActive: { backgroundColor: theme.accent },
-  modeBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: theme.textSecondary,
-  },
-    modeBtnTextActive: { color: theme.onAccent },
-
   // Form
   formSection: { marginBottom: 14 },
   heading: { fontSize: 19, fontWeight: '800', color: theme.text, marginBottom: 3 },
   subtext: { fontSize: 13, color: theme.textSecondary, marginBottom: 12 },
+  // Sign-in has no bold heading above it (client reference, Sep 2026) — this
+  // line stands alone as the screen's only caption, so it reads centered
+  // rather than as a left-aligned subtitle under a heading that isn't there.
+  subtextStandalone: { textAlign: 'center', marginBottom: 54 },
 
   inputGroup: { marginBottom: 10 },
   label: { fontSize: 11, fontWeight: '700', color: theme.textSecondary, marginBottom: 5, letterSpacing: 0.5 },
@@ -765,46 +825,63 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   fieldError: { color: theme.error, fontSize: 12, fontWeight: '600', marginTop: 5, marginLeft: 4 },
   helpText: { color: theme.textSecondary, fontSize: 12, marginTop: 6, marginLeft: 4 },
 
-  // Auto-detected company banner (signup, work-email domain match)
-  companyDetectedRow: {
+  // "Select your company" / "Select your delivery location" — styled like
+  // the other inputWrapper fields plus a chevron, opening pickerSheet below.
+  selectWrapper: { justifyContent: 'space-between' },
+  selectValue: { flex: 1, fontSize: 15, color: theme.text },
+  selectPlaceholder: { color: theme.textTertiary },
+  pickerOverlay: { flex: 1, backgroundColor: theme.modalOverlay, justifyContent: 'flex-end' },
+  pickerSheet: {
+    backgroundColor: theme.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: 10,
+    paddingBottom: 8,
+    maxHeight: '60%',
+  },
+  // Small drag-handle bar, purely decorative — signals "this sheet can be
+  // dismissed" without adding a close button next to the title.
+  pickerHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.border,
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  pickerTitle: { fontSize: 13, fontWeight: '700', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4, paddingHorizontal: 4 },
+  // Capped so a long company list scrolls inside the sheet instead of the
+  // sheet itself growing past a comfortable height.
+  pickerList: { flexGrow: 0 },
+  pickerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    marginLeft: 4,
-    gap: 6,
+    paddingVertical: 11,
+    paddingHorizontal: 4,
+    gap: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.border,
   },
-  companyDetectedText: { color: theme.textSecondary, fontSize: 12, fontWeight: '600' },
-  companyDetectedName: { color: theme.success, fontWeight: '800' },
-
-  // Individual vs Company signup toggle
-  signupTypeSelector: {
-    flexDirection: 'row',
+  pickerRowIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: theme.surfaceSecondary,
-    borderRadius: 12,
-    padding: 3,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  signupTypeBtn: { flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center' },
-  signupTypeBtnActive: { backgroundColor: theme.accent },
-  signupTypeBtnText: { fontSize: 13, fontWeight: '700', color: theme.textSecondary },
-  signupTypeBtnTextActive: { color: theme.onAccent },
-
-  // Company signup: two-location picker
-  locationOption: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: theme.inputBg,
-    borderWidth: 1.5,
-    borderColor: theme.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 46,
-    marginBottom: 8,
+    justifyContent: 'center',
   },
-  locationOptionActive: { borderColor: theme.accent },
-  locationOptionText: { flex: 1, fontSize: 13, color: theme.text, fontWeight: '600' },
+  pickerRowText: { flex: 1, fontSize: 14, color: theme.text, fontWeight: '600' },
+  pickerCheckBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: theme.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerCancelBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 4 },
+  pickerCancelText: { fontSize: 14, fontWeight: '700', color: theme.textSecondary },
 
   // Admin hint
   adminHint: {
@@ -859,12 +936,15 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     alignSelf: 'center',
   },
 
-  // Buttons
+  // Buttons. Pill-shaped (client reference, Sep 2026) — kept in the app's
+  // existing black/white accent rather than the blue in that reference,
+  // which was the brand-blue trialled and superseded earlier (see
+  // utils/theme.ts) by the client's own "keep it black and white" call.
   continueBtn: {
     flexDirection: 'row',
     backgroundColor: theme.accent,
-    paddingVertical: 13,
-    borderRadius: 12,
+    paddingVertical: 15,
+    borderRadius: 27,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
@@ -875,9 +955,10 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     elevation: 5,
   },
   continueBtnDisabled: { backgroundColor: theme.border, shadowOpacity: 0 },
-  continueBtnText: { color: theme.onAccent, fontSize: 15, fontWeight: '800' },
+  continueBtnText: { color: theme.onAccent, fontSize: 15, fontWeight: '800', letterSpacing: 0.4 },
   continueBtnTextDisabled: { color: theme.textTertiary },
   continueBtnIcon: { marginLeft: 8 },
+  continueBtnLeadIcon: { marginRight: 8 },
   devBypassBtn: {
     marginTop: 10,
     paddingVertical: 10,

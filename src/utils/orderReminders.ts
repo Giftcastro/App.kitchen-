@@ -118,3 +118,42 @@ export async function cancelOrderReminder(): Promise<void> {
   if (Platform.OS === 'web') return;
   await Notifications.cancelScheduledNotificationAsync(ORDER_REMINDER_ID).catch(() => {});
 }
+
+/**
+ * Raises an immediate notification for a kitchen announcement (client review,
+ * Sep 2026).
+ *
+ * This is a LOCAL notification on the device that sent it, not push to
+ * customers — there is no backend here to deliver to other devices (same
+ * limitation noted at the top of this file). The announcement's real delivery
+ * is the in-app banner driven by `visibleAnnouncements` in the Kitchen
+ * context; this raises it in the tray as well so the feature can be seen
+ * working end to end on a device.
+ *
+ * Deliberately fire-and-forget: a refused permission or a web build must never
+ * stop the announcement itself from being recorded and shown in-app.
+ */
+export async function showAnnouncementNotification(title: string, body: string): Promise<void> {
+  if (Platform.OS === 'web') return;
+
+  try {
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('announcements', {
+        name: 'Kitchen announcements',
+        importance: Notifications.AndroidImportance.HIGH,
+      }).catch(() => {});
+    }
+
+    const granted = await ensurePermission();
+    if (!granted) return;
+
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body },
+      // null trigger = deliver now, rather than scheduling for a future date
+      // the way the order reminder above does.
+      trigger: null,
+    });
+  } catch {
+    // Ignored on purpose — see the doc comment.
+  }
+}

@@ -15,8 +15,9 @@ export default function TabsLayout() {
   // partially behind that system UI on devices with gesture navigation.
   const insets = useSafeAreaInsets();
   // Admins manage the kitchen, they don't place personal orders — so the
-  // customer ordering surface (Menu/cart, past-order History, order Tracker)
-  // isn't part of their account. Only Admin + Profile apply to them.
+  // customer ordering surface (Menu/cart, Orders — active tracking + past
+  // history combined) isn't part of their account. Only Admin + Profile
+  // apply to them.
   const isAdmin = user?.role === 'admin';
 
   const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -124,31 +125,20 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen
-          name="tracker"
+          name="activity"
           options={{
             title: 'Orders',
-            headerTitle: 'Order Status',
+            headerTitle: 'My Orders',
             href: user && !isAdmin ? undefined : null,
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="receipt" size={size} color={color} />
             ),
           }}
         />
-        <Tabs.Screen
-          name="activity"
-          options={{
-            title: 'History',
-            headerTitle: 'Order History',
-            href: user && !isAdmin ? undefined : null,
-            tabBarIcon: ({ color, size }) => (
-              <Ionicons name="time" size={size} color={color} />
-            ),
-          }}
-        />
         {/* Admin sits before Profile so an admin's two-tab bar reads
             Admin | Profile — the kitchen controls they actually work in come
             first. Customers are unaffected: `admin` is href:null for them, so
-            their bar stays Menu | Orders | History | Profile. */}
+            their bar stays Menu | Orders | Profile. */}
         <Tabs.Screen
           name="admin"
           options={{

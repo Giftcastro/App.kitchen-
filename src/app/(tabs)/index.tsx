@@ -2,14 +2,14 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { StyleSheet, View, FlatList, TouchableOpacity, StatusBar, Modal, ScrollView, useWindowDimensions, Animated, RefreshControl, Image } from 'react-native';
 import { Text, TextInput } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useKitchen } from '../../context/KitchenCoContext';
 import { DeliveryEstimator } from '../../components/DeliveryEstimator';
 import { CutoffCountdown } from '../../components/CutoffCountdown';
 import { QuickAddButton } from '../../components/QuickAddButton';
 import { Skeleton } from '../../components/Skeleton';
-import { getUpcomingOrderableWeekdays, UpcomingWeekday, ORDER_CUTOFF_LABEL } from '../../utils/deliveryHelpers';
+import { getUpcomingOrderableWeekdays, UpcomingWeekday, getCycleWeekForDate } from '../../utils/deliveryHelpers';
 import { useResponsive } from '../../utils/responsive';
 import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { APP_MAX_WIDTH, ThemeColors } from '../../utils/theme';
@@ -42,59 +42,48 @@ function chunkRows<T>(items: T[], size: number): T[][] {
 }
 const ROW_GAP = 28; // vertical spacing between grid rows
 
-const MEAL_TYPE_COLORS: Record<string, string> = {
-  'MAIN MEAL': '#FF7F50', 'VEGETARIAN MEAL': '#22C55E',
-  'HEALTHY MEAL': '#06C167', 'CURRY OF THE DAY': '#FF9500', 'GOURMET SANDWICH': '#5AC8FA',
-};
-
-// A signature colour per Main Menu category — tints each card's image
-// placeholder so the grid reads as varied and photo-like even without real
-// food photography, the same trick already used for the Today's Menu cards.
-const STATIC_CATEGORY_COLORS: Record<string, string> = {
-  'CIAO ITALY': '#FF7F50',
-  'STIR FRY': '#FF9500',
-  'POKE BOWL': '#06C167',
-  'WRAPS': '#F4B400',
-  'HOT DOGS': '#E63946',
-  'BURGER BAR': '#D97706',
-  'SALAD BAR': '#22C55E',
-  'SANDWICHES': '#5AC8FA',
-  'FITNESS MEALS': '#00C2A8',
-  'VEGAN MEALS': '#65A30D',
-  'SOUPS': '#C2410C',
-  'RAMEN BOWLS': '#DC2626',
-  'PORK SPECIALITIES': '#B45309',
-  "CHEF'S MEAL OF THE DAY": '#A855F7',
-};
+// A per-category and per-meal-type colour used to live here, painting a 4px
+// strip across the top of every menu card. Both were dropped in the Sep 2026
+// client review — "keep the overall feel black and white" — and neither was
+// carrying information: the strip was decoration to stop the grid looking
+// samey back when cards had no imagery, and every category now has a real
+// photograph (STATIC_CATEGORY_IMAGES below) doing that job far better.
 
 // One real, freely-licensed (Pexels License — free for commercial use) photo
 // per Main Menu category, replacing the old per-item emoji placeholder. The
 // client asked for genuine photography here, not per-dish photos — every
 // item in a category shares that category's single image.
+//
+// `w=1000&h=350&fit=crop` asks Pexels to crop server-side to the banner's own
+// ~2.86:1 aspect ratio (categoryBanner below: full width × 140 tall) — client
+// review flagged the photos looking poorly cropped/zoomed, which is what
+// resizeMode="cover" does when handed a source image whose own aspect ratio
+// is nothing like the banner's; requesting it pre-cropped to roughly the
+// right shape means cover barely has to crop further.
 const STATIC_CATEGORY_IMAGES: Record<string, string> = {
-  'CIAO ITALY': 'https://images.pexels.com/photos/5531093/pexels-photo-5531093.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'STIR FRY': 'https://images.pexels.com/photos/33145258/pexels-photo-33145258.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'POKE BOWL': 'https://images.pexels.com/photos/4770328/pexels-photo-4770328.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'WRAPS': 'https://images.pexels.com/photos/15076695/pexels-photo-15076695.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'HOT DOGS': 'https://images.pexels.com/photos/29476591/pexels-photo-29476591.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'BURGER BAR': 'https://images.pexels.com/photos/36007382/pexels-photo-36007382.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'SALAD BAR': 'https://images.pexels.com/photos/842545/pexels-photo-842545.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'SANDWICHES': 'https://images.pexels.com/photos/11256670/pexels-photo-11256670.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'FITNESS MEALS': 'https://images.pexels.com/photos/30635717/pexels-photo-30635717.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'VEGAN MEALS': 'https://images.pexels.com/photos/19647374/pexels-photo-19647374.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'SOUPS': 'https://images.pexels.com/photos/8738017/pexels-photo-8738017.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'RAMEN BOWLS': 'https://images.pexels.com/photos/31393431/pexels-photo-31393431.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'PORK SPECIALITIES': 'https://images.pexels.com/photos/15876423/pexels-photo-15876423.jpeg?auto=compress&cs=tinysrgb&w=400',
-  "CHEF'S MEAL OF THE DAY": 'https://images.pexels.com/photos/7243881/pexels-photo-7243881.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'CIAO ITALY': 'https://images.pexels.com/photos/5531093/pexels-photo-5531093.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'STIR FRY': 'https://images.pexels.com/photos/33145258/pexels-photo-33145258.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'POKE BOWL': 'https://images.pexels.com/photos/4770328/pexels-photo-4770328.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'WRAPS': 'https://images.pexels.com/photos/15076695/pexels-photo-15076695.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'HOT DOGS': 'https://images.pexels.com/photos/29476591/pexels-photo-29476591.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'BURGER BAR': 'https://images.pexels.com/photos/36007382/pexels-photo-36007382.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'SALAD BAR': 'https://images.pexels.com/photos/842545/pexels-photo-842545.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'SANDWICHES': 'https://images.pexels.com/photos/11256670/pexels-photo-11256670.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'FITNESS MEALS': 'https://images.pexels.com/photos/30635717/pexels-photo-30635717.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'VEGAN MEALS': 'https://images.pexels.com/photos/19647374/pexels-photo-19647374.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'SOUPS': 'https://images.pexels.com/photos/8738017/pexels-photo-8738017.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'RAMEN BOWLS': 'https://images.pexels.com/photos/31393431/pexels-photo-31393431.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'PORK SPECIALITIES': 'https://images.pexels.com/photos/15876423/pexels-photo-15876423.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  "CHEF'S MEAL OF THE DAY": 'https://images.pexels.com/photos/7243881/pexels-photo-7243881.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
 };
 
 // Same idea for the Today's Menu (cycle) meal types.
 const CYCLE_MEAL_TYPE_IMAGES: Record<string, string> = {
-  'MAIN MEAL': 'https://images.pexels.com/photos/38330332/pexels-photo-38330332.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'VEGETARIAN MEAL': 'https://images.pexels.com/photos/17486827/pexels-photo-17486827.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'HEALTHY MEAL': 'https://images.pexels.com/photos/25315523/pexels-photo-25315523.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'CURRY OF THE DAY': 'https://images.pexels.com/photos/33643313/pexels-photo-33643313.jpeg?auto=compress&cs=tinysrgb&w=400',
-  'GOURMET SANDWICH': 'https://images.pexels.com/photos/19202827/pexels-photo-19202827.jpeg?auto=compress&cs=tinysrgb&w=400',
+  'MAIN MEAL': 'https://images.pexels.com/photos/38330332/pexels-photo-38330332.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'VEGETARIAN MEAL': 'https://images.pexels.com/photos/17486827/pexels-photo-17486827.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'HEALTHY MEAL': 'https://images.pexels.com/photos/25315523/pexels-photo-25315523.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'CURRY OF THE DAY': 'https://images.pexels.com/photos/33643313/pexels-photo-33643313.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
+  'GOURMET SANDWICH': 'https://images.pexels.com/photos/19202827/pexels-photo-19202827.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
 };
 
 const FALLBACK_CATEGORY_IMAGE = STATIC_CATEGORY_IMAGES["CHEF'S MEAL OF THE DAY"];
@@ -111,12 +100,21 @@ function formatCategoryLabel(name: string): string {
 }
 
 export default function MenuScreen() {
-  const { addToCart, cart, activeWeek, theme, discounts, menus, user, triggerCartFly } = useKitchen();
+  const { addToCart, cart, cycleWeekOffset, theme, discounts, menus, user, triggerCartFly, orderingForDate, visibleAnnouncements, dismissAnnouncement } = useKitchen();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { isLoading, refreshing, refresh } = useSimulatedLoad();
   const addToCartBtnRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
   const router = useRouter();
-  const [menuView, setMenuView] = useState<'main' | 'today'>('main');
+  // Which toggle (Standard Classics / Today's Menu) was showing before a
+  // trip to /select-date to change the delivery day — carried as `?view=`
+  // on the way back (see the two router.push('/select-date...') calls
+  // below) so confirming a new date returns here instead of always
+  // resetting to Standard Classics.
+  const { view: viewParam } = useLocalSearchParams<{ view?: string }>();
+  const [menuView, setMenuView] = useState<'main' | 'today'>(viewParam === 'today' ? 'today' : 'main');
+  useEffect(() => {
+    if (viewParam === 'today' || viewParam === 'main') setMenuView(viewParam);
+  }, [viewParam]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedItem, setSelectedItem] = useState<any>(null);
@@ -137,6 +135,11 @@ export default function MenuScreen() {
   // currently open in the customize modal — an Uber-Eats-style modifier tied
   // to this specific order, not a standalone browsable menu item.
   const [selectedAddOns, setSelectedAddOns] = useState<Set<string>>(new Set());
+  // Set the moment something lands in the basket, to drive the "Added to
+  // Basket" confirmation sheet (client review, Sep 2026). Holds the ISO dates
+  // the add was actually applied to — labels are derived at render time so
+  // they can't go stale against the orderable window.
+  const [addedToBasket, setAddedToBasket] = useState<{ itemName: string; isos: string[] } | null>(null);
   const upcomingWeekdays = useMemo(() => getUpcomingOrderableWeekdays(), []);
 
   // Today's Menu (cycle items) can now be pre-ordered up to a week ahead —
@@ -149,50 +152,51 @@ export default function MenuScreen() {
     () => upcomingWeekdays.filter(w => w.weekLabel !== 'In 2 weeks'),
     [upcomingWeekdays]
   );
-  // Multiple days can be picked at once — each checked day gets its own
-  // "day header + meal grid" section stacked on the page (see
-  // renderCycleMenu), so a customer can browse and add meals for e.g.
-  // Monday and Friday without losing sight of either. Seeded with the
-  // earliest orderable day so the page isn't blank on first load — this has
-  // to be a real, recorded selection (not just a display fallback used only
-  // when the array is empty), otherwise checking a second day would make the
-  // first day's section vanish the moment the array stops being empty.
-  const [selectedCycleDates, setSelectedCycleDates] = useState<string[]>(
-    () => (cycleOrderableDays[0] ? [cycleOrderableDays[0].iso] : [])
-  );
-  const toggleCycleDate = (iso: string) => {
-    setSelectedCycleDates(prev => {
-      if (prev.includes(iso)) {
-        // Keep at least one day selected — an empty picker would otherwise
-        // read as "no dates available" (a different, genuine empty state).
-        if (prev.length === 1) return prev;
-        return prev.filter(d => d !== iso);
-      }
-      return [...prev, iso];
-    });
-  };
-  const activeCycleDays = useMemo(
-    () => cycleOrderableDays.filter(w => selectedCycleDates.includes(w.iso)),
-    [selectedCycleDates, cycleOrderableDays]
+  // The one day this customer is ordering for. Today's Menu used to carry its
+  // own multi-select date row at the top of the page; the Sep 2026 client
+  // review took that off the menu entirely in favour of a single choice made
+  // up front on /select-date, so this now just resolves the global
+  // `orderingForDate` against the days actually still orderable.
+  //
+  // The fallback to the earliest orderable day covers admins only — they reach
+  // this screen through "Preview App" and are deliberately not sent through
+  // the picker, so without it their preview would render an empty menu.
+  const orderingDay = useMemo(
+    () => cycleOrderableDays.find(d => d.iso === orderingForDate) ?? cycleOrderableDays[0] ?? null,
+    [cycleOrderableDays, orderingForDate]
   );
 
+  // Copy for the Added to Basket sheet. Derived from the ISO dates the add was
+  // applied to rather than stored as text, so the labels can't drift out of
+  // step with the orderable window while the sheet is open.
+  const addedDayName = useMemo(() => {
+    if (!addedToBasket || addedToBasket.isos.length !== 1) return null;
+    return upcomingWeekdays.find(w => w.iso === addedToBasket.isos[0])?.dayName ?? null;
+  }, [addedToBasket, upcomingWeekdays]);
+
+  const addedToBasketMessage = useMemo(() => {
+    if (!addedToBasket) return '';
+    const { itemName, isos } = addedToBasket;
+    if (isos.length > 1) return `${itemName} has been added for ${isos.length} delivery days.`;
+    const label = isos.length === 1 ? upcomingWeekdays.find(w => w.iso === isos[0])?.label : undefined;
+    return label
+      ? `${itemName} has been added for ${label}.`
+      : `${itemName} has been added to your basket.`;
+  }, [addedToBasket, upcomingWeekdays]);
+
   // Which rotation week (Week 1-8 in cycleMenu.json) a given upcoming weekday
-  // pulls its meals from. The admin only ever sets "which week is live right
-  // now" (see admin.tsx WeeksSection) with no calendar anchoring, so a future
-  // date is projected forward from that as "N rotation-weeks after the
-  // currently active one" — This week = the active week itself, Next week =
-  // the week after, In 2 weeks = two after, wrapping through the 8 stored
-  // weeks. This is an assumption, not a guarantee: it's only accurate if the
-  // admin keeps advancing the active week on schedule.
-  const CYCLE_WEEK_OFFSET: Record<UpcomingWeekday['weekLabel'], number> = {
-    'This week': 0,
-    'Next week': 1,
-    'In 2 weeks': 2,
-  };
-  const getCycleWeekKeyForDate = (day: UpcomingWeekday): string => {
-    const rotationWeek = ((activeWeek - 1 + CYCLE_WEEK_OFFSET[day.weekLabel]) % 8) + 1;
-    return `Week ${rotationWeek}`;
-  };
+  // pulls its meals from, resolved from that date's own position in the
+  // calendar-anchored rotation (see getCycleWeekForDate).
+  //
+  // This used to project forward from whichever week an admin had last picked
+  // by hand — "This week" = that week, "Next week" = the one after — which was
+  // only ever correct while somebody remembered to advance it on schedule. The
+  // client asked for the cycle to rotate on its own, so a date three weeks out
+  // now resolves to the week it will genuinely be cooked from, with no admin
+  // action involved. A manual override still applies, as a shift of the whole
+  // rotation rather than a pin on one week.
+  const getCycleWeekKeyForDate = (day: UpcomingWeekday): string =>
+    `Week ${getCycleWeekForDate(new Date(`${day.iso}T00:00:00`), cycleWeekOffset)}`;
 
   // Card sizing follows the responsive app frame. Phones keep the compact
   // 2-column grid; tablets widen the frame and move to 3 columns so cards
@@ -211,11 +215,6 @@ export default function MenuScreen() {
     return item ? item.quantity : 0;
   };
 
-  const categoryIcons = useMemo(() => {
-    if (!staticMenuData || typeof staticMenuData !== 'object') return {};
-    return (staticMenuData as any)._icons || {};
-  }, []);
-
   // Looks up the one real photo standing in for a category (static menu
   // categories and cycle meal types share the same lookup) — see
   // STATIC_CATEGORY_IMAGES / CYCLE_MEAL_TYPE_IMAGES above.
@@ -227,7 +226,11 @@ export default function MenuScreen() {
   // shape the rest of this screen (search, filters, grid) already expects.
   const flattenedStaticMenu = useMemo((): UIReadyItem[] => {
     return menus.flatMap(cat =>
-      cat.items.map(item => ({
+      // Dishes an admin has switched off in Menu Management never reach the
+      // customer menu. Filtered here rather than at the point of display so the
+      // category strip drops a category too once its last dish is switched off,
+      // instead of offering a filter that leads to an empty grid.
+      cat.items.filter(item => item.active).map(item => ({
         id: item.id,
         name: item.name,
         description: item.description,
@@ -269,8 +272,12 @@ export default function MenuScreen() {
     setIsCycleItem(false);
     setModalQuantity(1);
     setSelectedSizeIndex(0);
-    setSelectedDeliveryDates([]);
-    setDateQuantities({});
+    // Pre-select the day chosen up front on /select-date rather than opening
+    // empty. An undated add is still possible (clear the chips), but the
+    // default is now the customer's stated day, so a Main Menu dish and a
+    // Today's Menu dish added in the same session land on the same delivery.
+    setSelectedDeliveryDates(orderingForDate ? [orderingForDate] : []);
+    setDateQuantities(orderingForDate ? { [orderingForDate]: 1 } : {});
     setSelectedAddOns(new Set());
   };
 
@@ -354,6 +361,14 @@ export default function MenuScreen() {
       }
     });
 
+    // Confirm the add and offer a second delivery day right here, instead of
+    // leaving someone to discover on their own that they can order for
+    // another day (client review, Sep 2026). Captured before the reset below.
+    setAddedToBasket({
+      itemName: selectedItem.name,
+      isos: datesToApply.filter((iso): iso is string => !!iso),
+    });
+
     setSelectedItem(null);
     setSpecialInstructions('');
     setIsCycleItem(false);
@@ -373,7 +388,7 @@ export default function MenuScreen() {
       day: day.dayName,
       weekName,
       // Carries the customer's chosen delivery date through to the cart —
-      // picked on the Today's Menu screen itself (see activeCycleDays), not
+      // picked up front on /select-date (see orderingDay), not
       // in this add-to-cart modal like the Main Menu's multi-date picker.
       deliveryDate: day.iso,
       deliveryDateLabel: day.label,
@@ -407,7 +422,6 @@ export default function MenuScreen() {
                 accessibilityState={{ selected: isActive }}
                 accessibilityLabel={`${formatCategoryLabel(category)} category`}
               >
-                <Text style={styles.categoryChipIcon}>{categoryIcons[category] || '🍽️'}</Text>
                 <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>
                   {formatCategoryLabel(category)}
                 </Text>
@@ -450,6 +464,12 @@ export default function MenuScreen() {
   };
 
   // Extract grid item renderer for reusability
+  // Full-width list row (client reference, Sep 2026: Main Menu items read as
+  // a list, not a 2-column grid). `description` in the underlying data is
+  // already an ingredient list ("Roasted Butternut / Danish Feta Cheese /
+  // ..."), so it's shown under an "Ingredients:" label rather than invented —
+  // same for `tags` (e.g. "Vegetarian"), which already existed in the data
+  // and normalizer but had nothing rendering it until now.
   const renderGridItem = ({ item }: { item: UIReadyItem }) => {
     const qty = getItemQuantity(item.id);
     const rawPrice = item.sizes[0] ? item.sizes[0].price : 0;
@@ -458,39 +478,54 @@ export default function MenuScreen() {
     const discountedPrice = hasDiscount ? rawPrice * (1 - itemDiscounts[0].percentage / 100) : rawPrice;
     const displayPrice = `R${discountedPrice.toFixed(0)}`;
     const originalDisplayPrice = `R${rawPrice.toFixed(0)}`;
-    const categoryColor = STATIC_CATEGORY_COLORS[item.category] || theme.textSecondary;
+    // A second size (typically "Large") reads as a secondary price line below
+    // the base price — same two sizes handleAddItem's modal already offers,
+    // this just surfaces the upsize price on the card itself.
+    const secondSize = item.sizes.length > 1 ? item.sizes[1] : null;
 
     return (
       <TouchableOpacity
-        style={[styles.uberCard, { width: CARD_WIDTH }]}
+        style={styles.listCard}
         activeOpacity={0.9}
         onPress={() => handleAddItem(item)}
         accessibilityLabel={`${item.name}, ${displayPrice}`}
       >
-        {/* Thin category-colour accent, replacing the old empty image placeholder */}
-        <View style={[styles.uberAccentBar, { backgroundColor: categoryColor }]} />
-
-        {/* Content Section */}
-        <View style={styles.uberContent}>
-          <View style={styles.uberTopRow}>
-            <Text style={[styles.uberItemName, styles.uberItemNameFlex]} numberOfLines={2}>{item.name}</Text>
-            <QuickAddButton quantity={qty} onPress={() => handleAddItem(item)} theme={theme} />
+        <View style={styles.listCardTopRow}>
+          <View style={styles.listCardNameCol}>
+            <Text style={styles.listCardName} numberOfLines={2}>{item.name}</Text>
+            {item.description ? (
+              <Text style={styles.listCardDesc} numberOfLines={3}>
+                <Text style={styles.listCardDescLabel}>Ingredients: </Text>
+                {item.description}
+              </Text>
+            ) : null}
           </View>
-          {item.description ? (
-            <Text style={styles.uberItemDesc} numberOfLines={2}>{item.description}</Text>
-          ) : null}
-          <View style={styles.uberMetaRow}>
+          <View style={styles.listCardPriceCol}>
             <View style={styles.uberPriceRow}>
               <Text style={styles.uberPrice}>{displayPrice}</Text>
               {hasDiscount && <Text style={styles.uberOriginalPrice}>{originalDisplayPrice}</Text>}
             </View>
-            {hasDiscount && (
-              <Text style={styles.menuDiscountHint}>
-                {itemDiscounts[0].percentage}% OFF
-              </Text>
+            {secondSize && (
+              <Text style={styles.listCardSizePrice}>{secondSize.label} R{secondSize.price.toFixed(0)}</Text>
             )}
+            {hasDiscount && (
+              <Text style={styles.menuDiscountHint}>{itemDiscounts[0].percentage}% OFF</Text>
+            )}
+            <View style={styles.listCardAddBtn}>
+              <QuickAddButton quantity={qty} onPress={() => handleAddItem(item)} theme={theme} />
+            </View>
           </View>
         </View>
+
+        {item.tags && item.tags.length > 0 && (
+          <View style={styles.listCardTags}>
+            {item.tags.map(tag => (
+              <View key={tag} style={styles.listCardTag}>
+                <Text style={styles.listCardTagText}>{tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -515,13 +550,34 @@ export default function MenuScreen() {
         ListHeaderComponent={
           <View style={styles.deliverySection}>
             <DeliveryEstimator theme={theme} />
+            {searchQuery.trim().length > 0 && (
+              <View style={styles.searchSummaryRow}>
+                <Text style={styles.searchSummaryText}>
+                  Found <Text style={styles.searchSummaryBold}>{filteredStaticMenu.length}</Text> matching {filteredStaticMenu.length === 1 ? 'dish' : 'dishes'} for "{searchQuery.trim()}"
+                </Text>
+              </View>
+            )}
           </View>
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyEmoji}>🔍</Text>
-            <Text style={styles.emptyTitle}>No matches found</Text>
-            <Text style={styles.emptySub}>Try different keywords or clear your search</Text>
+            <Ionicons name="search" size={36} color={theme.textTertiary} />
+            <Text style={styles.emptyTitle}>
+              {searchQuery.trim() ? `No dishes found for "${searchQuery.trim()}"` : 'No matches found'}
+            </Text>
+            <Text style={styles.emptySub}>
+              {searchQuery.trim() ? 'Try checking your spelling or exploring other categories.' : 'Try a different category'}
+            </Text>
+            {(searchQuery.trim() || selectedCategory) && (
+              <TouchableOpacity
+                style={styles.clearSearchBtn}
+                onPress={() => { setSearchQuery(''); setSelectedCategory(null); }}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search filter"
+              >
+                <Text style={styles.clearSearchBtnText}>Clear Search Filter</Text>
+              </TouchableOpacity>
+            )}
           </View>
         }
         data={sections}
@@ -537,16 +593,15 @@ export default function MenuScreen() {
               <Text style={styles.categoryBannerTitle}>{formatCategoryLabel(category)}</Text>
             </View>
 
-            {/* 2-column grid - identical layout to Today's Menu */}
-                        <FlatList
-              key={`grid-${numColumns}`}
+            {/* Single-column list (client reference, Sep 2026) — items read
+                top to bottom under the category photo rather than as a grid. */}
+            <FlatList
               data={items}
               keyExtractor={(item) => item.id}
-              numColumns={numColumns}
-              columnWrapperStyle={styles.uberGridColumn}
               scrollEnabled={false}
               nestedScrollEnabled={true}
               renderItem={renderGridItem}
+              ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
               contentContainerStyle={styles.uberGrid}
             />
           </View>
@@ -574,7 +629,7 @@ export default function MenuScreen() {
       );
     }
 
-    if (activeCycleDays.length === 0) {
+    if (!orderingDay) {
       return (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyEmoji}>📅</Text>
@@ -603,13 +658,25 @@ export default function MenuScreen() {
       return { weekKey, meals };
     };
 
+    // Meal type ("MAIN MEAL", "CURRY OF THE DAY", ...) -> that type's meals,
+    // in first-seen order — one dish per type per day today, but this holds
+    // even if a future day's data ever lists more than one under the same type.
+    const groupMealsByType = (meals: { mealType: string; mealDescription: string }[]) => {
+      const map = new Map<string, { mealType: string; mealDescription: string }[]>();
+      meals.forEach((meal) => {
+        const arr = map.get(meal.mealType) ?? [];
+        arr.push(meal);
+        map.set(meal.mealType, arr);
+      });
+      return Array.from(map.entries());
+    };
+
     // Cycle meal card renderer
     const renderCycleCard = (
       meal: { mealType: string; mealDescription: string },
       day: UpcomingWeekday,
       weekKeyStr: string
     ) => {
-      const color = MEAL_TYPE_COLORS[meal.mealType] || '#8E8E93';
       const mealName = meal.mealDescription;
       const qty = getItemQuantity(`cycle-${weekKeyStr}-${day.dayName}-${meal.mealType}-${mealName.replace(/\s+/g, '')}`);
 
@@ -620,9 +687,7 @@ export default function MenuScreen() {
           onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
           accessibilityLabel={`${mealName}, R${CYCLE_ITEM_PRICE}`}
         >
-          <View style={[styles.uberAccentBar, { backgroundColor: color }]} />
           <View style={styles.uberContent}>
-            <Text style={[styles.cycleMealType, { color }]}>{meal.mealType.replace(/_/g, ' ')}</Text>
             <View style={styles.uberTopRow}>
               <Text style={[styles.uberItemName, styles.uberItemNameFlex]} numberOfLines={2}>{mealName}</Text>
               <QuickAddButton
@@ -647,47 +712,14 @@ export default function MenuScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />
         }
       >
-        <View style={styles.deliveryDatesSection}>
-          <Text style={styles.notesLabel}>DELIVERY DATE</Text>
-          <Text style={styles.deliveryHint}>
-            Pick one or more days to browse and order — each day's meals appear in their own section below. Orders still close {ORDER_CUTOFF_LABEL} at least 2 business days ahead.
-          </Text>
-          {(['This week', 'Next week'] as const).map((group) => {
-            const groupDays = cycleOrderableDays.filter(w => w.weekLabel === group);
-            if (groupDays.length === 0) return null;
-            return (
-              <View key={group} style={styles.deliveryGroup}>
-                <Text style={styles.deliveryGroupLabel}>{group}</Text>
-                <View style={styles.deliveryChipRow}>
-                  {groupDays.map((day) => {
-                    const isSelected = activeCycleDays.some(d => d.iso === day.iso);
-                    return (
-                      <TouchableOpacity
-                        key={day.iso}
-                        style={[styles.deliveryChip, isSelected && styles.deliveryChipActive]}
-                        onPress={() => toggleCycleDate(day.iso)}
-                        activeOpacity={0.8}
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked: isSelected }}
-                        accessibilityLabel={day.label}
-                      >
-                        <Text style={[styles.deliveryChipText, isSelected && styles.deliveryChipTextActive]}>
-                          {day.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            );
-          })}
-        </View>
-
         <View style={styles.weekStatusRow}>
           <CutoffCountdown compact theme={theme} />
         </View>
 
-        {activeCycleDays.map((day) => {
+        {/* One section, for the single day chosen on /select-date. Kept as a
+            map over a one-element array so the day-scoped body below stays
+            exactly as it was when several days could be shown at once. */}
+        {[orderingDay].map((day) => {
           const { weekKey, meals } = getMealsForDay(day);
           return (
             <View key={day.iso} style={styles.categorySection}>
@@ -705,21 +737,22 @@ export default function MenuScreen() {
                   <Text style={styles.emptySub}>Check back later for this week's schedule</Text>
                 </View>
               ) : meals.length > 0 ? (
-                // Plain rows of Views, not a nested FlatList. This grid sits
-                // inside the tab's own ScrollView, so the FlatList that used to
-                // be here ran with scrollEnabled={false} and bought no
-                // virtualisation at all — every card rendered regardless —
-                // while still mounting a nested scroll container across nearly
-                // the whole screen. On Android that container swallows vertical
-                // drags that begin on a card, so the tab only scrolled when a
-                // swipe happened to start in a gutter between cards. Views have
-                // no scroll container and nothing to intercept the gesture.
-                chunkRows(meals, numColumns).map((row, rowIdx) => (
-                  <View key={`cycle-${day.iso}-row-${rowIdx}`} style={styles.gridRow}>
-                    {row.map((meal, colIdx) => (
-                      <React.Fragment key={`cycle-${day.iso}-${rowIdx}-${colIdx}`}>
-                        {renderCycleCard(meal, day, weekKey)}
-                      </React.Fragment>
+                // Grouped by meal type (Main Meal, Vegetarian Meal, ...) —
+                // a plain text label per group, no photo (client asked for no
+                // images on Today's Menu). Plain rows of Views inside each
+                // group, not a nested FlatList: see the Main Menu grid above
+                // for why (swallowed Android drags).
+                groupMealsByType(meals).map(([mealType, groupMeals]) => (
+                  <View key={`cycle-${day.iso}-${mealType}`} style={styles.mealTypeSection}>
+                    <Text style={styles.mealTypeLabel}>{formatCategoryLabel(mealType)}</Text>
+                    {chunkRows(groupMeals, numColumns).map((row, rowIdx) => (
+                      <View key={`cycle-${day.iso}-${mealType}-row-${rowIdx}`} style={styles.gridRow}>
+                        {row.map((meal, colIdx) => (
+                          <React.Fragment key={`cycle-${day.iso}-${mealType}-${rowIdx}-${colIdx}`}>
+                            {renderCycleCard(meal, day, weekKey)}
+                          </React.Fragment>
+                        ))}
+                      </View>
                     ))}
                   </View>
                 ))
@@ -727,7 +760,7 @@ export default function MenuScreen() {
                 <View style={styles.emptyContainer}>
                   <Text style={styles.emptyEmoji}>😴</Text>
                   <Text style={styles.emptyTitle}>No meals scheduled for {day.dayName}</Text>
-                  <Text style={styles.emptySub}>Try a different date above.</Text>
+                  <Text style={styles.emptySub}>Try a different delivery day.</Text>
                 </View>
               )}
             </View>
@@ -771,7 +804,31 @@ export default function MenuScreen() {
         </View>
       )}
 
-      {/* Search Bar - at the top */}
+      {/* Messages the kitchen has sent to this customer — a menu change, a
+          delivery delay. Sits above everything else on the menu because it is
+          the one thing here that may change what they were about to order. */}
+      {visibleAnnouncements.map((a) => (
+        <View key={a.id} style={styles.announcementBar}>
+          <Ionicons name="megaphone" size={15} color={theme.text} style={styles.announcementIcon} />
+          <View style={styles.announcementBody}>
+            <Text style={styles.announcementTitle}>{a.title}</Text>
+            <Text style={styles.announcementText}>{a.body}</Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => dismissAnnouncement(a.id)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={`Dismiss notification: ${a.title}`}
+          >
+            <Ionicons name="close" size={16} color={theme.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      ))}
+
+      {/* Search Bar - at the top. No visible date strip here (client's
+          explicit call, Sep 2026, after briefly trying a Kianda-style inline
+          date strip) — the compact icon is the only on-screen date control,
+          opening the dedicated /select-date picker instead. */}
       <View style={styles.searchSection}>
         <View style={styles.searchWrapper}>
           <Text style={styles.searchIcon}>🔍</Text>
@@ -797,6 +854,16 @@ export default function MenuScreen() {
             </TouchableOpacity>
           )}
         </View>
+        {orderingDay && (
+          <TouchableOpacity
+            style={styles.dateIconBtn}
+            onPress={() => router.push(`/select-date?change=1&view=${menuView}`)}
+            accessibilityRole="button"
+            accessibilityLabel={`Ordering for ${orderingDay.label}. Change delivery day`}
+          >
+            <Ionicons name="calendar-outline" size={18} color={theme.text} />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.toggleContainer}>
@@ -806,7 +873,7 @@ export default function MenuScreen() {
           accessibilityRole="button"
           accessibilityState={{ selected: menuView === 'main' }}
         >
-          <Text style={[styles.toggleBtnText, menuView === 'main' && styles.toggleBtnTextActive]}>Main Menu</Text>
+          <Text style={[styles.toggleBtnText, menuView === 'main' && styles.toggleBtnTextActive]}>Standard Classics</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.toggleBtn, menuView === 'today' && styles.toggleBtnActive]}
@@ -955,7 +1022,7 @@ export default function MenuScreen() {
                           )}
                         </View>
                         <Text style={styles.deliveryHint}>
-                          Pick one or more weekdays to pre-order — up to 2 weeks ahead. Leave blank for a normal order.
+                          Defaults to the day you're ordering for. Add more weekdays to pre-order the same dish up to 2 weeks ahead, or clear them all for an undated order.
                         </Text>
                         {(['This week', 'Next week', 'In 2 weeks'] as const).map((group) => {
                           const groupDays = upcomingWeekdays.filter(w => w.weekLabel === group);
@@ -1094,6 +1161,43 @@ export default function MenuScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Added to Basket — confirms the add and, per the client review, offers a
+          second delivery day at the one moment someone is actually thinking
+          about it. Dismissing keeps the day already in play. */}
+      <Modal
+        visible={!!addedToBasket}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddedToBasket(null)}
+      >
+        <View style={styles.addedOverlay}>
+          <View style={styles.addedCard}>
+            <Text style={styles.addedTitle}>Added to Basket</Text>
+            <Text style={styles.addedBody}>{addedToBasketMessage}</Text>
+
+            <TouchableOpacity
+              style={styles.addedPrimaryBtn}
+              onPress={() => { setAddedToBasket(null); router.push(`/select-date?change=1&view=${menuView}`); }}
+              activeOpacity={0.9}
+              accessibilityRole="button"
+            >
+              <Text style={styles.addedPrimaryBtnText}>Order for a different day</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.addedSecondaryBtn}
+              onPress={() => setAddedToBasket(null)}
+              activeOpacity={0.9}
+              accessibilityRole="button"
+            >
+              <Text style={styles.addedSecondaryBtnText}>
+                {addedDayName ? `Continue with ${addedDayName}` : 'Continue shopping'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1155,8 +1259,9 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   previewBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   previewBannerText: { color: theme.text, fontSize: 12, fontWeight: '800' },
   previewBannerExit: { color: theme.text, fontSize: 12, fontWeight: '800', textDecorationLine: 'underline' },
-  searchSection: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
+  searchSection: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
   searchWrapper: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.inputBg,
@@ -1170,6 +1275,18 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   searchInput: { flex: 1, fontSize: 14, color: theme.text, paddingVertical: 0, height: 44 },
   searchClear: { padding: 4 },
   searchClearIcon: { fontSize: 16, color: theme.textTertiary, fontWeight: '700' },
+  // Compact stand-in for a visible date row — same destination
+  // (/select-date?change=1), no visible date text on the menu itself.
+  dateIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.inputBg,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
   toggleContainer: {
     flexDirection: 'row',
     padding: 4,
@@ -1199,28 +1316,38 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   emptyContainer: { padding: 40, alignItems: 'center', justifyContent: 'center' },
   emptyText: { color: theme.textTertiary, textAlign: 'center', fontSize: 14 },
   emptyEmoji: { fontSize: 32, marginBottom: 12 },
-  emptyTitle: { color: theme.text, fontSize: 16, fontWeight: '700', marginBottom: 6 },
+  emptyTitle: { color: theme.text, fontSize: 16, fontWeight: '700', marginBottom: 6, marginTop: 10, textAlign: 'center' },
   emptySub: { color: theme.textTertiary, fontSize: 13, textAlign: 'center' },
+  searchSummaryRow: { paddingTop: 2, paddingBottom: 4 },
+  searchSummaryText: { fontSize: 13, color: theme.textSecondary },
+  searchSummaryBold: { fontWeight: '700', color: theme.text },
+  clearSearchBtn: {
+    marginTop: 14,
+    backgroundColor: theme.accent,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  clearSearchBtnText: { color: theme.onAccent, fontSize: 13, fontWeight: '700' },
 
+  // Plain underline tabs (client reference, Sep 2026) — no pill background,
+  // no per-category icon; the active tab is marked by an underline instead.
+  // A transparent bottom border of the same width sits on every tab so the
+  // active one gaining a real border never shifts the row's height.
   categoryFilterContainer: { marginBottom: 16 },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.surfaceSecondary,
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: theme.border,
-    marginRight: 10,
+    marginRight: 18,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
   categoryChipActive: {
-    backgroundColor: theme.accent,
-    borderColor: theme.accent,
+    borderBottomColor: theme.text,
   },
-  categoryChipIcon: { fontSize: 18, marginRight: 7 },
-  categoryChipText: { color: theme.textSecondary, fontSize: 14, fontWeight: '700' },
-  categoryChipTextActive: { color: theme.onAccent },
+  categoryChipText: { color: theme.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
+  categoryChipTextActive: { color: theme.text },
 
   categorySection: { marginBottom: 28 },
   categoryBanner: {
@@ -1231,9 +1358,12 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     justifyContent: 'flex-end',
   },
   categoryBannerImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  // Bottom-anchored only, not the full photo (client reference, Sep 2026) —
+  // the top of the image stays clear and the title keeps its own text
+  // shadow for legibility instead of the photo being tinted everywhere.
   categoryBannerOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.32)',
+    position: 'absolute', left: 0, right: 0, bottom: 0, height: '65%',
+    backgroundColor: 'rgba(0,0,0,0.18)',
   },
   categoryBannerTitle: {
     fontSize: 21,
@@ -1241,6 +1371,19 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: -0.4,
     padding: 14,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
+  },
+  // Today's Menu meal-type group — text-only, no photo.
+  mealTypeSection: { marginBottom: 24 },
+  mealTypeLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: theme.text,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
   },
   uberGrid: {},
   uberGridColumn: {
@@ -1269,12 +1412,9 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
   },
-  // Thin category-colour accent strip — replaces the old empty image
-  // placeholder block now that items don't carry their own picture.
-  uberAccentBar: { height: 4, width: '100%' },
   menuDiscountHint: {
     fontSize: 10,
-    color: '#FF9500',
+    color: theme.warning,
     fontWeight: '700',
     maxWidth: 100,
     textAlign: 'right',
@@ -1289,12 +1429,51 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   uberPrice: { fontSize: 15, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
   uberOriginalPrice: { fontSize: 12, fontWeight: '600', color: theme.textTertiary, textDecorationLine: 'line-through' },
 
+  // Full-width Main Menu list row (client reference, Sep 2026). Reuses
+  // uberCard's shape/shadow via a plain width:100%, and uberPrice/
+  // uberOriginalPrice/uberPriceRow/menuDiscountHint above for the price —
+  // only the parts genuinely new to the list layout get their own styles.
+  listCard: {
+    backgroundColor: theme.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: theme.border,
+    padding: 14,
+    width: '100%',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  listCardTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
+  listCardNameCol: { flex: 1 },
+  listCardName: { fontSize: 16, fontWeight: '800', color: theme.text, lineHeight: 20, letterSpacing: -0.2 },
+  // Price, "Large" price, and the add button all stack in this one right-hand
+  // column (client reference, Sep 2026) — the add button sits with the price
+  // it applies to rather than sharing a row with the tags below.
+  listCardPriceCol: { alignItems: 'flex-end' },
+  listCardSizePrice: { fontSize: 11, fontWeight: '600', color: theme.textSecondary, marginTop: 2 },
+  listCardAddBtn: { marginTop: 8 },
+  listCardDesc: { fontSize: 12, color: theme.textSecondary, lineHeight: 17, marginTop: 6 },
+  listCardDescLabel: { fontWeight: '700', color: theme.text },
+  listCardTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
+  listCardTag: {
+    backgroundColor: theme.surfaceSecondary,
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  listCardTagText: { fontSize: 11, fontWeight: '600', color: theme.textSecondary },
 
   dayHeaderBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
   dayHeaderLeft: { flexDirection: 'row', alignItems: 'center' },
-  todayDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.success, marginRight: 6 },
+  // Neutral, not green: this header names the day being ordered for, which is
+  // usually a future delivery rather than today, so a green "live now" marker
+  // was both a colour the repaint removes and a slightly wrong signal.
+  todayDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.text, marginRight: 6 },
   dayTitle: { fontSize: 15, fontWeight: '800', color: theme.text },
-  dayTitleToday: { color: theme.success },
+  dayTitleToday: { color: theme.text },
   dayMealCount: { fontSize: 12, color: theme.textTertiary, fontWeight: '600' },
 
   todayBadge: {
@@ -1310,7 +1489,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   todayCardBorder: {
     borderColor: theme.success,
   },
-  cycleMealType: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
 
   // Modal Styles
   modalOverlay: {
@@ -1400,6 +1578,55 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   // padding via `listContainer`).
   weekStatusRow: { marginBottom: 12, marginTop: 8 },
 
+  announcementBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: theme.surfaceSecondary,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.border,
+  },
+  announcementIcon: { marginTop: 1 },
+  announcementBody: { flex: 1 },
+  announcementTitle: { fontSize: 12, fontWeight: '800', color: theme.text, marginBottom: 2 },
+  announcementText: { fontSize: 12, color: theme.textSecondary, lineHeight: 17 },
+
+  // Added to Basket confirmation sheet.
+  addedOverlay: {
+    flex: 1,
+    backgroundColor: theme.modalOverlay,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  addedCard: {
+    width: '100%',
+    backgroundColor: theme.surface,
+    borderRadius: 14,
+    padding: 22,
+  },
+  addedTitle: { fontSize: 17, fontWeight: '700', color: theme.text, marginBottom: 6 },
+  addedBody: { fontSize: 13, color: theme.textSecondary, lineHeight: 19, marginBottom: 20 },
+  addedPrimaryBtn: {
+    backgroundColor: theme.accent,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  addedPrimaryBtnText: { fontSize: 14, fontWeight: '700', color: theme.onAccent },
+  addedSecondaryBtn: {
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  addedSecondaryBtnText: { fontSize: 14, fontWeight: '700', color: theme.text },
+
   // Item customizer modal — size picker, quantity stepper, dietary tags
   sizeSection: { marginBottom: 20 },
   sizeRow: { flexDirection: 'row', gap: 10 },
@@ -1467,15 +1694,17 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   deliveryChipTextActive: { color: theme.text },
   tagsSection: { marginBottom: 20 },
   tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  // Dietary tags read as a quiet outline rather than a green pill — in a
+  // black-and-white menu, colour is reserved for status, not for labels.
   tagChip: {
-    backgroundColor: '#EAF7EE',
+    backgroundColor: theme.surfaceSecondary,
     borderWidth: 1,
-    borderColor: '#22C55E40',
+    borderColor: theme.border,
     borderRadius: 20,
     paddingVertical: 6,
     paddingHorizontal: 14,
   },
-  tagChipText: { color: '#1DA836', fontSize: 12, fontWeight: '800' },
+  tagChipText: { color: theme.text, fontSize: 12, fontWeight: '800' },
   quantitySection: { marginBottom: 20 },
   dateQuantityRow: {
     flexDirection: 'row',

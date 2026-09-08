@@ -18,6 +18,18 @@ export interface NormalizedMenuItem {
   sizes: SizeOption[];
   /** Optional dietary tags (e.g. "Keto", "Vegan") — only rendered when present in data. */
   tags?: string[];
+  /**
+   * Whether customers can currently see and order this dish. Added in the Sep
+   * 2026 client review so the kitchen can pull an item for a day — an
+   * ingredient ran out, a supplier missed a delivery — without deleting it and
+   * having to re-enter it later.
+   *
+   * Always a real boolean once normalized (never undefined), so every consumer
+   * can filter on it directly instead of each one re-deciding what a missing
+   * flag means. Items in the bundled menu data have no flag and default to
+   * active.
+   */
+  active: boolean;
 }
 
 /** An optional per-category extra (e.g. "Extra Bacon") a customer can add to any dish in that category — an Uber-Eats-style modifier tied to the specific item being ordered, not a standalone menu item. */
@@ -46,6 +58,9 @@ function normalizeAddOns(raw: any): AddOnOption[] | undefined {
 
 /** Turns one raw staticMenu.json entry into the canonical item shape. */
 export function normalizeRawMenuItem(rawItem: any, category: string, idx: number): NormalizedMenuItem {
+  // Only an explicit `false` deactivates a dish — bundled menu data carries no
+  // flag at all, and those items must stay orderable.
+  const active = rawItem?.active !== false;
   let parsedSizes: SizeOption[] = [];
   if (rawItem.sizes && Array.isArray(rawItem.sizes)) {
     parsedSizes = rawItem.sizes.map((s: any) => ({ label: s.label || 'Regular', price: Number(s.price) || 0 }));
@@ -74,6 +89,7 @@ export function normalizeRawMenuItem(rawItem: any, category: string, idx: number
     image: rawItem.image,
     sizes: parsedSizes,
     tags: Array.isArray(rawItem.tags) ? rawItem.tags.filter((t: any) => typeof t === 'string') : undefined,
+    active,
   };
 }
 

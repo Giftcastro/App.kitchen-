@@ -3,8 +3,8 @@ import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeColors, ThemeMode, ResolvedScheme, getThemeColors } from '../utils/theme';
 import { buildMenuFromStaticData, NormalizedMenuItem, AddOnOption } from '../utils/menuNormalize';
-import { syncOrderReminder, cancelOrderReminder } from '../utils/orderReminders';
-import { calculateDeliveryFee, getItemDueDate } from '../utils/deliveryHelpers';
+import { syncOrderReminder, cancelOrderReminder, showAnnouncementNotification } from '../utils/orderReminders';
+import { calculateDeliveryFee, getItemDueDate, getCycleWeekForDate, getCycleOffsetForWeek } from '../utils/deliveryHelpers';
 import { haptics } from '../utils/haptics';
 import staticMenuData from '../data/staticMenu.json';
 
@@ -162,6 +162,25 @@ export interface Discount {
   itemName?: string;
 }
 
+/**
+ * A message the kitchen sends to customers — a menu change, a delivery delay,
+ * a public holiday closure. Added in the Sep 2026 client review.
+ *
+ * Delivery is IN-APP: the announcement appears as a banner on the customer's
+ * menu. There is no backend in this app (see src/utils/orderReminders.ts —
+ * real server push is Stage 2 of the SLA), so nothing is transmitted to other
+ * devices; a local notification is also raised on the sending device so the
+ * mechanism is visible end to end in a demo.
+ */
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  /** Company this is addressed to, or null to reach every customer. */
+  companyName: string | null;
+  sentAt: string;
+}
+
 interface KitchenContextType {
   user: User | null;
   cart: CartItem[];
@@ -171,8 +190,35 @@ interface KitchenContextType {
   appliedDiscount: Discount | null;
   /** Explicit user action (apply code / remove) — pauses the auto-apply-best-discount effect so it isn't silently undone. */
   setAppliedDiscount: (discount: Discount | null) => void;
+  /**
+   * Which of the 8 rotation weeks in cycleMenu.json is live right now.
+   *
+   * Derived from the calendar (see getCycleWeekForDate) rather than stored —
+   * the client asked for the cycle menu to rotate on its own instead of only
+   * advancing when an admin remembered to click. `setActiveWeek` still works
+   * and is what Kitchen Controls → Menu Cycles calls, but it records a shift
+   * of the whole rotation rather than pinning one fixed week, so the menu
+   * keeps advancing by itself from the corrected position.
+   */
   activeWeek: number;
-  setActiveWeek: Dispatch<SetStateAction<number>>;
+  setActiveWeek: (week: number) => void;
+  /** How many weeks an admin has shifted the rotation off its calendar position. 0 = running purely off the calendar. */
+  cycleWeekOffset: number;
+  /** Drops any manual shift, putting the rotation back on its calendar position. */
+  resetCycleRotation: () => void;
+  /**
+   * ISO date (YYYY-MM-DD) the customer is currently ordering for — the default
+   * delivery day stamped onto everything they add to the basket. Chosen up
+   * front on the "Which day are you ordering for?" screen so the menu itself
+   * no longer has to carry a date row (client review, Sep 2026), and
+   * changeable at any time from the menu header or the added-to-basket sheet.
+   *
+   * `null` only before the first choice is made — screens read that as "ask
+   * the customer first". It is never silently defaulted to today, because
+   * today is almost always already past the order cutoff.
+   */
+  orderingForDate: string | null;
+  setOrderingForDate: (iso: string | null) => void;
   login: (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string, companyLocation?: 1 | 2) => void;
   logout: () => void;
   addToCart: (item: CartItem) => void;
@@ -185,6 +231,8 @@ interface KitchenContextType {
   addMenuItem: (categoryId: string, item: { name: string; price: number; description: string; image?: string }) => void;
   updateMenuItem: (categoryId: string, itemId: string, item: { name: string; price: number; description: string; image?: string }) => void;
   deleteMenuItem: (categoryId: string, itemId: string) => void;
+  /** Hides/shows a dish on the customer menu without deleting it. */
+  setMenuItemActive: (categoryId: string, itemId: string, active: boolean) => void;
   addDiscount: (discount: Discount) => void;
   updateDiscount: (discountId: string, discount: Partial<Discount>) => void;
   deleteDiscount: (discountId: string) => void;
@@ -221,6 +269,13 @@ interface KitchenContextType {
   calculateDiscountAmount: (cartItems: CartItem[], discount: Discount | null) => number;
   /** Company meal subsidy for the current user, applied automatically (no code needed) — each item's contribution is capped at that item's own price so a meal is never "paid" to order. Zero if the user isn't matched to a subsidizing company. */
   calculateSubsidyAmount: (cartItems: CartItem[]) => number;
+  /** Every announcement the kitchen has sent, newest first. */
+  announcements: Announcement[];
+  sendAnnouncement: (announcement: { title: string; body: string; companyName: string | null }) => void;
+  deleteAnnouncement: (id: string) => void;
+  /** The announcements the signed-in customer should currently see — addressed to them, and not yet dismissed. */
+  visibleAnnouncements: Announcement[];
+  dismissAnnouncement: (id: string) => void;
   remindersEnabled: boolean;
   setRemindersEnabled: Dispatch<SetStateAction<boolean>>;
   /** Where the Chef tab's Production Sheet / Delivery Note "Send" dialogs default their recipient to — internal kitchen/back-of-house staff, not the corporate client. Persisted across app restarts. */
@@ -553,7 +608,17 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>(() => getDemoSeedData().orders);
-  const [activeWeek, setActiveWeek] = useState<number>(1);
+  // A manual "this week is Week N" choice is stored as an offset from the
+  // calendar anchor, not as the week number itself — see getCycleWeekForDate.
+  const [cycleWeekOffset, setCycleWeekOffset] = useState<number>(0);
+  const activeWeek = getCycleWeekForDate(new Date(), cycleWeekOffset);
+  const setActiveWeek = (week: number) => setCycleWeekOffset(getCycleOffsetForWeek(week));
+  const resetCycleRotation = () => setCycleWeekOffset(0);
+  const [orderingForDate, setOrderingForDate] = useState<string | null>(null);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  // Per-device, not per-account: dismissing a banner is a UI preference, and
+  // there is no server to record it against a user anyway.
+  const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>([]);
   const [allUsers, setAllUsers] = useState<AppUser[]>(() => getDemoSeedData().users);
   // Seeded from the same normalized shape the Menu screen renders, so admin
   // edits here are the actual data the customer-facing menu reads — not a
@@ -717,6 +782,9 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     setCart([]);
     setUserDiscountChoice(null);
     setDiscountAutoApplyPaused(false);
+    // The next person to sign in must pick their own delivery day rather than
+    // inheriting the previous session's — the picker is skipped once this is set.
+    setOrderingForDate(null);
   };
 
   // The best discount currently available for this cart. Pure derivation of
@@ -902,6 +970,9 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
             description: item.description,
             image: item.image,
             sizes: [{ label: 'Regular', price: item.price }],
+            // A newly added dish goes live immediately — an admin who wants it
+            // held back can switch it off from the same list they added it in.
+            active: true,
           }] }
         : cat
     ));
@@ -923,6 +994,21 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     ));
   };
 
+  /**
+   * Shows or hides a dish on the customer menu without deleting it (client
+   * review, Sep 2026). Kept separate from `updateMenuItem` because that one
+   * rewrites name/description/price from the edit form and would clobber the
+   * flag — and because switching a dish off is a one-tap action from the list,
+   * not something that should require opening the editor.
+   */
+  const setMenuItemActive = (categoryId: string, itemId: string, active: boolean) => {
+    setMenus(prev => prev.map(cat =>
+      cat.id === categoryId
+        ? { ...cat, items: cat.items.map(i => i.id === itemId ? { ...i, active } : i) }
+        : cat
+    ));
+  };
+
   const deleteMenuItem = (categoryId: string, itemId: string) => {
     setMenus(prev => prev.map(cat =>
       cat.id === categoryId
@@ -930,6 +1016,41 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         : cat
     ));
   };
+
+  const sendAnnouncement = ({ title, body, companyName }: { title: string; body: string; companyName: string | null }) => {
+    const announcement: Announcement = {
+      id: `ann-${Date.now()}`,
+      title,
+      body,
+      companyName,
+      sentAt: new Date().toISOString(),
+    };
+    setAnnouncements(prev => [announcement, ...prev]);
+    // Raise it on this device's notification tray too. No-ops on web and
+    // whenever permission is refused — the in-app banner is the delivery that
+    // always happens, this is the visible confirmation on top of it.
+    showAnnouncementNotification(title, body);
+  };
+
+  const deleteAnnouncement = (id: string) => {
+    setAnnouncements(prev => prev.filter(a => a.id !== id));
+  };
+
+  const dismissAnnouncement = (id: string) => {
+    setDismissedAnnouncements(prev => (prev.includes(id) ? prev : [...prev, id]));
+  };
+
+  // What the signed-in customer should see: announcements addressed to
+  // everyone, plus those addressed to their own employer, minus anything they
+  // have already dismissed. Admins are excluded — they send these, and seeing
+  // their own announcement banner over the menu preview is just noise.
+  const visibleAnnouncements = useMemo(() => {
+    if (!user || user.role === 'admin') return [];
+    return announcements.filter(a =>
+      !dismissedAnnouncements.includes(a.id) &&
+      (a.companyName === null || a.companyName === user.companyName)
+    );
+  }, [announcements, dismissedAnnouncements, user]);
 
   const addDiscount = (discount: Discount) => {
     setDiscounts(prev => [...prev, { ...discount, id: `disc-${Date.now()}` }]);
@@ -1101,6 +1222,10 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         orders,
         activeWeek,
         setActiveWeek,
+        cycleWeekOffset,
+        resetCycleRotation,
+        orderingForDate,
+        setOrderingForDate,
         login,
         logout,
         addToCart,
@@ -1113,6 +1238,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         addMenuItem,
         updateMenuItem,
         deleteMenuItem,
+        setMenuItemActive,
         addDiscount,
         updateDiscount,
         deleteDiscount,
@@ -1147,6 +1273,11 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         isItemEligibleForDiscount,
         calculateDiscountAmount,
         calculateSubsidyAmount,
+        announcements,
+        sendAnnouncement,
+        deleteAnnouncement,
+        visibleAnnouncements,
+        dismissAnnouncement,
         remindersEnabled,
         setRemindersEnabled,
         kitchenEmail,

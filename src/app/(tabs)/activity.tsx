@@ -1,9 +1,22 @@
+/**
+ * Orders — active orders (live batch-dispatch timeline) on top, Order
+ * History below. Combines what used to be two separate tabs (client
+ * request, Sep 2026): the Orders tab's live tracker and the History tab's
+ * past-order list. `/tracker` is gone; Profile's "Track Order" and "Order
+ * History" links both now point here.
+ *
+ * "Active" is a status check (pending/preparing/on_the_way), not "whichever
+ * order happens to be first in the array" — the old History screen assumed
+ * index 0 was always the current order and excluded it by position, which
+ * silently mis-sorted the moment orders weren't in that exact order.
+ */
 import React, { useState, useMemo } from 'react';
-import { View, StyleSheet, FlatList, StatusBar, TouchableOpacity, Modal, RefreshControl } from 'react-native';
+import { View, StyleSheet, StatusBar, TouchableOpacity, Modal, ScrollView, RefreshControl } from 'react-native';
 import { Text } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useKitchen } from '../../context/KitchenCoContext';
+import { useKitchen, CartItem, Order } from '../../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { Skeleton } from '../../components/Skeleton';
 import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { ThemeColors } from '../../utils/theme';
@@ -17,6 +30,58 @@ import { ThemeColors } from '../../utils/theme';
  */
 const isCycleMenuItemId = (id: string) => id.startsWith('cycle-');
 
+/**
+ * When the day's batch lands in the building. Deliveries are one scheduled
+ * drop per site, not a rolling ETA, so this is a fixed published time rather
+ * than anything computed per order.
+ */
+const BATCH_DROP_LABEL = '12:00 PM SAST';
+
+/**
+ * The timeline, in order. `status` is the order status that marks this stage
+ * reached; `timing` is when it happens in the day, not a live timestamp —
+ * orders aren't persisted with per-status transition times yet, so promising
+ * an exact clock reading per step would be inventing data.
+ */
+const TIMELINE_STEPS: {
+  status: string;
+  title: string;
+  icon: string;
+  timing: string;
+  description: string;
+}[] = [
+  {
+    status: 'pending',
+    title: 'Payment Verified',
+    icon: 'shield-checkmark',
+    timing: 'On checkout',
+    description: 'PayFast confirmed your transaction and the meals were booked into the kitchen batch.',
+  },
+  {
+    status: 'preparing',
+    // 'flame', not 'restaurant': Ionicons' restaurant glyph is a crossed fork
+    // and knife, which at this marker's size reads as an ✕ rather than as food.
+    title: 'Kitchen Prepping',
+    icon: 'flame',
+    timing: 'Morning of delivery',
+    description: 'The culinary team is preparing your meals fresh for the day’s drop.',
+  },
+  {
+    status: 'on_the_way',
+    title: 'Out for Batch Drop',
+    icon: 'cube',
+    timing: 'From 11:00',
+    description: 'Insulated thermal carriers are dispatched to your building.',
+  },
+  {
+    status: 'delivered',
+    title: 'Delivered to Pantry',
+    icon: 'checkmark-circle',
+    timing: `Arrives ${BATCH_DROP_LABEL}`,
+    description: 'Your batch is placed in the designated floor pantry staging area.',
+  },
+];
+
 export default function TabActivityScreen() {
   const { orders, addToCart, theme } = useKitchen();
   const styles = useMemo(() => createStyles(theme), [theme]);
@@ -27,7 +92,14 @@ export default function TabActivityScreen() {
   // nothing there. A real Modal works identically on every platform.
   const [showCantReorder, setShowCantReorder] = useState(false);
 
-  const pastOrders = orders.slice(1); // Exclude current/latest order
+  const activeOrders = useMemo(
+    () => orders.filter(o => o.status === 'pending' || o.status === 'preparing' || o.status === 'on_the_way'),
+    [orders]
+  );
+  const pastOrders = useMemo(
+    () => orders.filter(o => o.status === 'delivered' || o.status === 'cancelled'),
+    [orders]
+  );
 
   const formatDate = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -42,16 +114,16 @@ export default function TabActivityScreen() {
     return date.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
-  // Order-status colors are semantic content colors (a distinct hue per
-  // status), not theme chrome — they stay literal in both light and dark mode.
+  // Order-status colours, drawn from the theme's semantic tokens so they stay
+  // legible in both modes and spend colour only where it carries meaning.
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
-      case 'pending': return '#FF9500';
-      case 'preparing': return '#5AC8FA';
-      case 'on_the_way': return '#22C55E';
-      case 'delivered': return '#00C853';
-      case 'cancelled': return '#FF3B30';
-      default: return '#8E8E93';
+      case 'pending': return theme.warning;
+      case 'preparing': return theme.textSecondary;
+      case 'on_the_way': return theme.info;
+      case 'delivered': return theme.success;
+      case 'cancelled': return theme.error;
+      default: return theme.textTertiary;
     }
   };
 
@@ -66,22 +138,270 @@ export default function TabActivityScreen() {
     }
   };
 
+  const handleReorder = (order: Order) => {
+    const hasWeeklyMenuItems = order.items.some(orderItem => isCycleMenuItemId(orderItem.id));
+    if (hasWeeklyMenuItems) {
+      setShowCantReorder(true);
+      return;
+    }
+    order.items.forEach(orderItem => {
+      addToCart({
+        id: orderItem.id,
+        name: orderItem.name,
+        price: orderItem.price,
+        category: orderItem.category,
+        quantity: orderItem.quantity,
+        image: orderItem.image,
+        selectedSize: orderItem.selectedSize,
+        notes: orderItem.notes,
+      });
+    });
+    router.push('/');
+  };
+
   // Brief shimmer shown for the useSimulatedLoad() initial-load window — a
   // stand-in for the real fetch this screen will eventually make.
   const renderActivitySkeleton = () => (
     <View style={styles.list}>
-      {[0, 1, 2].map(i => (
+      <Skeleton theme={theme} style={{ height: 96, borderRadius: 20, marginBottom: 20 }} />
+      <Skeleton theme={theme} style={{ height: 220, borderRadius: 24, marginBottom: 28 }} />
+      {[0, 1].map(i => (
         <Skeleton key={`activity-skel-${i}`} theme={theme} style={{ height: 160, borderRadius: 20, marginBottom: 12 }} />
       ))}
     </View>
   );
+
+  // The live batch-dispatch timeline card — one per active order, most
+  // recent first. Unchanged in substance from the old standalone Orders tab.
+  const renderActiveOrderCard = (order: Order) => {
+    const currentStatusIndex = TIMELINE_STEPS.findIndex(s => s.status === order.status);
+    const isDelivered = order.status === 'delivered';
+    // An unrecognised status (older demo data, a status the kitchen adds
+    // later) must not silently render every stage as still-to-come — treat
+    // it as the first stage reached, which is true of any order that exists.
+    const reachedIndex = currentStatusIndex === -1 ? 0 : currentStatusIndex;
+    const itemCount = order.items.reduce((sum: number, i: CartItem) => sum + i.quantity, 0);
+    const address = order.deliveryAddress;
+    const destination = address ? [address.label, address.street].filter(Boolean).join(' · ') : null;
+    const dropDayLabel = order.items.find((i: CartItem) => i.deliveryDateLabel)?.deliveryDateLabel ?? order.date;
+
+    return (
+      <View key={order.id} style={styles.activeOrderBlock}>
+        <View style={styles.orderCard}>
+          <View style={styles.orderCardTop}>
+            <View style={styles.orderCardLeft}>
+              <Text style={styles.orderCaption}>ACTIVE ORDER</Text>
+              <Text style={styles.orderId}>{order.id}</Text>
+            </View>
+            <Text style={styles.orderTotal}>R {order.total.toFixed(2)}</Text>
+          </View>
+          <View style={styles.paymentBadge}>
+            <Ionicons name="shield-checkmark" size={13} color={theme.success} />
+            <Text style={styles.paymentBadgeText}>Payment Verified</Text>
+          </View>
+        </View>
+
+        <View style={styles.timelineCard}>
+          <View style={styles.timelineHeader}>
+            <View style={styles.timelineHeaderLeft}>
+              <Text style={styles.cardSectionTitle}>Batch Dispatch Progress</Text>
+              <Text style={styles.timelineDate}>{dropDayLabel}</Text>
+            </View>
+            <View style={styles.dropPill}>
+              <Ionicons name="time-outline" size={12} color={theme.textSecondary} />
+              <Text style={styles.dropPillText}>{BATCH_DROP_LABEL}</Text>
+            </View>
+          </View>
+
+          {TIMELINE_STEPS.map((step, index) => {
+            const isDone = index < reachedIndex;
+            const isCurrent = index === reachedIndex;
+            const isPending = index > reachedIndex;
+            const isLast = index === TIMELINE_STEPS.length - 1;
+
+            return (
+              <View key={step.status} style={styles.timelineRow}>
+                <View style={styles.timelineRail}>
+                  <View
+                    style={[
+                      styles.marker,
+                      isDone && styles.markerDone,
+                      isCurrent && styles.markerCurrent,
+                      isPending && styles.markerPending,
+                    ]}
+                  >
+                    <Ionicons
+                      name={(isDone ? 'checkmark' : step.icon) as any}
+                      size={14}
+                      color={isPending ? theme.textTertiary : theme.onAccent}
+                    />
+                  </View>
+                  {!isLast && (
+                    <View style={[styles.connector, index < reachedIndex && styles.connectorDone]} />
+                  )}
+                </View>
+
+                <View style={[styles.timelineBody, isLast && styles.timelineBodyLast]}>
+                  <View style={styles.timelineTitleRow}>
+                    <Text style={[styles.stepTitle, isPending && styles.stepTitlePending]} numberOfLines={1}>
+                      {step.title}
+                    </Text>
+                    <Text style={styles.stepTiming} numberOfLines={1}>
+                      {isDone ? 'Completed' : step.timing}
+                    </Text>
+                  </View>
+                  <Text style={[styles.stepDescription, isPending && styles.stepDescriptionPending]}>
+                    {step.description}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+
+          {destination && (
+            <View style={styles.destinationRow}>
+              <Ionicons name="location" size={14} color={theme.textSecondary} />
+              <Text style={styles.destinationText} numberOfLines={2}>
+                {isDelivered ? 'Delivered to' : 'Delivering to'} {destination}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.cardSectionTitle}>Meals in this batch</Text>
+          <Text style={styles.sectionCount}>{itemCount} {itemCount === 1 ? 'meal' : 'meals'}</Text>
+        </View>
+
+        <View style={styles.itemsContainer}>
+          {order.items.map((item: CartItem, idx: number) => (
+            <View key={item.id || idx} style={styles.itemCard}>
+              <View style={styles.itemIconWrap}>
+                <Text style={styles.itemEmoji}>🍽️</Text>
+              </View>
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemName}>{item.name}</Text>
+                {item.selectedSize && <Text style={styles.itemMeta}>{item.selectedSize}</Text>}
+                {item.category && !item.selectedSize && <Text style={styles.itemMeta}>{item.category}</Text>}
+                {item.addOns && item.addOns.length > 0 && (
+                  <Text style={styles.itemMeta}>+ {item.addOns.map(a => a.name).join(', ')}</Text>
+                )}
+              </View>
+              <View style={styles.itemRight}>
+                <Text style={styles.itemQty}>x{item.quantity}</Text>
+                <Text style={styles.itemPrice}>R{(item.price * item.quantity).toFixed(2)}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Subtotal</Text>
+            <Text style={styles.summaryValue}>R {order.totalPrice.toFixed(2)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Delivery Fee</Text>
+            {order.deliveryFee ? (
+              <Text style={styles.summaryValue}>R {order.deliveryFee.toFixed(2)}</Text>
+            ) : (
+              <Text style={[styles.summaryValue, styles.summaryFree]}>Free</Text>
+            )}
+          </View>
+          {order.discountAmount ? (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Discount</Text>
+              <Text style={[styles.summaryValue, styles.summaryFree]}>- R {order.discountAmount.toFixed(2)}</Text>
+            </View>
+          ) : null}
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryTotalLabel}>Total</Text>
+            <Text style={styles.summaryTotalValue}>R {order.total.toFixed(2)}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  // The compact past-order card — unchanged from the old standalone History tab.
+  const renderPastOrderCard = (item: Order) => {
+    const statusColor = getStatusColor(item.status);
+    const hasWeeklyMenuItems = item.items.some(orderItem => isCycleMenuItemId(orderItem.id));
+    const itemCountTotal = item.items.reduce((sum, dish) => sum + dish.quantity, 0);
+    const reorderLabel = hasWeeklyMenuItems
+      ? `Reorder unavailable for order ${item.id}, includes Weekly Menu items`
+      : `Reorder ${itemCountTotal} item${itemCountTotal !== 1 ? 's' : ''} from order ${item.id}`;
+
+    return (
+      <View key={item.id} style={styles.pastOrderCard}>
+        <View style={styles.orderHeader}>
+          <View style={styles.orderIdContainer}>
+            <Text style={styles.orderId}>{item.id}</Text>
+            <Text style={styles.orderDate}>{formatDate(item.timestamp)}</Text>
+          </View>
+          <View style={styles.orderTotalContainer}>
+            <Text style={styles.orderTotal}>R {item.total.toFixed(2)}</Text>
+            <View style={styles.itemCount}>
+              <Text style={styles.itemCountText}>{itemCountTotal} items</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.itemsPreview}>
+          {item.items.slice(0, 3).map((dish, idx) => (
+            <View key={dish.id || idx} style={styles.itemChip}>
+              <Text style={styles.itemChipText}>{dish.quantity}x {dish.name}</Text>
+            </View>
+          ))}
+          {item.items.length > 3 && (
+            <View style={styles.moreChip}>
+              <Text style={styles.moreChipText}>+{item.items.length - 3} more</Text>
+            </View>
+          )}
+        </View>
+
+        {item.deliveryAddress && (
+          <View style={styles.addressSection}>
+            <View style={styles.addressIconWrap}>
+              <Text style={styles.addressIcon}>📍</Text>
+            </View>
+            <View style={styles.addressDetails}>
+              <Text style={styles.addressLabel}>{item.deliveryAddress.label}</Text>
+              <Text style={styles.addressText}>{item.deliveryAddress.street}, {item.deliveryAddress.suburb}</Text>
+              <Text style={styles.addressText}>{item.deliveryAddress.city}, {item.deliveryAddress.code}</Text>
+            </View>
+          </View>
+        )}
+
+        <View style={styles.orderFooter}>
+          <View style={[styles.statusBadge, { borderColor: statusColor }]}>
+            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+            <Text style={[styles.statusText, { color: statusColor }]}>{getStatusLabel(item.status)}</Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.reorderBtn, hasWeeklyMenuItems && styles.reorderBtnDisabled]}
+            onPress={() => handleReorder(item)}
+            activeOpacity={hasWeeklyMenuItems ? 1 : 0.7}
+            accessibilityRole="button"
+            accessibilityLabel={reorderLabel}
+            accessibilityState={{ disabled: hasWeeklyMenuItems }}
+          >
+            <Text style={[styles.reorderBtnText, hasWeeklyMenuItems && styles.reorderBtnTextDisabled]}>
+              Reorder
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
 
       {isLoading ? (
-        renderActivitySkeleton()
+        <ScrollView contentContainerStyle={styles.list}>{renderActivitySkeleton()}</ScrollView>
       ) : orders.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyIcon}>📋</Text>
@@ -99,135 +419,27 @@ export default function TabActivityScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <FlatList
-          data={pastOrders.length > 0 ? pastOrders : orders}
-          keyExtractor={(item) => item.id}
+        <ScrollView
           contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyIcon}>✨</Text>
-              <Text style={styles.emptyTitle}>No past orders yet</Text>
-              <Text style={styles.emptySubtitle}>
-                Your current order is active. Check back after completion
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />}
+        >
+          {activeOrders.length > 0 && (
+            <>
+              <Text style={styles.screenSectionTitle}>Active Orders</Text>
+              <Text style={styles.screenSectionSub}>Batch drop at {BATCH_DROP_LABEL}</Text>
+              {activeOrders.map(renderActiveOrderCard)}
+            </>
+          )}
+
+          {pastOrders.length > 0 && (
+            <>
+              <Text style={[styles.screenSectionTitle, activeOrders.length > 0 && styles.screenSectionTitleSpaced]}>
+                Order History
               </Text>
-            </View>
-          }
-          renderItem={({ item }) => {
-            const statusColor = getStatusColor(item.status);
-            return (
-              <TouchableOpacity style={styles.orderCard} activeOpacity={0.7}>
-                <View style={styles.orderHeader}>
-                  <View style={styles.orderIdContainer}>
-                    <Text style={styles.orderId}>{item.id}</Text>
-                    <Text style={styles.orderDate}>{formatDate(item.timestamp)}</Text>
-                  </View>
-                  <View style={styles.orderTotalContainer}>
-                    <Text style={styles.orderTotal}>R {item.total.toFixed(2)}</Text>
-                    <View style={styles.itemCount}>
-                      <Text style={styles.itemCountText}>
-                        {item.items.reduce((sum, dish) => sum + dish.quantity, 0)} items
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                <View style={styles.itemsPreview}>
-                  {item.items.slice(0, 3).map((dish, idx) => (
-                    <View key={dish.id || idx} style={styles.itemChip}>
-                      <Text style={styles.itemChipText}>
-                        {dish.quantity}x {dish.name}
-                      </Text>
-                    </View>
-                  ))}
-                  {item.items.length > 3 && (
-                    <View style={styles.moreChip}>
-                      <Text style={styles.moreChipText}>+{item.items.length - 3} more</Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Delivery Address */}
-                {item.deliveryAddress && (
-                  <View style={styles.addressSection}>
-                    <View style={styles.addressIconWrap}>
-                      <Text style={styles.addressIcon}>📍</Text>
-                    </View>
-                    <View style={styles.addressDetails}>
-                      <Text style={styles.addressLabel}>{item.deliveryAddress.label}</Text>
-                      <Text style={styles.addressText}>
-                        {item.deliveryAddress.street}, {item.deliveryAddress.suburb}
-                      </Text>
-                      <Text style={styles.addressText}>
-                        {item.deliveryAddress.city}, {item.deliveryAddress.code}
-                      </Text>
-                    </View>
-                  </View>
-                )}
-
-                <View style={styles.orderFooter}>
-                  <View style={[styles.statusBadge, { borderColor: statusColor }]}>
-                    <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                    <Text style={[styles.statusText, { color: statusColor }]}>{getStatusLabel(item.status)}</Text>
-                  </View>
-                  {(() => {
-                    // An order that touched the Weekly Menu can't be safely
-                    // reordered as a single action — that menu changes daily,
-                    // so a stale cycle- id from this order may not match
-                    // anything on today's actual menu, at today's actual price.
-                    // Rather than silently reordering only part of the order,
-                    // grey the whole action out and explain why on tap.
-                    const hasWeeklyMenuItems = item.items.some(orderItem =>
-                      isCycleMenuItemId(orderItem.id)
-                    );
-
-                    const handlePress = () => {
-                      if (hasWeeklyMenuItems) {
-                        setShowCantReorder(true);
-                        return;
-                      }
-                      item.items.forEach(orderItem => {
-                        addToCart({
-                          id: orderItem.id,
-                          name: orderItem.name,
-                          price: orderItem.price,
-                          category: orderItem.category,
-                          quantity: orderItem.quantity,
-                          image: orderItem.image,
-                          selectedSize: orderItem.selectedSize,
-                          notes: orderItem.notes,
-                        });
-                      });
-                      router.push('/');
-                    };
-
-                    const itemCountTotal = item.items.reduce((sum, dish) => sum + dish.quantity, 0);
-                    const reorderLabel = hasWeeklyMenuItems
-                      ? `Reorder unavailable for order ${item.id}, includes Weekly Menu items`
-                      : `Reorder ${itemCountTotal} item${itemCountTotal !== 1 ? 's' : ''} from order ${item.id}`;
-
-                    return (
-                      <TouchableOpacity
-                        style={[styles.reorderBtn, hasWeeklyMenuItems && styles.reorderBtnDisabled]}
-                        onPress={handlePress}
-                        activeOpacity={hasWeeklyMenuItems ? 1 : 0.7}
-                        accessibilityRole="button"
-                        accessibilityLabel={reorderLabel}
-                        accessibilityState={{ disabled: hasWeeklyMenuItems }}
-                      >
-                        <Text style={[styles.reorderBtnText, hasWeeklyMenuItems && styles.reorderBtnTextDisabled]}>
-                          Reorder
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })()}
-                </View>
-              </TouchableOpacity>
-            );
-          }}
-        />
+              {pastOrders.map(renderPastOrderCard)}
+            </>
+          )}
+        </ScrollView>
       )}
 
       <Modal
@@ -261,9 +473,6 @@ export default function TabActivityScreen() {
 
 const createStyles = (theme: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background },
-  header: { padding: 20, paddingBottom: 16 },
-  title: { fontSize: 28, fontWeight: '900', color: theme.text, marginBottom: 4 },
-  subtitle: { fontSize: 14, color: theme.textSecondary, fontWeight: '500' },
 
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
   emptyIcon: { fontSize: 56, marginBottom: 16 },
@@ -274,7 +483,145 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
 
   list: { padding: 16, paddingBottom: 20 },
 
+  screenSectionTitle: { fontSize: 20, fontWeight: '800', color: theme.text, letterSpacing: -0.4 },
+  screenSectionTitleSpaced: { marginTop: 8 },
+  screenSectionSub: { fontSize: 12, color: theme.textSecondary, marginTop: 3, marginBottom: 18 },
+
+  activeOrderBlock: { marginBottom: 8 },
+
+  // Active order strip
   orderCard: {
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+  },
+  orderCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  orderCardLeft: { flex: 1, paddingRight: 12 },
+  orderCaption: { fontSize: 10, fontWeight: '800', color: theme.textTertiary, letterSpacing: 1.1 },
+  orderId: { fontSize: 14, fontWeight: '800', color: theme.text, marginTop: 4, letterSpacing: -0.2 },
+  orderTotal: { fontSize: 17, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
+  paymentBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 },
+  paymentBadgeText: { fontSize: 11, fontWeight: '700', color: theme.success },
+
+  // Timeline
+  timelineCard: {
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 24,
+  },
+  timelineHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 },
+  timelineHeaderLeft: { flex: 1, paddingRight: 10 },
+  timelineDate: { fontSize: 13, fontWeight: '700', color: theme.text, marginTop: 4 },
+  dropPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surfaceSecondary,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  dropPillText: { fontSize: 10, fontWeight: '700', color: theme.textSecondary },
+
+  timelineRow: { flexDirection: 'row' },
+  timelineRail: { width: 26, alignItems: 'center' },
+  marker: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  markerDone: { backgroundColor: theme.accent, borderColor: theme.accent },
+  markerCurrent: { backgroundColor: theme.accent, borderColor: theme.accent },
+  markerPending: { backgroundColor: theme.surface, borderColor: theme.border },
+  connector: { flex: 1, width: 2, backgroundColor: theme.border, marginVertical: 4 },
+  connectorDone: { backgroundColor: theme.accent },
+
+  timelineBody: { flex: 1, paddingLeft: 14, paddingBottom: 22 },
+  timelineBodyLast: { paddingBottom: 0 },
+  timelineTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 },
+  stepTitle: { flexShrink: 1, fontSize: 14, fontWeight: '800', color: theme.text, letterSpacing: -0.2 },
+  stepTitlePending: { color: theme.textTertiary },
+  stepTiming: { fontSize: 10, fontWeight: '600', color: theme.textTertiary },
+  stepDescription: { fontSize: 12, color: theme.textSecondary, lineHeight: 17, marginTop: 4 },
+  stepDescriptionPending: { color: theme.textTertiary },
+
+  destinationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 18,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.border,
+  },
+  destinationText: { flex: 1, fontSize: 12, color: theme.textSecondary, fontWeight: '600' },
+
+  // Section Headers (inside an active order's card stack)
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, marginTop: 8 },
+  cardSectionTitle: { fontSize: 13, fontWeight: '800', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8 },
+  sectionCount: { fontSize: 12, color: theme.textSecondary, fontWeight: '600' },
+
+  // Items (active order)
+  itemsContainer: { marginBottom: 20 },
+  itemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.surface,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: theme.border,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  itemIconWrap: { width: 44, height: 44, borderRadius: 22, backgroundColor: theme.surfaceSecondary, justifyContent: 'center', alignItems: 'center', marginRight: 14, borderWidth: 1, borderColor: theme.border },
+  itemEmoji: { fontSize: 20 },
+  itemInfo: { flex: 1 },
+  itemName: { fontSize: 14, fontWeight: '700', color: theme.text, marginBottom: 3 },
+  itemMeta: { fontSize: 12, color: theme.textSecondary, fontWeight: '500' },
+  itemRight: { alignItems: 'flex-end' },
+  itemQty: { fontSize: 13, color: theme.textSecondary, fontWeight: '600' },
+  itemPrice: { fontSize: 14, fontWeight: '800', color: theme.text, marginTop: 2 },
+
+  // Summary (active order)
+  summaryCard: {
+    backgroundColor: theme.surface,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 28,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  summaryLabel: { fontSize: 14, color: theme.textSecondary, fontWeight: '500' },
+  summaryValue: { fontSize: 14, color: theme.text, fontWeight: '600', letterSpacing: -0.2 },
+  summaryFree: { color: theme.success, fontWeight: '700' },
+  summaryDivider: { height: 1, backgroundColor: theme.border, marginVertical: 14 },
+  summaryTotalLabel: { fontSize: 15, fontWeight: '800', color: theme.text, letterSpacing: -0.3 },
+  summaryTotalValue: { fontSize: 18, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
+
+  // Past order card
+  pastOrderCard: {
     backgroundColor: theme.surface,
     borderWidth: 1,
     borderColor: theme.border,
@@ -289,10 +636,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   },
   orderHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   orderIdContainer: { flex: 1 },
-  orderId: { fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 4, letterSpacing: -0.3 },
   orderDate: { fontSize: 12, color: theme.textSecondary, fontWeight: '500' },
   orderTotalContainer: { alignItems: 'flex-end' },
-  orderTotal: { fontSize: 18, fontWeight: '900', color: theme.text, marginBottom: 4, letterSpacing: -0.3 },
   itemCount: { backgroundColor: theme.surfaceSecondary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: theme.border },
   itemCountText: { fontSize: 11, color: theme.textSecondary, fontWeight: '600' },
 
@@ -343,7 +688,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
 
   orderFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.border },
   statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surfaceSecondary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: theme.border },
-  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#00C853', marginRight: 6 },
+  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.success, marginRight: 6 },
   statusText: { fontSize: 12, color: theme.text, fontWeight: '700', textTransform: 'capitalize' },
   reorderBtn: { backgroundColor: theme.accent, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, shadowColor: '#000000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3 },
   reorderBtnText: { color: theme.onAccent, fontSize: 13, fontWeight: '800' },

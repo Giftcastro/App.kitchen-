@@ -559,26 +559,8 @@ export default function TabProfileScreen() {
                     <Text style={styles.menuIconText}>📋</Text>
                   </View>
                   <View>
-                    <Text style={styles.menuItemTitle}>Order History</Text>
-                    <Text style={styles.menuItemSubtitle}>View past orders</Text>
-                  </View>
-                </View>
-                <Text style={styles.menuArrow}>›</Text>
-              </TouchableOpacity>
-
-              <View style={styles.menuDivider} />
-
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => router.push("/tracker")}
-              >
-                <View style={styles.menuItemLeft}>
-                  <View style={styles.menuIcon}>
-                    <Text style={styles.menuIconText}>📍</Text>
-                  </View>
-                  <View>
-                    <Text style={styles.menuItemTitle}>Track Order</Text>
-                    <Text style={styles.menuItemSubtitle}>Current order status</Text>
+                    <Text style={styles.menuItemTitle}>My Orders</Text>
+                    <Text style={styles.menuItemSubtitle}>Track active orders & view past orders</Text>
                   </View>
                 </View>
                 <Text style={styles.menuArrow}>›</Text>
