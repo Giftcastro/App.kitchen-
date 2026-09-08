@@ -11,8 +11,8 @@
  * silently mis-sorted the moment orders weren't in that exact order.
  */
 import React, { useState, useMemo } from 'react';
-import { View, StyleSheet, StatusBar, TouchableOpacity, Modal, ScrollView, RefreshControl } from 'react-native';
-import { Text } from '../../components/AppText';
+import { View, StyleSheet, StatusBar, TouchableOpacity, Modal, ScrollView, RefreshControl, TextProps } from 'react-native';
+import { Text as BrandText } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen, CartItem, Order } from '../../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
@@ -20,6 +20,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { Skeleton } from '../../components/Skeleton';
 import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { ThemeColors } from '../../utils/theme';
+import { legacyTypography } from '../../utils/legacyTypography';
+
+// This screen keeps the pre-KitchenCo prototype's RobotoCondensed body type
+// instead of the app-wide Montserrat (see legacyTypography.ts) — every
+// existing Text usage below picks this up automatically since none set
+// their own fontFamily already; the order-id/total headline styles
+// (screenSectionTitle, orderId, orderTotal) override back to GotchaGothic,
+// matching how the old DeliveryTrackerScreen split the two fonts.
+const Text: React.FC<TextProps> = ({ style, ...rest }) => (
+  <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
 
 /** Weekly (cycle) menu items are id-prefixed "cycle-<week>-<day>-..." — see
  * handleAddCycleItem in (tabs)/index.tsx. That menu only ever shows *today's*
@@ -83,7 +94,12 @@ const TIMELINE_STEPS: {
 ];
 
 export default function TabActivityScreen() {
-  const { orders, addToCart, theme } = useKitchen();
+  const { orders, addToCart, theme, isDark } = useKitchen();
+  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
+  // stark white — light mode only, matching how that palette never carried
+  // the warmth into dark mode either. Scoped to this screen's own canvas;
+  // cards/surfaces stay on the current theme's colors untouched.
+  const screenBackground = isDark ? theme.background : '#F7F2E8';
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { isLoading, refreshing, refresh } = useSimulatedLoad();
   const router = useRouter();
@@ -524,8 +540,8 @@ export default function TabActivityScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+    <SafeAreaView style={[styles.container, { backgroundColor: screenBackground }]}>
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
 
       {isLoading ? (
         <ScrollView contentContainerStyle={styles.list}>{renderActivitySkeleton()}</ScrollView>
@@ -620,7 +636,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
 
   list: { padding: 16, paddingBottom: 20 },
 
-  screenSectionTitle: { fontSize: 20, fontWeight: '800', color: theme.text, letterSpacing: -0.4 },
+  screenSectionTitle: { fontFamily: legacyTypography.heading, fontSize: 20, fontWeight: '800', color: theme.text, letterSpacing: -0.4 },
   screenSectionTitleSpaced: { marginTop: 8 },
   screenSectionSub: { fontSize: 12, color: theme.textSecondary, marginTop: 3, marginBottom: 18 },
 
@@ -638,8 +654,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   orderCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   orderCardLeft: { flex: 1, paddingRight: 12 },
   orderCaption: { fontSize: 10, fontWeight: '800', color: theme.textTertiary, letterSpacing: 1.1 },
-  orderId: { fontSize: 14, fontWeight: '800', color: theme.text, marginTop: 4, letterSpacing: -0.2 },
-  orderTotal: { fontSize: 17, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
+  orderId: { fontFamily: legacyTypography.heading, fontSize: 14, fontWeight: '800', color: theme.text, marginTop: 4, letterSpacing: -0.2 },
+  orderTotal: { fontFamily: legacyTypography.heading, fontSize: 17, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
   paymentBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 },
   paymentBadgeText: { fontSize: 11, fontWeight: '700', color: theme.success },
   queuedDateRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },

@@ -13,8 +13,10 @@ import {
   ScrollView,
   Modal,
   Switch,
+  TextProps,
+  TextInputProps,
 } from "react-native";
-import { Text, TextInput } from "../../components/AppText";
+import { Text as BrandText, TextInput as BrandTextInput } from "../../components/AppText";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   useKitchen,
@@ -24,6 +26,19 @@ import { useRouter } from "expo-router";
 import { calculateDeliveryFee } from "../../utils/deliveryHelpers";
 import { ThemeColors } from "../../utils/theme";
 import { haptics } from "../../utils/haptics";
+import { legacyTypography } from "../../utils/legacyTypography";
+
+// This screen keeps the pre-KitchenCo prototype's RobotoCondensed body type
+// instead of the app-wide Montserrat (see legacyTypography.ts) — every
+// existing Text/TextInput usage below picks this up automatically since none
+// set their own fontFamily already; profileName/statValue override back to
+// GotchaGothic, matching how the old ProfileScreen split the two fonts.
+const Text: React.FC<TextProps> = ({ style, ...rest }) => (
+  <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
+const TextInput: React.FC<TextInputProps> = ({ style, ...rest }) => (
+  <BrandTextInput style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
 
 export default function TabProfileScreen() {
   const {
@@ -42,11 +57,12 @@ export default function TabProfileScreen() {
     remindersEnabled,
     setRemindersEnabled,
     theme,
+    isDark,
     themeMode,
     setThemeMode,
   } = useKitchen();
   const router = useRouter();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
 
   // Corporate accounts have a registered company address on top of any
   // personal addresses — shown as a selectable entry rather than hidden,
@@ -141,7 +157,7 @@ export default function TabProfileScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Status bar */}
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={isDark ? theme.background : '#F7F2E8'} />
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {/* Profile Card — compact identity + stats */}
         <View style={styles.profileCard}>
@@ -762,8 +778,12 @@ export default function TabProfileScreen() {
 }
 
 // Theme-driven styles — see src/utils/theme.ts for the ThemeColors palette.
-const createStyles = (theme: ThemeColors) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background },
+const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create({
+  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
+  // stark white — light mode only, matching how that palette never carried
+  // the warmth into dark mode either. Scoped to this screen's own canvas;
+  // cards/surfaces stay on the current theme's colors untouched.
+  container: { flex: 1, backgroundColor: isDark ? theme.background : '#F7F2E8' },
     scrollContent: {
     paddingBottom: 32,
     // Keep cards at a readable width on tablet-sized frames instead of
@@ -843,7 +863,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     borderWidth: 2.5,
     borderColor: theme.surface,
   },
-  profileName: { fontSize: 18, fontWeight: "800", color: theme.text, marginBottom: 2 },
+  profileName: { fontFamily: legacyTypography.heading, fontSize: 18, fontWeight: "800", color: theme.text, marginBottom: 2 },
   profileEmail: { fontSize: 13, color: theme.textSecondary, marginBottom: 8 },
   roleChip: {
     alignSelf: "flex-start",
@@ -864,7 +884,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     borderTopColor: theme.border,
   },
   statBox: { flex: 1, alignItems: "center" },
-  statValue: { fontSize: 20, fontWeight: "900", color: theme.text, marginBottom: 4 },
+  statValue: { fontFamily: legacyTypography.heading, fontSize: 20, fontWeight: "900", color: theme.text, marginBottom: 4 },
   statLabel: {
     fontSize: 12,
     color: theme.textSecondary,

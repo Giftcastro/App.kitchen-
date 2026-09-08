@@ -13,6 +13,11 @@ import {
   Montserrat_800ExtraBold,
   Montserrat_900Black,
 } from '@expo-google-fonts/montserrat';
+import {
+  RobotoCondensed_400Regular,
+  RobotoCondensed_500Medium,
+  RobotoCondensed_700Bold,
+} from '@expo-google-fonts/roboto-condensed';
 import { KitchenProvider, useKitchen } from '../context/KitchenCoContext';
 import { useResponsive } from '../utils/responsive';
 
@@ -91,6 +96,13 @@ export default function RootLayout() {
     Montserrat_700Bold,
     Montserrat_800ExtraBold,
     Montserrat_900Black,
+    // Menu/Activity/Profile-only typeface (see legacyTypography.ts) — the
+    // rest of the app stays on Montserrat above.
+    RobotoCondensed_400Regular,
+    RobotoCondensed_500Medium,
+    RobotoCondensed_700Bold,
+    GotchaGothic: require('../../assets/fonts/Gotcha Gothic Regular.ttf'),
+    'GotchaGothic-Light': require('../../assets/fonts/Gotcha Gothic Light.ttf'),
   });
 
   useEffect(() => {

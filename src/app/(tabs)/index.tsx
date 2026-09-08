@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { StyleSheet, View, FlatList, TouchableOpacity, StatusBar, Modal, ScrollView, useWindowDimensions, Animated, RefreshControl, Image } from 'react-native';
-import { Text, TextInput } from '../../components/AppText';
+import { StyleSheet, View, FlatList, TouchableOpacity, StatusBar, Modal, ScrollView, useWindowDimensions, Animated, RefreshControl, Image, TextProps, TextInputProps } from 'react-native';
+import { Text as BrandText, TextInput as BrandTextInput } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,9 +13,23 @@ import { getUpcomingOrderableWeekdays, UpcomingWeekday, getCycleWeekForDate } fr
 import { useResponsive } from '../../utils/responsive';
 import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { APP_MAX_WIDTH, ThemeColors } from '../../utils/theme';
+import { legacyTypography } from '../../utils/legacyTypography';
 
 import staticMenuData from '../../data/staticMenu.json';
 import cycleMenuData from '../../data/cycleMenu.json';
+
+// This screen keeps the pre-KitchenCo prototype's RobotoCondensed body type
+// instead of the app-wide Montserrat (see legacyTypography.ts) — every
+// existing Text/TextInput usage below picks this up automatically since none
+// set their own fontFamily already; a handful of headline-level styles
+// (exploreHeading, listCardName, uberItemName, dayTitle) override back to
+// GotchaGothic, matching how the old app split the two fonts.
+const Text: React.FC<TextProps> = ({ style, ...rest }) => (
+  <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
+const TextInput: React.FC<TextInputProps> = ({ style, ...rest }) => (
+  <BrandTextInput style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
 
 interface SizeOption { label: string; price: number; }
 
@@ -100,7 +114,12 @@ function formatCategoryLabel(name: string): string {
 }
 
 export default function MenuScreen() {
-  const { addToCart, cart, cycleWeekOffset, theme, discounts, menus, user, triggerCartFly, orderingForDate, visibleAnnouncements, dismissAnnouncement } = useKitchen();
+  const { addToCart, cart, cycleWeekOffset, theme, isDark, discounts, menus, user, triggerCartFly, orderingForDate, visibleAnnouncements, dismissAnnouncement } = useKitchen();
+  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
+  // stark white — light mode only, matching how that palette never carried
+  // the warmth into dark mode either. Scoped to this screen's own canvas;
+  // cards/surfaces stay on the current theme's colors untouched.
+  const screenBackground = isDark ? theme.background : '#F7F2E8';
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { isLoading, refreshing, refresh } = useSimulatedLoad();
   const addToCartBtnRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
@@ -793,8 +812,8 @@ export default function MenuScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+    <SafeAreaView style={[styles.container, { backgroundColor: screenBackground }]}>
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
 
       {/* Admins land here deliberately (via "Preview App") to see exactly what a
           customer sees while editing items — not to place personal orders. */}
@@ -1308,6 +1327,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   toggleBtnActive: { backgroundColor: theme.accent },
   toggleBtnText: { color: theme.textTertiary, fontSize: 13, fontWeight: '700' },
   exploreHeading: {
+    fontFamily: legacyTypography.heading,
     fontSize: 20,
     fontWeight: '800',
     color: theme.text,
@@ -1440,7 +1460,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   uberContent: { padding: 10 },
   uberTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 3 },
   uberItemNameFlex: { flex: 1, marginBottom: 0 },
-  uberItemName: { fontSize: 15, fontWeight: '800', color: theme.text, lineHeight: 19, marginBottom: 3, letterSpacing: -0.2 },
+  uberItemName: { fontFamily: legacyTypography.heading, fontSize: 15, fontWeight: '800', color: theme.text, lineHeight: 19, marginBottom: 3, letterSpacing: -0.2 },
   uberItemDesc: { fontSize: 11, color: theme.textSecondary, lineHeight: 15, marginBottom: 8 },
   uberMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
   uberPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexShrink: 1 },
@@ -1466,7 +1486,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   },
   listCardTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
   listCardNameCol: { flex: 1 },
-  listCardName: { fontSize: 16, fontWeight: '800', color: theme.text, lineHeight: 20, letterSpacing: -0.2 },
+  listCardName: { fontFamily: legacyTypography.heading, fontSize: 16, fontWeight: '800', color: theme.text, lineHeight: 20, letterSpacing: -0.2 },
   // Price, "Large" price, and the add button all stack in this one right-hand
   // column (client reference, Sep 2026) — the add button sits with the price
   // it applies to rather than sharing a row with the tags below.
@@ -1490,7 +1510,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   // usually a future delivery rather than today, so a green "live now" marker
   // was both a colour the repaint removes and a slightly wrong signal.
   todayDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.text, marginRight: 6 },
-  dayTitle: { fontSize: 15, fontWeight: '800', color: theme.text },
+  dayTitle: { fontFamily: legacyTypography.heading, fontSize: 15, fontWeight: '800', color: theme.text },
   dayTitleToday: { color: theme.text },
   dayMealCount: { fontSize: 12, color: theme.textTertiary, fontWeight: '600' },
 
