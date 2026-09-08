@@ -51,7 +51,7 @@ function makeEmptyAddressDraft(): AddressDraft {
   };
 }
 
-// Order-status colours, matching activity.tsx's getStatusColor. Colour is
+// Order-status colours, matching orders.tsx's getStatusColor. Colour is
 // spent only where it carries meaning in the black-and-white repaint: amber
 // for "needs accepting", blue while out for delivery, green on arrival, red
 // for cancelled — work in hand and finished orders stay grey.

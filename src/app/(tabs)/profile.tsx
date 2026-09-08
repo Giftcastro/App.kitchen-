@@ -569,7 +569,7 @@ export default function TabProfileScreen() {
 
               <TouchableOpacity
                 style={styles.menuItem}
-                onPress={() => router.push("/activity")}
+                onPress={() => router.push("/orders")}
               >
                 <View style={styles.menuItemLeft}>
                   <View style={styles.menuIcon}>

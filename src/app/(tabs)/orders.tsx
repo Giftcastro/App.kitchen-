@@ -93,7 +93,7 @@ const TIMELINE_STEPS: {
   },
 ];
 
-export default function TabActivityScreen() {
+export default function TabOrdersScreen() {
   const { orders, addToCart, theme, isDark } = useKitchen();
   // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
   // stark white — light mode only, matching how that palette never carried

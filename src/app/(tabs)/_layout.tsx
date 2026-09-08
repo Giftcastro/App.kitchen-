@@ -135,7 +135,7 @@ export default function TabsLayout() {
           }}
         />
         <Tabs.Screen
-          name="activity"
+          name="orders"
           options={{
             title: 'Orders',
             headerTitle: 'My Orders',

@@ -347,7 +347,7 @@ export default function PayFastSandboxScreen() {
 
           <TouchableOpacity
             style={styles.continueShoppingBtn}
-            onPress={() => router.replace('/activity')}
+            onPress={() => router.replace('/orders')}
             accessibilityRole="button"
             accessibilityLabel="View my orders"
           >
