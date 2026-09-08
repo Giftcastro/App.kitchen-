@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Platform, StatusBar, ScrollView, TextProps, TextInputProps } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Platform, StatusBar, ScrollView, TextProps, TextInputProps, TextInput as RNTextInput } from 'react-native';
 import { Text as BrandText, TextInput as BrandTextInput } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
@@ -17,9 +17,12 @@ import { legacyTypography } from '../utils/legacyTypography';
 const Text: React.FC<TextProps> = ({ style, ...rest }) => (
   <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
 );
-const TextInput: React.FC<TextInputProps> = ({ style, ...rest }) => (
-  <BrandTextInput style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
-);
+// forwardRef, not a plain function component: the expiry field focuses its
+// year input by ref to hand over after the month is typed.
+const TextInput = React.forwardRef<RNTextInput, TextInputProps>(({ style, ...rest }, ref) => (
+  <BrandTextInput ref={ref} style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+));
+TextInput.displayName = 'TextInput';
 
 // Configure how notifications should behave when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -40,6 +43,9 @@ export default function PayFastSandboxScreen() {
   const screenBackground = isDark ? theme.background : '#F7F2E8';
   const router = useRouter();
   const webViewRef = useRef<WebView>(null);
+  // Focused from the expiry month field once two digits are in, so MM/YY is
+  // typed straight through without reaching for the second box.
+  const expiryYearRef = useRef<RNTextInput>(null);
   // Guards against a duplicate order — see handleNavigationStateChange below.
   const hasPlacedOrderRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -564,16 +570,47 @@ export default function PayFastSandboxScreen() {
 
                 <View style={styles.cardInputGroup}>
                   <Text style={styles.cardLabel}>EXPIRY DATE</Text>
+                  {/* Two 2-digit fields either side of a static "/" rather than
+                      one field that inserts the slash as you type. Same visible
+                      MM/YY result, but nothing rewrites a controlled value
+                      mid-keystroke, so the Android cursor-jump this file's note
+                      above describes can't come back — each input's value is a
+                      plain slice of the digits-only `expiryDate` state, which
+                      stays the single source of truth for validation and for
+                      the saved-card record. */}
                   <View style={[styles.cardInputWrapper, formErrors.expiryDate ? styles.cardInputError : null]}>
                     <TextInput
-                      style={styles.cardInput}
-                      placeholder="MM/YY"
+                      style={styles.expirySegment}
+                      placeholder="MM"
                       placeholderTextColor={theme.textTertiary}
-                      value={expiryDate}
-                      onChangeText={(val) => { setExpiryDate(val.replace(/\D/g, '').slice(0, 4)); setFormErrors({...formErrors, expiryDate: undefined}); }}
+                      value={expiryDate.slice(0, 2)}
+                      onChangeText={(val) => {
+                        const mm = val.replace(/\D/g, '').slice(0, 2);
+                        setExpiryDate(mm + expiryDate.slice(2, 4));
+                        setFormErrors({ ...formErrors, expiryDate: undefined });
+                        // Hand over once the month is complete — a focus move,
+                        // not a value rewrite, so it carries none of the risk.
+                        if (mm.length === 2) expiryYearRef.current?.focus();
+                      }}
                       keyboardType="number-pad"
-                      maxLength={4}
-                      accessibilityLabel="MM/YY"
+                      maxLength={2}
+                      accessibilityLabel="Expiry month, MM"
+                    />
+                    <Text style={styles.expirySlash}>/</Text>
+                    <TextInput
+                      ref={expiryYearRef}
+                      style={styles.expirySegment}
+                      placeholder="YY"
+                      placeholderTextColor={theme.textTertiary}
+                      value={expiryDate.slice(2, 4)}
+                      onChangeText={(val) => {
+                        const yy = val.replace(/\D/g, '').slice(0, 2);
+                        setExpiryDate(expiryDate.slice(0, 2) + yy);
+                        setFormErrors({ ...formErrors, expiryDate: undefined });
+                      }}
+                      keyboardType="number-pad"
+                      maxLength={2}
+                      accessibilityLabel="Expiry year, YY"
                     />
                   </View>
                   {formErrors.expiryDate && <Text style={styles.cardFieldError}>{formErrors.expiryDate}</Text>}
@@ -871,6 +908,10 @@ const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create(
   cardInputError: { borderColor: theme.error },
   cardInputIcon: { fontSize: 16, marginRight: 10 },
   cardInput: { flex: 1, fontSize: 16, color: theme.text, paddingVertical: 0, height: 50 },
+  // Sized to two digits rather than flex:1 so the pair sits together around
+  // the slash instead of drifting to opposite ends of the field.
+  expirySegment: { width: 30, fontSize: 16, color: theme.text, paddingVertical: 0, height: 50, textAlign: 'center' },
+  expirySlash: { fontSize: 16, color: theme.textSecondary, marginHorizontal: 2 },
   cardFieldError: { color: theme.error, fontSize: 11, fontWeight: '600', marginTop: 4, marginLeft: 4 },
   cardRow: { flexDirection: 'row' },
   securityNote: {
