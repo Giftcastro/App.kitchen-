@@ -1,6 +1,6 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Platform, StatusBar, ScrollView } from 'react-native';
-import { Text, TextInput } from '../components/AppText';
+import { View, StyleSheet, ActivityIndicator, TouchableOpacity, Platform, StatusBar, ScrollView, TextProps, TextInputProps } from 'react-native';
+import { Text as BrandText, TextInput as BrandTextInput } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import { useKitchen } from '../context/KitchenCoContext';
@@ -8,6 +8,18 @@ import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { haptics } from '../utils/haptics';
 import { ThemeColors } from '../utils/theme';
+import { legacyTypography } from '../utils/legacyTypography';
+
+// Same pre-KitchenCo RobotoCondensed body / GotchaGothic headline pairing as
+// Menu/Cart/Orders/Profile (see legacyTypography.ts) — this is the last stop
+// in the ordering flow, so it keeps the same look rather than snapping back
+// to Montserrat at checkout.
+const Text: React.FC<TextProps> = ({ style, ...rest }) => (
+  <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
+const TextInput: React.FC<TextInputProps> = ({ style, ...rest }) => (
+  <BrandTextInput style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
 
 // Configure how notifications should behave when the app is in the foreground
 Notifications.setNotificationHandler({
@@ -21,8 +33,11 @@ Notifications.setNotificationHandler({
 });
 
 export default function PayFastSandboxScreen() {
-  const { cart, placeOrder, user, savedCards, saveCard, orderNote, appliedDiscount, calculateDiscountAmount, deliveryInfo, theme } = useKitchen();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { cart, placeOrder, user, savedCards, saveCard, orderNote, appliedDiscount, calculateDiscountAmount, deliveryInfo, theme, isDark } = useKitchen();
+  const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
+  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
+  // stark white — light mode only, matching the rest of the ordering flow.
+  const screenBackground = isDark ? theme.background : '#F7F2E8';
   const router = useRouter();
   const webViewRef = useRef<WebView>(null);
   // Guards against a duplicate order — see handleNavigationStateChange below.
@@ -316,7 +331,7 @@ export default function PayFastSandboxScreen() {
   if (showSuccess) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+        <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
         <View style={styles.successContainer}>
           <View style={styles.successIconWrap}>
             <Text style={styles.successIcon}>✅</Text>
@@ -370,7 +385,7 @@ export default function PayFastSandboxScreen() {
   if (showCardForm) {
     return (
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+        <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => router.replace('/cart')}
@@ -633,7 +648,7 @@ export default function PayFastSandboxScreen() {
   // PayFast WebView (payment processing)
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
       <View style={styles.header}>
         <TouchableOpacity
           onPress={() => router.replace('/cart')}
@@ -744,21 +759,25 @@ export default function PayFastSandboxScreen() {
   );
 }
 
-const createStyles = (theme: ThemeColors) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background },
+const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create({
+  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
+  // stark white — light mode only, matching the rest of the ordering flow.
+  container: { flex: 1, backgroundColor: isDark ? theme.background : '#F7F2E8' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 14,
-    backgroundColor: theme.surface,
+    // No background of its own — inherits the container's cream, the same
+    // way cart.tsx's header does. An explicit theme.surface here left a
+    // white strip sitting above the cream body.
     borderBottomWidth: 1,
     borderBottomColor: theme.border,
   },
   closeButton: { padding: 4 },
   closeButtonText: { color: theme.error, fontWeight: '700', fontSize: 15 },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: theme.text },
+  headerTitle: { fontFamily: legacyTypography.heading, fontSize: 17, fontWeight: '800', color: theme.text },
   headerTotal: { backgroundColor: theme.surfaceSecondary, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8 },
   headerTotalText: { color: theme.text, fontWeight: '800', fontSize: 14 },
   webview: { flex: 1, opacity: 0, height: 0 },
@@ -802,7 +821,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   summaryDivider: { height: 1, backgroundColor: theme.border, marginVertical: 10 },
   summaryTotalRow: { flexDirection: 'row', justifyContent: 'space-between' },
   summaryTotalLabel: { fontSize: 14, color: theme.textSecondary },
-  summaryTotalValue: { fontSize: 16, fontWeight: '800', color: theme.text },
+  summaryTotalValue: { fontFamily: legacyTypography.heading, fontSize: 16, fontWeight: '800', color: theme.text },
   summaryOriginalPrice: { textDecorationLine: 'line-through', color: theme.textTertiary, fontSize: 14 },
   summaryDiscountRow: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 4 },
   summaryDiscountLabel: { fontSize: 13, color: theme.textSecondary },
@@ -887,7 +906,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: theme.background,
+    backgroundColor: isDark ? theme.background : '#F7F2E8',
   },
   successIconWrap: {
     width: 80,
@@ -901,8 +920,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     borderColor: theme.success,
   },
   successIcon: { fontSize: 40 },
-  successTitle: { fontSize: 24, fontWeight: '900', color: theme.text, marginBottom: 8 },
-  successAmount: { fontSize: 36, fontWeight: '900', color: theme.text, marginBottom: 12 },
+  successTitle: { fontFamily: legacyTypography.heading, fontSize: 24, fontWeight: '900', color: theme.text, marginBottom: 8 },
+  successAmount: { fontFamily: legacyTypography.heading, fontSize: 36, fontWeight: '900', color: theme.text, marginBottom: 12 },
   successSubtext: {
     fontSize: 14,
     color: theme.textSecondary,
