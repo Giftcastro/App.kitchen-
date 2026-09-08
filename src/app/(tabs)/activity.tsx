@@ -92,9 +92,42 @@ export default function TabActivityScreen() {
   // nothing there. A real Modal works identically on every platform.
   const [showCantReorder, setShowCantReorder] = useState(false);
 
+  // yyyy-mm-dd for the device's current date — compared against each order's
+  // own scheduled delivery date (not when it was placed) to tell a genuinely
+  // in-progress order from one that's merely paid-for and waiting its turn.
+  const todayISO = useMemo(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  // An order can bundle items pre-scheduled for different delivery dates
+  // (multi-day Main Menu ordering); the first dated item stands in for the
+  // whole order here, matching the single drop-day label already shown on
+  // its card. No dated items at all (an immediate, undated order) is treated
+  // as due today — there's no future date to queue it against.
+  const getOrderDueISO = (order: Order): string | null =>
+    order.items.find((i: CartItem) => i.deliveryDate)?.deliveryDate ?? null;
+
+  const isNonTerminal = (o: Order) => o.status === 'pending' || o.status === 'preparing' || o.status === 'on_the_way';
+
+  // Only an order the kitchen is actually working today gets the full
+  // batch-dispatch timeline — one scheduled days or weeks out hasn't started
+  // yet, so showing "Kitchen Prepping"/"Out for Batch Drop" as upcoming
+  // steps would misrepresent it as already in today's pipeline. Those sit in
+  // the queue below instead, with just their payment status shown.
   const activeOrders = useMemo(
-    () => orders.filter(o => o.status === 'pending' || o.status === 'preparing' || o.status === 'on_the_way'),
-    [orders]
+    () => orders.filter(o => {
+      const due = getOrderDueISO(o);
+      return isNonTerminal(o) && (due === null || due === todayISO);
+    }),
+    [orders, todayISO]
+  );
+  const queuedOrders = useMemo(
+    () => orders.filter(o => {
+      const due = getOrderDueISO(o);
+      return isNonTerminal(o) && due !== null && due !== todayISO;
+    }),
+    [orders, todayISO]
   );
   const pastOrders = useMemo(
     () => orders.filter(o => o.status === 'delivered' || o.status === 'cancelled'),
@@ -324,6 +357,100 @@ export default function TabActivityScreen() {
     );
   };
 
+  // A paid order scheduled for a date the kitchen hasn't reached yet — same
+  // item/summary layout as an active order, but with the batch-dispatch
+  // timeline swapped for a single "queued, payment verified" notice instead
+  // of implying it's already somewhere in today's prep-to-drop pipeline.
+  const renderQueuedOrderCard = (order: Order) => {
+    const itemCount = order.items.reduce((sum: number, i: CartItem) => sum + i.quantity, 0);
+    const address = order.deliveryAddress;
+    const destination = address ? [address.label, address.street].filter(Boolean).join(' · ') : null;
+    const dropDayLabel = order.items.find((i: CartItem) => i.deliveryDateLabel)?.deliveryDateLabel ?? order.date;
+
+    return (
+      <View key={order.id} style={styles.activeOrderBlock}>
+        <View style={styles.orderCard}>
+          <View style={styles.orderCardTop}>
+            <View style={styles.orderCardLeft}>
+              <Text style={styles.orderCaption}>QUEUED ORDER</Text>
+              <Text style={styles.orderId}>{order.id}</Text>
+            </View>
+            <Text style={styles.orderTotal}>R {order.total.toFixed(2)}</Text>
+          </View>
+          <View style={styles.paymentBadge}>
+            <Ionicons name="shield-checkmark" size={13} color={theme.success} />
+            <Text style={styles.paymentBadgeText}>Payment Verified</Text>
+          </View>
+          <View style={styles.queuedDateRow}>
+            <Ionicons name="calendar-outline" size={13} color={theme.textSecondary} />
+            <Text style={styles.queuedDateText}>Scheduled for {dropDayLabel}</Text>
+          </View>
+          {destination && (
+            <View style={styles.destinationRow}>
+              <Ionicons name="location" size={14} color={theme.textSecondary} />
+              <Text style={styles.destinationText} numberOfLines={2}>
+                Delivering to {destination}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        <View style={styles.sectionHeader}>
+          <Text style={styles.cardSectionTitle}>Meals in this order</Text>
+          <Text style={styles.sectionCount}>{itemCount} {itemCount === 1 ? 'meal' : 'meals'}</Text>
+        </View>
+
+        <View style={styles.itemsContainer}>
+          {order.items.map((item: CartItem, idx: number) => (
+            <View key={item.id || idx} style={styles.itemCard}>
+              <View style={styles.itemIconWrap}>
+                <Text style={styles.itemEmoji}>🍽️</Text>
+              </View>
+              <View style={styles.itemInfo}>
+                <Text style={styles.itemName}>{item.name}</Text>
+                {item.selectedSize && <Text style={styles.itemMeta}>{item.selectedSize}</Text>}
+                {item.category && !item.selectedSize && <Text style={styles.itemMeta}>{item.category}</Text>}
+                {item.addOns && item.addOns.length > 0 && (
+                  <Text style={styles.itemMeta}>+ {item.addOns.map(a => a.name).join(', ')}</Text>
+                )}
+              </View>
+              <View style={styles.itemRight}>
+                <Text style={styles.itemQty}>x{item.quantity}</Text>
+                <Text style={styles.itemPrice}>R{(item.price * item.quantity).toFixed(2)}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Subtotal</Text>
+            <Text style={styles.summaryValue}>R {order.totalPrice.toFixed(2)}</Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Delivery Fee</Text>
+            {order.deliveryFee ? (
+              <Text style={styles.summaryValue}>R {order.deliveryFee.toFixed(2)}</Text>
+            ) : (
+              <Text style={[styles.summaryValue, styles.summaryFree]}>Free</Text>
+            )}
+          </View>
+          {order.discountAmount ? (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Discount</Text>
+              <Text style={[styles.summaryValue, styles.summaryFree]}>- R {order.discountAmount.toFixed(2)}</Text>
+            </View>
+          ) : null}
+          <View style={styles.summaryDivider} />
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryTotalLabel}>Total</Text>
+            <Text style={styles.summaryTotalValue}>R {order.total.toFixed(2)}</Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   // The compact past-order card — unchanged from the old standalone History tab.
   const renderPastOrderCard = (item: Order) => {
     const statusColor = getStatusColor(item.status);
@@ -431,9 +558,19 @@ export default function TabActivityScreen() {
             </>
           )}
 
-          {pastOrders.length > 0 && (
+          {queuedOrders.length > 0 && (
             <>
               <Text style={[styles.screenSectionTitle, activeOrders.length > 0 && styles.screenSectionTitleSpaced]}>
+                Order Queue
+              </Text>
+              <Text style={styles.screenSectionSub}>Paid and waiting for their scheduled delivery day</Text>
+              {queuedOrders.map(renderQueuedOrderCard)}
+            </>
+          )}
+
+          {pastOrders.length > 0 && (
+            <>
+              <Text style={[styles.screenSectionTitle, (activeOrders.length > 0 || queuedOrders.length > 0) && styles.screenSectionTitleSpaced]}>
                 Order History
               </Text>
               {pastOrders.map(renderPastOrderCard)}
@@ -505,6 +642,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   orderTotal: { fontSize: 17, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
   paymentBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 10 },
   paymentBadgeText: { fontSize: 11, fontWeight: '700', color: theme.success },
+  queuedDateRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
+  queuedDateText: { fontSize: 11, fontWeight: '600', color: theme.textSecondary },
 
   // Timeline
   timelineCard: {

@@ -2064,15 +2064,6 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
         </View>
         <View style={styles.mealsHeaderActions}>
           <TouchableOpacity
-            style={styles.previewMenuBtn}
-            onPress={() => router.push('/')}
-            accessibilityRole="button"
-            accessibilityLabel="Preview app as customer"
-          >
-            <Ionicons name="eye-outline" size={16} color={theme.text} />
-            <Text style={styles.previewMenuBtnText}>Preview</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={styles.addBtn}
             onPress={() => setShowAddModal(true)}
             testID="add-meal-button"
@@ -5124,16 +5115,4 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
 
   // Meals tab header actions
   mealsHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  previewMenuBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: theme.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: theme.border,
-    paddingHorizontal: 12,
-    height: 42,
-    borderRadius: 21,
-  },
-  previewMenuBtnText: { color: theme.text, fontSize: 12, fontWeight: '800' },
 });
