@@ -99,12 +99,25 @@ export default function TabsLayout() {
           options={{
             title: 'Menu',
             href: isAdmin ? null : undefined,
+            // Centred, not the platform-default left alignment: the wordmark
+            // reads as a brand mark rather than a page title, and the rule
+            // beneath it only balances when it sits centred. Scoped to this
+            // screen — Orders/Profile keep left-aligned plain page titles.
+            headerTitleAlign: 'center',
             headerTitle: () => (
               <View style={styles.headerTitleContainer}>
                 <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
                   {'your kitchen '}
                   <Text style={styles.headerTitleAccent}>co.</Text>
                 </Text>
+                {/* Sized by alignSelf rather than a fixed width so the rule
+                    always matches the wordmark's own width, whatever the
+                    rendered text measures. Colour comes from KitchenLogo's
+                    divider rather than theme.border — this is part of the
+                    wordmark lockup, so it holds its own value instead of
+                    tracking the app's chrome (theme.border's #EBEBEB is also
+                    all but invisible against the cream header). */}
+                <View style={[styles.headerTitleRule, { backgroundColor: isDark ? '#3A3A3C' : '#C7C7CC' }]} />
               </View>
             ),
             headerRight: () => (
@@ -188,6 +201,11 @@ const styles = StyleSheet.create({
   },
   headerTitleAccent: {
     fontWeight: '800',
+  },
+  headerTitleRule: {
+    alignSelf: 'stretch',
+    height: 1,
+    marginTop: 5,
   },
   headerRightContainer: {
     flexDirection: 'row',
