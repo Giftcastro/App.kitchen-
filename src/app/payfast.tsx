@@ -323,7 +323,9 @@ export default function PayFastSandboxScreen() {
       // 3. Clear state and record order details — snapshot the total first,
       // since placeOrder() empties the cart that finalTotal is derived from.
       setPaidAmount(finalTotal);
-      placeOrder();
+      // Hand the order the same m_payment_id PayFast was posted, so the Tax
+      // Invoice and any dispute ticket quote the real reference.
+      placeOrder(undefined, paymentReference);
 
       // 4. Show success screen
       haptics.success();

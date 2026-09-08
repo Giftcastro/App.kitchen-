@@ -11,13 +11,17 @@
  * silently mis-sorted the moment orders weren't in that exact order.
  */
 import React, { useState, useMemo } from 'react';
-import { View, StyleSheet, StatusBar, TouchableOpacity, Modal, ScrollView, RefreshControl, TextProps } from 'react-native';
-import { Text as BrandText } from '../../components/AppText';
+import { View, StyleSheet, StatusBar, TouchableOpacity, Modal, ScrollView, RefreshControl, TextProps, TextInputProps } from 'react-native';
+import { Text as BrandText, TextInput as BrandTextInput } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen, CartItem, Order } from '../../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Skeleton } from '../../components/Skeleton';
+import { RatingBar } from '../../components/RatingBar';
+import { TaxInvoiceModal } from '../../components/TaxInvoiceModal';
+import { DisputeModal } from '../../components/DisputeModal';
+import { presentOrder } from '../../utils/orderPresentation';
 import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { ThemeColors } from '../../utils/theme';
 import { legacyTypography } from '../../utils/legacyTypography';
@@ -30,6 +34,12 @@ import { legacyTypography } from '../../utils/legacyTypography';
 // matching how the old DeliveryTrackerScreen split the two fonts.
 const Text: React.FC<TextProps> = ({ style, ...rest }) => (
   <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
+
+/** Same treatment for the rating feedback field, so it matches the body type
+ *  around it rather than falling back to the app-wide Montserrat. */
+const TextInput: React.FC<TextInputProps> = ({ style, ...rest }) => (
+  <BrandTextInput style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
 );
 
 /** Weekly (cycle) menu items are id-prefixed "cycle-<week>-<day>-..." — see
@@ -94,7 +104,7 @@ const TIMELINE_STEPS: {
 ];
 
 export default function TabOrdersScreen() {
-  const { orders, addToCart, theme, isDark } = useKitchen();
+  const { orders, addToCart, theme, isDark, user, submitOrderRating, reportOrderNonDelivery } = useKitchen();
   // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
   // stark white — light mode only, matching how that palette never carried
   // the warmth into dark mode either. Scoped to this screen's own canvas;
@@ -150,31 +160,46 @@ export default function TabOrdersScreen() {
     [orders]
   );
 
-  const formatDate = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-    if (diffHours < 1) return 'Just now';
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-    if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
-    return date.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
-  };
 
   // Order-status colours, drawn from the theme's semantic tokens so they stay
   // legible in both modes and spend colour only where it carries meaning.
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'pending': return theme.warning;
-      case 'preparing': return theme.textSecondary;
-      case 'on_the_way': return theme.info;
-      case 'delivered': return theme.success;
-      case 'cancelled': return theme.error;
-      default: return theme.textTertiary;
+  // Post-delivery actions on a history card, ported from JoTsav/kicthenCoV1
+  // main's OrderHistoryScreen: a tax invoice sheet, a star rating with
+  // optional feedback, and a non-delivery escalation.
+  const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState<Order | null>(null);
+  const [disputeOrder, setDisputeOrder] = useState<Order | null>(null);
+  const [draftRatings, setDraftRatings] = useState<Record<string, number>>({});
+  const [draftFeedbacks, setDraftFeedbacks] = useState<Record<string, string>>({});
+
+  const handleRatingSubmit = (orderId: string) => {
+    const stars = draftRatings[orderId] || 0;
+    if (stars === 0) return;
+    submitOrderRating(orderId, stars, draftFeedbacks[orderId]);
+    setDraftRatings(prev => { const next = { ...prev }; delete next[orderId]; return next; });
+    setDraftFeedbacks(prev => { const next = { ...prev }; delete next[orderId]; return next; });
+  };
+
+  /**
+   * Status pill config, his shape mapped onto our status vocabulary. A logged
+   * dispute wins over the order's own status: `dispute` is per-order, whereas
+   * `status` is shared across a company+day batch (see reportOrderNonDelivery
+   * in KitchenCoContext), so the batch status cannot represent one employee's
+   * missing meal.
+   */
+  const getStatusBadge = (order: Order) => {
+    if (order.dispute) {
+      return { label: 'Unfulfilled / Disputed', color: theme.error, icon: 'alert-circle-outline' as const };
+    }
+    switch (order.status.toLowerCase()) {
+      case 'pending': return { label: 'Paid / Scheduled', color: theme.warning, icon: 'calendar-outline' as const };
+      case 'preparing': return { label: 'Kitchen Prepping', color: theme.textSecondary, icon: 'restaurant-outline' as const };
+      case 'on_the_way': return { label: 'Out for Batch Drop', color: theme.info, icon: 'car-outline' as const };
+      case 'delivered': return { label: 'Delivered', color: theme.success, icon: 'checkmark-circle-outline' as const };
+      case 'cancelled': return { label: 'Cancelled', color: theme.error, icon: 'close-circle-outline' as const };
+      default: return { label: getStatusLabel(order.status), color: theme.textTertiary, icon: 'time-outline' as const };
     }
   };
+
 
   const getStatusLabel = (status: string) => {
     switch (status.toLowerCase()) {
@@ -468,8 +493,22 @@ export default function TabOrdersScreen() {
   };
 
   // The compact past-order card — unchanged from the old standalone History tab.
+  /**
+   * Order history card, ported from JoTsav/kicthenCoV1 main's
+   * OrderHistoryScreen: reference + date/slot line, status pill, location
+   * strip, priced line items, allergy tag, total paid, tax invoice, and the
+   * post-delivery rating / report-issue block. His per-order display fields
+   * come from presentOrder() since our Order does not store them.
+   */
   const renderPastOrderCard = (item: Order) => {
-    const statusColor = getStatusColor(item.status);
+    const view = presentOrder(item);
+    const badge = getStatusBadge(item);
+    const isDelivered = item.status === 'delivered';
+    const isDisputed = Boolean(item.dispute);
+    const hasRating = Boolean(item.rating);
+    const activeStar = draftRatings[item.id] ?? item.rating?.rating ?? 0;
+    const allergyNote = item.items.find(i => i.notes)?.notes;
+
     const hasWeeklyMenuItems = item.items.some(orderItem => isCycleMenuItemId(orderItem.id));
     const itemCountTotal = item.items.reduce((sum, dish) => sum + dish.quantity, 0);
     const reorderLabel = hasWeeklyMenuItems
@@ -477,89 +516,229 @@ export default function TabOrdersScreen() {
       : `Reorder ${itemCountTotal} item${itemCountTotal !== 1 ? 's' : ''} from order ${item.id}`;
 
     return (
-      <View key={item.id} style={styles.pastOrderCard}>
-        <View style={styles.orderHeader}>
-          <View style={styles.orderIdContainer}>
-            <Text style={styles.orderId}>{item.id}</Text>
-            <Text style={styles.orderDate}>{formatDate(item.timestamp)}</Text>
+      <View key={item.id} style={[styles.historyCard, isDisputed && styles.historyCardDisputed]}>
+        {/* Header row: reference + scheduled drop, status pill */}
+        <View style={styles.cardHeader}>
+          <View style={styles.orderRefCol}>
+            <Text style={styles.orderRefText}>{view.orderNumber}</Text>
+            <Text style={styles.deliveryDateBadge}>
+              {view.deliveryDateFormatted} • {view.deliverySlot}
+            </Text>
           </View>
-          <View style={styles.orderTotalContainer}>
-            <Text style={styles.orderTotal}>R {item.total.toFixed(2)}</Text>
-            <View style={styles.itemCount}>
-              <Text style={styles.itemCountText}>{itemCountTotal} items</Text>
-            </View>
+          <View style={[styles.statusPill, { borderColor: badge.color }]}>
+            <Ionicons name={badge.icon} size={12} color={badge.color} />
+            <Text style={[styles.statusPillText, { color: badge.color }]}>{badge.label}</Text>
           </View>
         </View>
 
-        <View style={styles.itemsPreview}>
-          {item.items.slice(0, 3).map((dish, idx) => (
-            <View key={dish.id || idx} style={styles.itemChip}>
-              <Text style={styles.itemChipText}>{dish.quantity}x {dish.name}</Text>
+        {/* Drop-off location */}
+        <View style={styles.locationRow}>
+          <Ionicons name="location" size={14} color={theme.textSecondary} />
+          <Text style={styles.locationText} numberOfLines={1}>
+            {view.companyLocation} • {view.deliveryFloor}
+          </Text>
+        </View>
+
+        {/* Priced line items */}
+        <View style={styles.itemsSummary}>
+          {item.items.map((dish, idx) => (
+            <View key={dish.id || idx} style={styles.itemRow}>
+              <Text style={styles.itemText} numberOfLines={2}>
+                {dish.quantity}x {dish.name}{dish.selectedSize ? ` (${dish.selectedSize})` : ''}
+                {dish.addOns && dish.addOns.length > 0 ? ` (+${dish.addOns.map(a => a.name).join(', ')})` : ''}
+              </Text>
+              <Text style={styles.itemPriceText}>R {(dish.price * dish.quantity).toFixed(2)}</Text>
             </View>
           ))}
-          {item.items.length > 3 && (
-            <View style={styles.moreChip}>
-              <Text style={styles.moreChipText}>+{item.items.length - 3} more</Text>
+          {allergyNote ? (
+            <View style={styles.allergyNoteTag}>
+              <Ionicons name="alert-circle" size={12} color={theme.warning} />
+              <Text style={styles.allergyNoteText}>[Note: {allergyNote}]</Text>
             </View>
-          )}
+          ) : null}
         </View>
 
-        {item.deliveryAddress && (
-          <View style={styles.addressSection}>
-            <View style={styles.addressIconWrap}>
-              <Text style={styles.addressIcon}>📍</Text>
-            </View>
-            <View style={styles.addressDetails}>
-              <Text style={styles.addressLabel}>{item.deliveryAddress.label}</Text>
-              <Text style={styles.addressText}>{item.deliveryAddress.street}, {item.deliveryAddress.suburb}</Text>
-              <Text style={styles.addressText}>{item.deliveryAddress.city}, {item.deliveryAddress.code}</Text>
-            </View>
-          </View>
-        )}
+        <View style={styles.cardDivider} />
 
-        <View style={styles.orderFooter}>
-          <View style={[styles.statusBadge, { borderColor: statusColor }]}>
-            <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-            <Text style={[styles.statusText, { color: statusColor }]}>{getStatusLabel(item.status)}</Text>
+        {/* Total paid */}
+        <View style={styles.financeRow}>
+          <View>
+            <Text style={styles.financeLabel}>Total Paid</Text>
+            <Text style={styles.financeAmount}>R {view.totalPaid.toFixed(2)}</Text>
           </View>
+        </View>
+
+        {/* Invoice + reorder. Reorder is ours, not his — it is existing working
+            functionality, so it sits beside the invoice button in his button
+            style rather than being dropped. */}
+        <View style={styles.cardActionsRow}>
           <TouchableOpacity
-            style={[styles.reorderBtn, hasWeeklyMenuItems && styles.reorderBtnDisabled]}
+            activeOpacity={0.8}
+            onPress={() => setSelectedInvoiceOrder(item)}
+            style={styles.cardActionBtn}
+            accessibilityRole="button"
+            accessibilityLabel={`Tax invoice for order ${item.id}`}
+          >
+            <Ionicons name="document-text-outline" size={15} color={theme.text} />
+            <Text style={styles.cardActionText}>Tax Invoice (PDF)</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.cardActionBtn, hasWeeklyMenuItems && styles.cardActionBtnDisabled]}
             onPress={() => handleReorder(item)}
-            activeOpacity={hasWeeklyMenuItems ? 1 : 0.7}
+            activeOpacity={hasWeeklyMenuItems ? 1 : 0.8}
             accessibilityRole="button"
             accessibilityLabel={reorderLabel}
             accessibilityState={{ disabled: hasWeeklyMenuItems }}
           >
-            <Text style={[styles.reorderBtnText, hasWeeklyMenuItems && styles.reorderBtnTextDisabled]}>
+            <Ionicons name="repeat" size={15} color={hasWeeklyMenuItems ? theme.textTertiary : theme.text} />
+            <Text style={[styles.cardActionText, hasWeeklyMenuItems && styles.cardActionTextDisabled]}>
               Reorder
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Logged non-delivery ticket */}
+        {isDisputed && item.dispute && (
+          <View style={styles.disputeBanner}>
+            <Ionicons name="warning" size={16} color={theme.error} />
+            <View style={styles.disputeTextCol}>
+              <Text style={styles.disputeTitle}>
+                Non-Delivery Ticket: {item.dispute.supportTicketRef}
+              </Text>
+              <Text style={styles.disputeStatus}>
+                Status: Kitchen Support Desk is reviewing the batch manifest.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Post-delivery block — only once the meal has actually landed */}
+        {isDelivered && (
+          <View style={styles.ratingSection}>
+            {hasRating ? (
+              <View style={styles.ratedContainer}>
+                <View style={styles.ratedHeader}>
+                  <Ionicons name="checkmark-circle" size={16} color={theme.success} />
+                  <Text style={styles.ratedTitle}>Your Rating ({item.rating?.rating} / 5 Stars)</Text>
+                </View>
+                <RatingBar rating={item.rating!.rating} readOnly size={20} />
+                {item.rating?.feedback ? (
+                  <Text style={styles.ratedFeedback}>"{item.rating.feedback}"</Text>
+                ) : null}
+              </View>
+            ) : (
+              <View style={styles.unratedContainer}>
+                <Text style={styles.ratingPromptTitle}>
+                  How was your meal drop on {view.deliveryDateFormatted}?
+                </Text>
+                <RatingBar
+                  rating={activeStar}
+                  onRatingChange={(newStar) => setDraftRatings(prev => ({ ...prev, [item.id]: newStar }))}
+                  size={26}
+                />
+
+                {activeStar > 0 && (
+                  <TextInput
+                    style={styles.feedbackInput}
+                    placeholder="Optional culinary feedback for Chef..."
+                    placeholderTextColor={theme.textTertiary}
+                    value={draftFeedbacks[item.id] || ''}
+                    onChangeText={(txt) => setDraftFeedbacks(prev => ({ ...prev, [item.id]: txt }))}
+                    multiline
+                    numberOfLines={2}
+                    textAlignVertical="top"
+                    accessibilityLabel="Feedback for the chef"
+                  />
+                )}
+
+                {activeStar > 0 && (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => handleRatingSubmit(item.id)}
+                    style={styles.submitRatingBtn}
+                    accessibilityRole="button"
+                    accessibilityLabel="Submit rating"
+                  >
+                    <Text style={styles.submitRatingBtnText}>Submit Rating</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
+            {!isDisputed && (
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => setDisputeOrder(item)}
+                style={styles.escalateButton}
+                accessibilityRole="button"
+                accessibilityLabel={`Report an issue with order ${item.id}`}
+              >
+                <Ionicons name="alert-circle-outline" size={14} color={theme.error} />
+                <Text style={styles.escalateButtonText}>Food Not Delivered / Report Issue</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </View>
     );
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: screenBackground }]}>
+    <SafeAreaView
+      // This screen renders its own header bar (headerShown is false for the
+      // Orders tab), so unlike Menu/Profile it owns the top inset. The tab bar
+      // still owns the bottom one.
+      edges={['top', 'left', 'right']}
+      style={[styles.container, { backgroundColor: screenBackground }]}
+    >
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
+
+      {/* Header bar, ported from his OrderHistoryScreen: stacked title +
+          subtitle on the left, circular jump-to-menu button on the right. */}
+      <View style={styles.headerBar}>
+        <View style={styles.headerTextCol}>
+          {/* His header bar verbatim, but titled for what this page actually
+              holds. His Orders screen is history-only (live tracking is a
+              separate DeliveryTrackerScreen in his app); ours keeps the batch
+              tracker on this same tab, so his literal "Order History &
+              Invoices" would name only the bottom half of the page. */}
+          <Text style={styles.headerBarTitle}>Orders &amp; Invoices</Text>
+          <Text style={styles.headerBarSubtitle}>Live batch tracking, past orders and tax records</Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => router.push('/')}
+          style={styles.headerMenuBtn}
+          accessibilityRole="button"
+          accessibilityLabel="Browse the menu"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="restaurant-outline" size={18} color={theme.textSecondary} />
+        </TouchableOpacity>
+      </View>
 
       {isLoading ? (
         <ScrollView contentContainerStyle={styles.list}>{renderActivitySkeleton()}</ScrollView>
       ) : orders.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>📋</Text>
-          <Text style={styles.emptyTitle}>No orders yet</Text>
-          <Text style={styles.emptySubtitle}>
-            Start ordering delicious meals and they'll appear here
-          </Text>
-          <TouchableOpacity
-            style={styles.menuBtn}
-            onPress={() => router.push('/')}
-            accessibilityRole="button"
-            accessibilityLabel="Browse Menu"
-          >
-            <Text style={styles.menuBtnText}>Browse Menu</Text>
-          </TouchableOpacity>
+        <View style={styles.emptyOuter}>
+          <View style={styles.emptyCard}>
+            <View style={styles.emptyIconCircle}>
+              <Ionicons name="clipboard-outline" size={48} color={theme.textTertiary} />
+            </View>
+            <Text style={styles.emptyTitle}>No Past Orders Yet</Text>
+            <Text style={styles.emptySubtitle}>
+              Scheduled orders for your upcoming corporate lunches will appear here.
+            </Text>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={styles.browseBtn}
+              onPress={() => router.push('/')}
+              accessibilityRole="button"
+              accessibilityLabel="Browse Menu"
+            >
+              <Text style={styles.browseBtnText}>Browse the Menu →</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       ) : (
         <ScrollView
@@ -595,6 +774,21 @@ export default function TabOrdersScreen() {
         </ScrollView>
       )}
 
+      <TaxInvoiceModal
+        visible={Boolean(selectedInvoiceOrder)}
+        order={selectedInvoiceOrder}
+        onClose={() => setSelectedInvoiceOrder(null)}
+      />
+
+      <DisputeModal
+        visible={Boolean(disputeOrder)}
+        order={disputeOrder}
+        userEmail={user?.email || ''}
+        userName={user?.name || 'Customer'}
+        onClose={() => setDisputeOrder(null)}
+        onConfirmDispute={reportOrderNonDelivery}
+      />
+
       <Modal
         visible={showCantReorder}
         animationType="fade"
@@ -627,12 +821,139 @@ export default function TabOrdersScreen() {
 const createStyles = (theme: ThemeColors) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.background },
 
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40 },
+  // --- Ported from JoTsav/kicthenCoV1 main's OrderHistoryScreen -------------
+  // His values, with colours mapped onto our black-and-white palette: he
+  // paints amounts and section headings in theme.primary (a blue), which here
+  // is theme.text — colour stays reserved for status (see src/utils/theme.ts).
+  headerBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.border,
+  },
+  headerTextCol: { flex: 1, paddingRight: 12 },
+  headerBarTitle: { fontFamily: legacyTypography.heading, fontSize: 20, fontWeight: '800', color: theme.text, letterSpacing: -0.4 },
+  headerBarSubtitle: { fontSize: 12, fontWeight: '500', marginTop: 2, color: theme.textSecondary },
+  headerMenuBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: theme.border, backgroundColor: theme.surface,
+  },
+
+  historyCard: {
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: theme.border,
+    backgroundColor: theme.surface,
+    marginBottom: 16,
+    gap: 10,
+  },
+  historyCardDisputed: { borderColor: theme.error },
+  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  orderRefCol: { flex: 1, paddingRight: 8 },
+  orderRefText: { fontFamily: legacyTypography.heading, fontSize: 15, fontWeight: '800', color: theme.text },
+  deliveryDateBadge: { fontSize: 12, fontWeight: '600', marginTop: 2, color: theme.textSecondary },
+  // Outlined rather than his tinted fill: our palette has no per-status
+  // surface tokens, and an outline keeps the status colour readable in both
+  // light and dark without inventing eight new tints.
+  statusPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderRadius: 8, borderWidth: 1, flexShrink: 1,
+  },
+  statusPillText: { fontSize: 11, fontWeight: '700' },
+
+  locationRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+    backgroundColor: theme.surfaceSecondary,
+  },
+  locationText: { fontSize: 11, fontWeight: '600', flex: 1, color: theme.textSecondary },
+
+  itemsSummary: { gap: 4, marginVertical: 2 },
+  itemRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10 },
+  itemText: { fontSize: 13, fontWeight: '600', color: theme.text, flex: 1 },
+  itemPriceText: { fontSize: 12, fontWeight: '500', color: theme.textSecondary },
+  allergyNoteTag: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+    marginTop: 2, alignSelf: 'flex-start', backgroundColor: theme.surfaceSecondary,
+  },
+  allergyNoteText: { fontSize: 10, fontWeight: '600', fontStyle: 'italic', color: theme.warning },
+
+  cardDivider: { height: 1, backgroundColor: theme.border },
+  financeRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  financeLabel: { fontSize: 11, fontWeight: '500', color: theme.textSecondary },
+  financeAmount: { fontFamily: legacyTypography.heading, fontSize: 17, fontWeight: '800', color: theme.text },
+
+  cardActionsRow: { flexDirection: 'row', gap: 8 },
+  cardActionBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingHorizontal: 12, minHeight: 44, borderRadius: 10,
+    borderWidth: 1, borderColor: theme.border, backgroundColor: theme.surfaceSecondary,
+  },
+  cardActionBtnDisabled: { opacity: 0.5 },
+  cardActionText: { fontSize: 12, fontWeight: '700', color: theme.text },
+  cardActionTextDisabled: { color: theme.textTertiary },
+
+  disputeBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    padding: 10, borderRadius: 10, borderWidth: 1,
+    borderColor: theme.error, backgroundColor: theme.surfaceSecondary,
+  },
+  disputeTextCol: { flex: 1 },
+  disputeTitle: { fontSize: 12, fontWeight: '700', color: theme.error },
+  disputeStatus: { fontSize: 11, marginTop: 2, color: theme.textSecondary },
+
+  ratingSection: {
+    borderRadius: 14, padding: 12, borderWidth: 1, gap: 8, marginTop: 4,
+    borderColor: theme.border, backgroundColor: theme.surfaceSecondary,
+  },
+  ratedContainer: { alignItems: 'center', gap: 6, paddingVertical: 4 },
+  ratedHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ratedTitle: { fontSize: 13, fontWeight: '700', color: theme.text },
+  ratedFeedback: { fontSize: 12, fontStyle: 'italic', textAlign: 'center', color: theme.textSecondary },
+  unratedContainer: { alignItems: 'center', gap: 8 },
+  ratingPromptTitle: { fontSize: 13, fontWeight: '700', textAlign: 'center', color: theme.text },
+  feedbackInput: {
+    width: '100%', borderWidth: 1, borderRadius: 10, padding: 10, fontSize: 12, minHeight: 50,
+    backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text,
+  },
+  submitRatingBtn: {
+    paddingHorizontal: 20, minHeight: 44, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: theme.accent,
+  },
+  submitRatingBtnText: { fontSize: 12, fontWeight: '700', color: theme.onAccent },
+  escalateButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    minHeight: 44, borderRadius: 8, borderWidth: 1, marginTop: 4, borderColor: theme.error,
+  },
+  escalateButtonText: { fontSize: 12, fontWeight: '700', color: theme.error },
+
+  emptyOuter: { flex: 1, justifyContent: 'center', paddingHorizontal: 16 },
+  emptyCard: {
+    borderRadius: 20, padding: 32, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 10,
+    borderColor: theme.border, backgroundColor: theme.surface,
+  },
+  emptyIconCircle: {
+    width: 72, height: 72, borderRadius: 36,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 6,
+    backgroundColor: theme.surfaceSecondary,
+  },
+  browseBtn: {
+    paddingHorizontal: 20, minHeight: 44, borderRadius: 12, marginTop: 10,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: theme.accent,
+  },
+  browseBtnText: { fontSize: 14, fontWeight: '800', color: theme.onAccent },
+
   emptyIcon: { fontSize: 56, marginBottom: 16 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: theme.text, marginBottom: 8 },
   emptySubtitle: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
-  menuBtn: { backgroundColor: theme.accent, paddingHorizontal: 28, paddingVertical: 14, borderRadius: 14 },
-  menuBtnText: { color: theme.onAccent, fontWeight: '800', fontSize: 15 },
 
   list: { padding: 16, paddingBottom: 20 },
 
@@ -776,79 +1097,10 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   summaryTotalValue: { fontSize: 18, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
 
   // Past order card
-  pastOrderCard: {
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 2,
-  },
-  orderHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  orderIdContainer: { flex: 1 },
-  orderDate: { fontSize: 12, color: theme.textSecondary, fontWeight: '500' },
-  orderTotalContainer: { alignItems: 'flex-end' },
-  itemCount: { backgroundColor: theme.surfaceSecondary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: theme.border },
-  itemCountText: { fontSize: 11, color: theme.textSecondary, fontWeight: '600' },
 
-  itemsPreview: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  itemChip: {
-    backgroundColor: theme.surfaceSecondary,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.border
-  },
-  itemChipText: { fontSize: 12, color: theme.textSecondary, fontWeight: '500' },
-  moreChip: {
-    backgroundColor: theme.border,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8
-  },
-  moreChipText: { fontSize: 12, color: theme.textSecondary, fontWeight: '600' },
 
   // Address Section
-  addressSection: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: theme.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-  },
-  addressIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: theme.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  addressIcon: { fontSize: 18 },
-  addressDetails: { flex: 1 },
-  addressLabel: { fontSize: 13, fontWeight: '800', color: theme.text, marginBottom: 3 },
-  addressText: { fontSize: 12, color: theme.textSecondary, fontWeight: '500', lineHeight: 16 },
 
-  orderFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: theme.border },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surfaceSecondary, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10, borderWidth: 1, borderColor: theme.border },
-  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.success, marginRight: 6 },
-  statusText: { fontSize: 12, color: theme.text, fontWeight: '700', textTransform: 'capitalize' },
-  reorderBtn: { backgroundColor: theme.accent, paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10, shadowColor: '#000000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 3 },
-  reorderBtnText: { color: theme.onAccent, fontSize: 13, fontWeight: '800' },
-  reorderBtnDisabled: { backgroundColor: theme.border, shadowOpacity: 0, elevation: 0 },
-  reorderBtnTextDisabled: { color: theme.textSecondary },
 
   modalOverlay: { flex: 1, backgroundColor: theme.modalOverlay, justifyContent: 'center', alignItems: 'center' },
   explainCard: {

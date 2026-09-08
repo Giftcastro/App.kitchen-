@@ -131,7 +131,11 @@ export default function TabProfileScreen() {
 
   if (!user) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView
+      // Header owns the top inset, the tab bar owns the bottom one.
+      edges={['left', 'right']}
+      style={styles.container}
+    >
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.welcomeCard}>
             <Text style={styles.welcomeIcon}>👋</Text>
@@ -155,7 +159,11 @@ export default function TabProfileScreen() {
   const totalOrders = orders.length;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      // Header owns the top inset, the tab bar owns the bottom one.
+      edges={['left', 'right']}
+      style={styles.container}
+    >
       {/* Status bar */}
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={isDark ? theme.background : '#F7F2E8'} />
             <ScrollView contentContainerStyle={styles.scrollContent}>

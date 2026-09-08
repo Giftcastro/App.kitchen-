@@ -79,6 +79,23 @@ export interface CartItem {
   addOns?: AddOnOption[];
 }
 
+/** A customer's post-delivery rating of one order (ported from JoTsav/kicthenCoV1 main). */
+export interface OrderRating {
+  /** 1 to 5 stars. */
+  rating: number;
+  feedback?: string;
+  submittedAt: string;
+}
+
+/** A logged non-delivery / meal-issue ticket against one order. */
+export interface DisputeInfo {
+  reportedAt: string;
+  reason: string;
+  /** e.g. "TCK-88219" — shown to the customer so they can quote it to support. */
+  supportTicketRef: string;
+  status: 'investigating' | 'refunded' | 'resolved';
+}
+
 export interface Order {
   id: string;
   items: CartItem[];
@@ -97,6 +114,16 @@ export interface Order {
   discountAmount?: number;
   /** Company meal subsidy deducted from this order, if the customer belonged to a subsidizing company at checkout. */
   subsidyAmount?: number;
+  /** Set once the customer rates a delivered order — see submitOrderRating. */
+  rating?: OrderRating;
+  /** Set when the customer reports their meal missing — see reportOrderNonDelivery. */
+  dispute?: DisputeInfo;
+  /**
+   * PayFast's m_payment_id for this checkout, passed in by payfast.tsx (which
+   * mints it) so the order carries its own real reference. Undefined on the
+   * seeded demo orders, which never went through a checkout.
+   */
+  paymentReference?: string;
 }
 
 export interface DeliveryAddress {
@@ -235,7 +262,7 @@ interface KitchenContextType {
   addToCart: (item: CartItem) => void;
   removeFromCart: (itemId: string) => void;
   clearCart: () => void;
-  placeOrder: (deliveryAddress?: DeliveryAddress) => void;
+  placeOrder: (deliveryAddress?: DeliveryAddress, paymentReference?: string) => void;
   allUsers: AppUser[];
   menus: MenuCategory[];
   discounts: Discount[];
@@ -255,6 +282,19 @@ interface KitchenContextType {
   updateCompany: (companyId: string, updates: Partial<Omit<Company, 'id'>>) => void;
   deleteCompany: (companyId: string) => void;
   updateOrderStatus: (orderId: string, status: string) => void;
+  /** Records a delivered order's star rating and optional feedback. */
+  submitOrderRating: (orderId: string, rating: number, feedback?: string) => void;
+  /**
+   * Logs a non-delivery ticket against ONE order and returns its reference.
+   *
+   * Deliberately does not touch `status`, unlike the reference implementation
+   * in JoTsav/kicthenCoV1 main (which sets it to 'unfulfilled'): status here is
+   * shared by every order in a company+day batch (see updateOrderStatus), so
+   * one employee reporting a missing meal would otherwise mark the whole
+   * company's delivery unfulfilled. The Orders screen derives its
+   * "Unfulfilled / Disputed" pill from `dispute` being set instead.
+   */
+  reportOrderNonDelivery: (orderId: string, reason?: string) => string;
   savedAddresses: DeliveryAddress[];
   addAddress: (address: DeliveryAddress) => void;
   removeAddress: (addressId: string) => void;
@@ -950,7 +990,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     return { distanceKm: null, fee: null, address: null, addressLabel: null };
   }, [user, companies, savedAddresses]);
 
-  const placeOrder = (deliveryAddress?: DeliveryAddress) => {
+  const placeOrder = (deliveryAddress?: DeliveryAddress, paymentReference?: string) => {
     if (cart.length === 0) return;
     const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const discountAmount = calculateDiscountAmount(cart, appliedDiscount);
@@ -978,6 +1018,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       discount: appliedDiscount || undefined,
       discountAmount: discountAmount || undefined,
       subsidyAmount: subsidyAmount || undefined,
+      paymentReference,
     };
     setOrders(prev => [newOrder, ...prev]);
     
@@ -1195,6 +1236,30 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const submitOrderRating = (orderId: string, rating: number, feedback?: string) => {
+    setOrders(prev => prev.map(o => o.id === orderId
+      ? { ...o, rating: { rating, feedback: feedback?.trim() || undefined, submittedAt: new Date().toISOString() } }
+      : o));
+  };
+
+  const reportOrderNonDelivery = (orderId: string, reason?: string) => {
+    const supportTicketRef = `TCK-${Math.floor(10000 + Math.random() * 90000)}`;
+    // Per-order only — see the note on the context type: a batch's shared
+    // status must not flip because one person's meal went missing.
+    setOrders(prev => prev.map(o => o.id === orderId
+      ? {
+          ...o,
+          dispute: {
+            reportedAt: new Date().toISOString(),
+            reason: reason?.trim() || 'Meal not present in designated floor pantry cooler at 12:00 PM',
+            supportTicketRef,
+            status: 'investigating' as const,
+          },
+        }
+      : o));
+    return supportTicketRef;
+  };
+
   // Delivery address management
   const addAddress = (address: DeliveryAddress) => {
     setSavedAddresses(prev => {
@@ -1283,6 +1348,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         updateCompany,
         deleteCompany,
         updateOrderStatus,
+        submitOrderRating,
+        reportOrderNonDelivery,
         savedAddresses,
         addAddress,
         removeAddress,

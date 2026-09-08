@@ -6,6 +6,7 @@ import { Animated, TouchableOpacity, View, StyleSheet, StatusBar } from 'react-n
 import { Text } from '../../components/AppText';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlyToCartOverlay, FlyToCartOverlayHandle } from '../../components/FlyToCartOverlay';
+import { BrandLogo } from '../../components/BrandLogo';
 
 export default function TabsLayout() {
   const { user, cart, theme, isDark, cartPulseSignal, registerCartFlyHandler } = useKitchen();
@@ -99,27 +100,15 @@ export default function TabsLayout() {
           options={{
             title: 'Menu',
             href: isAdmin ? null : undefined,
-            // Centred, not the platform-default left alignment: the wordmark
-            // reads as a brand mark rather than a page title, and the rule
-            // beneath it only balances when it sits centred. Scoped to this
+            // Centred, not the platform-default left alignment: the logo
+            // reads as a brand mark rather than a page title. Scoped to this
             // screen — Orders/Profile keep left-aligned plain page titles.
             headerTitleAlign: 'center',
-            headerTitle: () => (
-              <View style={styles.headerTitleContainer}>
-                <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>
-                  {'your kitchen '}
-                  <Text style={styles.headerTitleAccent}>co.</Text>
-                </Text>
-                {/* Sized by alignSelf rather than a fixed width so the rule
-                    always matches the wordmark's own width, whatever the
-                    rendered text measures. Colour comes from KitchenLogo's
-                    divider rather than theme.border — this is part of the
-                    wordmark lockup, so it holds its own value instead of
-                    tracking the app's chrome (theme.border's #EBEBEB is also
-                    all but invisible against the cream header). */}
-                <View style={[styles.headerTitleRule, { backgroundColor: isDark ? '#3A3A3C' : '#C7C7CC' }]} />
-              </View>
-            ),
+            // The official logo artwork (JoTsav/kicthenCoV1 main renders the
+            // header the same way: <BrandLogo variant="compact" /> centred,
+            // cart icon on the right). The rule under the wordmark that used
+            // to be drawn in JSX here is part of the image now.
+            headerTitle: () => <BrandLogo variant="compact" />,
             headerRight: () => (
               <View style={styles.headerRightContainer}>
                 <TouchableOpacity
@@ -131,8 +120,8 @@ export default function TabsLayout() {
                   accessibilityRole="button"
                   accessibilityLabel={totalItems > 0 ? `Cart, ${totalItems} item${totalItems === 1 ? '' : 's'}` : 'Cart, empty'}
                 >
-                  <View style={[styles.cartIconContainer, { backgroundColor: theme.surfaceSecondary, borderColor: theme.border }]}>
-                    <Ionicons name="cart" size={26} color={theme.text} />
+                  <View style={[styles.cartIconContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <Ionicons name="cart-outline" size={22} color={theme.text} />
                     {totalItems > 0 && (
                       <Animated.View style={[styles.cartBadge, { backgroundColor: theme.accent, borderColor: theme.background, transform: [{ scale: badgeScale }] }]}>
                         <Text style={[styles.cartBadgeText, { color: theme.onAccent }]}>{totalItems}</Text>
@@ -151,7 +140,11 @@ export default function TabsLayout() {
           name="orders"
           options={{
             title: 'Orders',
-            headerTitle: 'My Orders',
+            // orders.tsx renders its own "Order History & Invoices" header bar
+            // (ported from JoTsav/kicthenCoV1 main's OrderHistoryScreen, which
+            // has no navigator above it) — the native header would sit on top
+            // of it as a second title. Same arrangement the Admin tab uses.
+            headerShown: false,
             href: user && !isAdmin ? undefined : null,
             tabBarIcon: ({ color, size }) => (
               <Ionicons name="receipt" size={size} color={color} />
@@ -191,22 +184,6 @@ export default function TabsLayout() {
 }
 
 const styles = StyleSheet.create({
-  headerTitleContainer: { alignItems: 'center' },
-  // Brand wordmark rules: always lowercase, "co." solid-filled bold against a
-  // light-weight "your kitchen" — never a stylistic camelCase/title-case sub.
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '300',
-    letterSpacing: -0.3,
-  },
-  headerTitleAccent: {
-    fontWeight: '800',
-  },
-  headerTitleRule: {
-    alignSelf: 'stretch',
-    height: 1,
-    marginTop: 5,
-  },
   headerRightContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -219,6 +196,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -423,6 +423,10 @@ export default function MenuScreen() {
               can always get back to the full menu without scrolling back. */}
           <TouchableOpacity
             style={[styles.categoryChip, selectedCategory === null && styles.categoryChipActive]}
+            // The chip is a 2px underline hugging its label — 19px wide for
+            // "All" — so the tap target is widened with hitSlop rather than by
+            // growing the box, which would stretch the underline itself.
+            hitSlop={{ top: 12, bottom: 12, left: 10, right: 10 }}
             onPress={() => setSelectedCategory(null)}
             accessibilityRole="button"
             accessibilityState={{ selected: selectedCategory === null }}
@@ -444,6 +448,8 @@ export default function MenuScreen() {
               return (
                 <TouchableOpacity
                   style={[styles.categoryChip, isActive && styles.categoryChipActive]}
+                  // Underline hugs the label — widen the touch area, not the rule.
+                  hitSlop={{ top: 12, bottom: 12, left: 10, right: 10 }}
                   onPress={() => setSelectedCategory(isActive ? null : category)}
                   accessibilityRole="button"
                   accessibilityState={{ selected: isActive }}
@@ -610,15 +616,16 @@ export default function MenuScreen() {
 
             {/* Single-column list (client reference, Sep 2026) — items read
                 top to bottom under the category photo rather than as a grid. */}
-            <FlatList
-              data={items}
-              keyExtractor={(item) => item.id}
-              scrollEnabled={false}
-              nestedScrollEnabled={true}
-              renderItem={renderGridItem}
-              ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-              contentContainerStyle={styles.uberGrid}
-            />
+            {/* Plain Views, not a nested FlatList: scrollEnabled={false} meant
+                there was no virtualisation to gain, while the nested scroll
+                container still swallowed vertical drags that began on a card
+                (i.e. most of the screen) on Android. Same fix Today's Menu
+                already had — this was the last place with the pattern. */}
+            <View style={styles.uberGrid}>
+              {items.map((item) => (
+                <View key={item.id}>{renderGridItem({ item })}</View>
+              ))}
+            </View>
           </View>
         )}
       />
@@ -810,7 +817,13 @@ export default function MenuScreen() {
   );
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: screenBackground }]}>
+    <SafeAreaView
+      // Top inset belongs to the navigator header, bottom to the tab bar —
+      // see the note in (tabs)/_layout.tsx. Without this the screen pads both
+      // a second time and content sits in a dead band on notched phones.
+      edges={['left', 'right']}
+      style={[styles.container, { backgroundColor: screenBackground }]}
+    >
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
 
       {/* Admins land here deliberately (via "Preview App") to see exactly what a
@@ -1321,7 +1334,10 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.border,
   },
-  toggleBtn: { flex: 1, paddingVertical: 7, alignItems: 'center', borderRadius: 9, marginHorizontal: 2 },
+  // minHeight rather than more padding: this measured 29px tall, under the
+  // 44px minimum comfortable tap target, and padding alone left the height
+  // dependent on the label's own line box.
+  toggleBtn: { flex: 1, minHeight: 44, paddingVertical: 7, alignItems: 'center', justifyContent: 'center', borderRadius: 9, marginHorizontal: 2 },
   toggleBtnActive: { backgroundColor: theme.accent },
   toggleBtnText: { color: theme.textTertiary, fontSize: 13, fontWeight: '700' },
   exploreHeading: {
@@ -1374,6 +1390,15 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    // Real 44x44 minimum rather than relying on the hitSlop at the call site:
+    // hitSlop is a native touch concept that react-native-web does not
+    // translate into layout, so on the web build the target would have stayed
+    // at the 32x19 the label alone measured. The hitSlop stays as extra reach
+    // on device. justifyContent centres the label along the row axis so short
+    // labels ("All") sit in the middle of their box.
+    minHeight: 44,
+    minWidth: 44,
+    justifyContent: 'center',
     paddingVertical: 8,
     marginRight: 18,
     borderBottomWidth: 2,
@@ -1421,7 +1446,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 12,
   },
-  uberGrid: {},
+  // gap replaces the ItemSeparatorComponent the nested FlatList used to draw.
+  uberGrid: { gap: 12 },
   uberGridColumn: {
     justifyContent: 'space-between',
     marginBottom: ROW_GAP,

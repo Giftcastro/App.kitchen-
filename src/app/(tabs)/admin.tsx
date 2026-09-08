@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, StatusBar, ScrollView, Modal, Dimensions, RefreshControl, Linking, Platform, TextProps, TextInputProps } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, StatusBar, ScrollView, Modal, useWindowDimensions, RefreshControl, Linking, Platform, TextProps, TextInputProps } from 'react-native';
 import { Text as BrandText, TextInput as BrandTextInput } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -11,6 +11,7 @@ import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { haptics } from '../../utils/haptics';
 import { legacyTypography } from '../../utils/legacyTypography';
 import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
 import * as MailComposer from 'expo-mail-composer';
 
 // Same pre-KitchenCo RobotoCondensed body / GotchaGothic headline pairing as
@@ -277,8 +278,6 @@ const DATE_FILTER_PRESETS: { key: DateFilterKey; label: string; days?: number }[
 
 type TabType = 'dashboard' | 'users' | 'orders' | 'chef' | 'weeks' | 'meals' | 'discounts' | 'companies' | 'notify';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 const TAB_ICONS: Record<TabType, string> = {
   dashboard: 'speedometer',
   users: 'people',
@@ -293,7 +292,8 @@ const TAB_ICONS: Record<TabType, string> = {
 
 export default function AdminScreen() {
     const { orders, activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRotation, allUsers, discounts, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, addCompany, updateCompany, deleteCompany, updateOrderStatus, theme, isDark, kitchenEmail, setKitchenEmail } = useKitchen();
-  const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
+  const { width: screenWidth } = useWindowDimensions();
+  const styles = useMemo(() => createStyles(theme, screenWidth, isDark), [theme, screenWidth, isDark]);
   // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
   // stark white — light mode only, matching the customer-facing screens.
   const screenBackground = isDark ? theme.background : '#F7F2E8';
@@ -349,6 +349,11 @@ export default function AdminScreen() {
     setShowKitchenEmailModal(true);
   };
   const [dateFilter, setDateFilter] = useState<DateFilterKey>('all');
+  // Client scope for the whole dashboard. Folded into filteredOrders below
+  // rather than applied per-card, so the period and the client together define
+  // ONE slice that every stat, breakdown and chart on this tab renders
+  // against — per-card filters drift out of sync with each other.
+  const [companyFilter, setCompanyFilter] = useState<string>('all');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [showCustomDateModal, setShowCustomDateModal] = useState(false);
@@ -409,13 +414,21 @@ export default function AdminScreen() {
   // unfiltered). A malformed/legacy timestamp is kept rather than silently
   // dropped, so old demo data never vanishes from "All Time".
   const filteredOrders = useMemo(() => {
-    if (!dateRange) return orders;
+    // Which corporate client an order belongs to is its customer's company;
+    // indexed once here rather than a find() per order per render.
+    const companyByEmail = new Map(allUsers.map(u => [u.email, u.companyName]));
     return orders.filter(o => {
+      if (companyFilter !== 'all') {
+        const company = o.userEmail ? companyByEmail.get(o.userEmail) : undefined;
+        if (company !== companyFilter) return false;
+      }
+      if (!dateRange) return true;
       const d = new Date(o.timestamp);
+      // Undated orders are kept rather than silently dropped from every total.
       if (isNaN(d.getTime())) return true;
       return d >= dateRange.start && d <= dateRange.end;
     });
-  }, [orders, dateRange]);
+  }, [orders, dateRange, companyFilter, allUsers]);
 
   const filteredUsers = useMemo(() => {
     if (!dateRange) return allUsers;
@@ -448,7 +461,10 @@ export default function AdminScreen() {
     return { byStatus: counts, revenue: rev };
   }, [filteredOrders]);
   const pendingOrders = byStatus.pending || 0;
-  const preparingOrders = byStatus.preparing || 0;
+  const completedOrders = byStatus.delivered || 0;
+  // Average basket across the current slice. Guarded: an empty slice is "no
+  // orders", not R0.00 — dividing by zero would render NaN.
+  const avgOrderValue = totalOrders > 0 ? revenue / totalOrders : null;
 
   // Revenue trend — one column per time bucket across the reporting period.
   // The bucket unit widens with the window (daily, then weekly, then monthly)
@@ -641,6 +657,81 @@ export default function AdminScreen() {
     [itemSales]
   );
 
+  /** Human label for the slice the report currently covers. */
+  const reportScopeLabel = useMemo(() => {
+    const period = dateFilter === 'custom' && customStart && customEnd
+      ? `${customStart} – ${customEnd}`
+      : (DATE_FILTER_PRESETS.find(p => p.key === dateFilter)?.label ?? 'All Time');
+    const client = companyFilter === 'all' ? 'All Companies' : companyFilter;
+    return `${period} · ${client}`;
+  }, [dateFilter, customStart, customEnd, companyFilter]);
+
+  const [exportingReport, setExportingReport] = useState(false);
+
+  /**
+   * Exports the slice currently on screen. The reference build's equivalent
+   * only raises an Alert describing a CSV that is never produced; this renders
+   * the real figures through expo-print — a shareable PDF on native, and the
+   * browser's own print/save-as-PDF dialog on web, whose shim has no
+   * printToFileAsync (same constraint the Chef tab's Send works around).
+   */
+  const handleExportReport = async () => {
+    setExportingReport(true);
+    try {
+      const rows = revenueTrend
+        ? revenueTrend.buckets.map(b => `<tr><td>${escapeHtml(b.label)}</td><td class="amt">R ${b.total.toFixed(2)}</td></tr>`).join('')
+        : '<tr><td colspan="2">No revenue in this period</td></tr>';
+      const cats = revenueByCategory.length
+        ? revenueByCategory.map(c => `<tr><td>${escapeHtml(c.category)}</td><td class="amt">R ${c.total.toFixed(2)}</td></tr>`).join('')
+        : '<tr><td colspan="2">No category sales in this period</td></tr>';
+      const tops = topItems.length
+        ? topItems.map((t, i) => `<tr><td>${i + 1}. ${escapeHtml(t.name)}</td><td class="amt">${t.qty}× · R ${t.revenue.toFixed(2)}</td></tr>`).join('')
+        : '<tr><td colspan="2">No items sold in this period</td></tr>';
+
+      const html = `<html><head><meta charset="utf-8" /><style>
+        body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 28px; color: #111; }
+        h1 { font-size: 20px; margin: 0 0 2px; }
+        .meta { font-size: 12px; color: #555; margin-bottom: 18px; }
+        .brand { font-size: 12px; letter-spacing: 1px; color: #888; margin-bottom: 14px; }
+        h2 { font-size: 13px; letter-spacing: 0.5px; color: #666; margin: 20px 0 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        td { padding: 5px 0; border-bottom: 1px solid #eee; }
+        td.amt { text-align: right; white-space: nowrap; }
+        .kpis { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; }
+        .kpi { border: 1px solid #e5e5e5; border-radius: 10px; padding: 10px 14px; min-width: 130px; }
+        .kpi .k { font-size: 10px; letter-spacing: 0.5px; color: #777; }
+        .kpi .v { font-size: 17px; font-weight: 800; margin-top: 2px; }
+      </style></head><body>
+        <div class="brand">your kitchen co.</div>
+        <h1>Reports &amp; Analytics</h1>
+        <div class="meta">${escapeHtml(reportScopeLabel)}</div>
+        <div class="kpis">
+          <div class="kpi"><div class="k">TOTAL SALES</div><div class="v">R ${revenue.toFixed(2)}</div></div>
+          <div class="kpi"><div class="k">ORDERS COMPLETED</div><div class="v">${completedOrders} of ${totalOrders}</div></div>
+          <div class="kpi"><div class="k">AVG. ORDER VALUE</div><div class="v">${avgOrderValue === null ? '—' : 'R ' + avgOrderValue.toFixed(2)}</div></div>
+          <div class="kpi"><div class="k">TOP ITEM</div><div class="v">${topItems[0] ? escapeHtml(topItems[0].name) : '—'}</div></div>
+        </div>
+        <h2>REVENUE OVER TIME</h2><table>${rows}</table>
+        <h2>REVENUE BY CATEGORY</h2><table>${cats}</table>
+        <h2>TOP SELLING ITEMS</h2><table>${tops}</table>
+      </body></html>`;
+
+      if (Platform.OS === 'web') {
+        await Print.printAsync({ html });
+      } else {
+        const { uri } = await Print.printToFileAsync({ html });
+        if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri);
+      }
+      haptics.success();
+    } catch {
+      // Nothing partial is left behind — the report is generated from state on
+      // each press, so a retry is safe.
+    } finally {
+      setExportingReport(false);
+    }
+  };
+  const preparingOrders = byStatus.preparing || 0;
+
   // Single pass over allUsers + a single pass over filteredOrders, using a
   // email -> companyName index, instead of re-scanning allUsers and orders
   // once per company (was O(companies x (users + orders)); this is
@@ -806,7 +897,12 @@ export default function AdminScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      // headerShown is false for this tab, so unlike the other three this screen
+      // really does own its top inset; only the bottom belongs to the tab bar.
+      edges={['top', 'left', 'right']}
+      style={styles.container}
+    >
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
 
       {/* Shell header — identity + the one action that matters everywhere: previewing the live app */}
@@ -983,39 +1079,127 @@ export default function AdminScreen() {
                   );
                 })}
               </ScrollView>
+
+              {/* Client scope. Sits in the same card as the period so the two
+                  together read as one filter row over the whole tab. */}
+              <Text style={[styles.sectionCardTitle, styles.filterGroupTitle]}>Client</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryPickerRow}>
+                {[{ id: 'all', name: 'All Companies' }, ...companies.map(c => ({ id: c.name, name: c.name }))].map(opt => {
+                  const isActive = companyFilter === opt.id;
+                  return (
+                    <TouchableOpacity
+                      key={opt.id}
+                      style={[styles.categoryPickerChip, isActive && styles.categoryPickerChipActive]}
+                      onPress={() => { haptics.selection(); setCompanyFilter(opt.id); }}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: isActive }}
+                      accessibilityLabel={`Scope report to ${opt.name}`}
+                    >
+                      <Text style={[styles.categoryPickerChipText, isActive && styles.categoryPickerChipTextActive]}>
+                        {opt.name}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={[styles.exportReportBtn, exportingReport && styles.exportReportBtnBusy]}
+                onPress={handleExportReport}
+                disabled={exportingReport}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel="Export report"
+              >
+                <Ionicons name="download-outline" size={16} color={theme.onAccent} />
+                <Text style={styles.exportReportBtnText}>
+                  {exportingReport ? 'Preparing…' : 'Export Report'}
+                </Text>
+              </TouchableOpacity>
             </View>
 
-            {/* Stats Grid — one config row per card. Each now opens the tab it
-                summarises, matching the "Today at a Glance" tiles above, which
-                were already tappable while these four looked identical and did
-                nothing. Colors are carried over verbatim from the four
-                hand-written cards this replaced — including the Revenue card's
-                black accent bar and light icon wrap, which disappear/glare in
-                dark mode. That is a known defect left as-is on purpose; it is
-                now a one-line change here rather than a hunt through JSX. */}
-            <View style={styles.statsGrid}>
+            {/* Executive KPI band, in the reference build's metric-card shape
+                (label + icon on one row, figure, sub-line). Unlike that build,
+                every figure here is computed from the live slice above rather
+                than hardcoded. */}
+            <View style={styles.metricsGrid}>
               {([
-                { key: 'users', icon: 'people', color: '#5AC8FA', iconBg: '#5AC8FA20', value: String(totalUsers), label: 'Total Users', tab: 'users' },
-                { key: 'orders', icon: 'receipt', color: '#22C55E', iconBg: '#22C55E20', value: String(totalOrders), label: 'Total Orders', tab: 'orders' },
-                { key: 'progress', icon: 'time', color: '#FF9500', iconBg: '#FF950020', value: String(pendingOrders + preparingOrders), label: 'In Progress', tab: 'chef' },
-                { key: 'revenue', icon: 'cash', color: '#000000', iconBg: '#F6F6F6', value: `R${revenue.toFixed(0)}`, label: 'Revenue', tab: 'orders' },
-              ] as { key: string; icon: string; color: string; iconBg: string; value: string; label: string; tab: TabType }[]).map(card => (
-                <TouchableOpacity
-                  key={card.key}
-                  style={styles.statCard}
-                  onPress={() => { haptics.selection(); setSelectedTab(card.tab); }}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${card.label}: ${card.value}`}
+                {
+                  key: 'sales',
+                  label: 'TOTAL SALES',
+                  icon: 'trending-up',
+                  value: `R${revenue.toFixed(2)}`,
+                  sub: reportScopeLabel,
+                },
+                {
+                  key: 'completed',
+                  label: 'ORDERS COMPLETED',
+                  icon: 'checkmark-circle',
+                  value: String(completedOrders),
+                  sub: `of ${totalOrders} in this period`,
+                },
+                {
+                  key: 'aov',
+                  label: 'AVG. ORDER VALUE',
+                  icon: 'calculator',
+                  value: avgOrderValue === null ? '—' : `R${avgOrderValue.toFixed(2)}`,
+                  sub: avgOrderValue === null ? 'No orders in this slice' : `across ${totalOrders} orders`,
+                },
+                {
+                  key: 'top',
+                  label: 'TOP ITEM',
+                  icon: 'restaurant',
+                  value: topItems[0] ? topItems[0].name : '—',
+                  sub: topItems[0] ? `${topItems[0].qty}× · R${topItems[0].revenue.toFixed(0)}` : 'No sales in this slice',
+                  small: true,
+                },
+                {
+                  key: 'users',
+                  label: 'TOTAL USERS',
+                  icon: 'people',
+                  value: String(totalUsers),
+                  sub: 'Tap to manage accounts',
+                  tab: 'users',
+                },
+                {
+                  key: 'progress',
+                  label: 'IN PROGRESS',
+                  icon: 'time',
+                  value: String(pendingOrders + preparingOrders),
+                  sub: 'Pending + preparing',
+                  tab: 'chef',
+                },
+              ] as { key: string; label: string; icon: string; value: string; sub: string; small?: boolean; tab?: TabType }[]).map(m => {
+                // Only the tiles with somewhere to go are buttons; the rest
+                // stay plain so a screen reader does not announce four
+                // read-only figures as actionable.
+                const Card: any = m.tab ? TouchableOpacity : View;
+                return (
+                <Card
+                  key={m.key}
+                  style={styles.metricCard}
+                  accessibilityLabel={`${m.label}: ${m.value}`}
+                  {...(m.tab ? {
+                    onPress: () => { haptics.selection(); setSelectedTab(m.tab as TabType); },
+                    activeOpacity: 0.7,
+                    accessibilityRole: 'button' as const,
+                  } : {})}
                 >
-                  <View style={[styles.statAccentBar, { backgroundColor: card.color }]} />
-                  <View style={[styles.statIconWrap, { backgroundColor: card.iconBg }]}>
-                    <Ionicons name={card.icon as any} size={18} color={card.color} />
+                  <View style={styles.metricHeader}>
+                    <Text style={styles.metricLabel} numberOfLines={1}>{m.label}</Text>
+                    <Ionicons name={m.icon as any} size={16} color={theme.textSecondary} />
                   </View>
-                  <Text style={styles.statNumber}>{card.value}</Text>
-                  <Text style={styles.statLabel}>{card.label}</Text>
-                </TouchableOpacity>
-              ))}
+                  <Text
+                    style={[styles.metricValue, m.small && styles.metricValueSmall]}
+                    numberOfLines={m.small ? 2 : 1}
+                    adjustsFontSizeToFit={!m.small}
+                  >
+                    {m.value}
+                  </Text>
+                  <Text style={styles.metricSub} numberOfLines={1}>{m.sub}</Text>
+                </Card>
+                );
+              })}
             </View>
 
             {/* Order Status Breakdown */}
@@ -1978,7 +2162,8 @@ export default function AdminScreen() {
 
 function MealsSection({ theme }: { theme: ThemeColors }) {
   const { menus, addMenuItem, updateMenuItem, deleteMenuItem, setMenuItemActive } = useKitchen();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { width: screenWidth } = useWindowDimensions();
+  const styles = useMemo(() => createStyles(theme, screenWidth), [theme, screenWidth]);
   const router = useRouter();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -2379,7 +2564,8 @@ function dateKeyOf(d: Date) {
 }
 
 function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors; allUsers: AppUser[] }) {
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { width: screenWidth } = useWindowDimensions();
+  const styles = useMemo(() => createStyles(theme, screenWidth), [theme, screenWidth]);
   const STATUS_COLORS = useMemo(() => getStatusColors(theme), [theme]);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   // Company groups start collapsed — a client with hundreds of employees
@@ -2580,7 +2766,8 @@ function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders:
  * need (revenue, discounts, company/user management).
  */
 function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, kitchenEmail, onEditKitchenEmail, scrollToTop }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors; allUsers: AppUser[]; companies: Company[]; kitchenEmail: string; onEditKitchenEmail: () => void; scrollToTop: () => void }) {
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { width: screenWidth } = useWindowDimensions();
+  const styles = useMemo(() => createStyles(theme, screenWidth), [theme, screenWidth]);
   const STATUS_COLORS = useMemo(() => getStatusColors(theme), [theme]);
   const activeOrders = useMemo(
     () => orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled'),
@@ -3539,7 +3726,8 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
  * implying messages leave the device.
  */
 function NotifySection({ theme, companies }: { theme: ThemeColors; companies: Company[] }) {
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { width: screenWidth } = useWindowDimensions();
+  const styles = useMemo(() => createStyles(theme, screenWidth), [theme, screenWidth]);
   const { announcements, sendAnnouncement, deleteAnnouncement } = useKitchen();
 
   const [title, setTitle] = useState('');
@@ -3702,7 +3890,8 @@ function NotifySection({ theme, companies }: { theme: ThemeColors; companies: Co
 }
 
 function WeeksSection({ activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRotation, theme }: { activeWeek: number; setActiveWeek: (w: number) => void; cycleWeekOffset: number; resetCycleRotation: () => void; theme: ThemeColors }) {
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { width: screenWidth } = useWindowDimensions();
+  const styles = useMemo(() => createStyles(theme, screenWidth), [theme, screenWidth]);
   const weeks = [1, 2, 3, 4, 5, 6, 7, 8];
   const isAuto = cycleWeekOffset === 0;
 
@@ -3775,7 +3964,7 @@ function WeeksSection({ activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRo
 // isDark defaults to false since every section but AdminScreen itself calls
 // this with just `theme` — none of them render the root container/StatusBar
 // that isDark actually affects.
-const createStyles = (theme: ThemeColors, isDark: boolean = false) => StyleSheet.create({
+const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean = false) => StyleSheet.create({
   // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
   // stark white — light mode only, matching the customer-facing screens.
   container: { flex: 1, backgroundColor: isDark ? theme.background : '#F7F2E8' },
@@ -3865,50 +4054,42 @@ const createStyles = (theme: ThemeColors, isDark: boolean = false) => StyleSheet
   scrollContent: { padding: 16, paddingBottom: 40 },
 
   // Stats Grid
-  statsGrid: {
+  // --- Reports & Analytics band -------------------------------------------
+  // Metric-card shape taken from the reference build's RevenueAnalyticsTab
+  // (label + icon row, figure, sub-line). Colour is deliberately NOT part of
+  // the encoding here: it paints figures in a brand blue, which this palette
+  // reserves for status only, so figures use text ink and the icon is a
+  // recessive secondary.
+  filterGroupTitle: { marginTop: 16 },
+  exportReportBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    minHeight: 44, borderRadius: 12, marginTop: 14, backgroundColor: theme.accent,
+  },
+  exportReportBtnBusy: { opacity: 0.6 },
+  exportReportBtnText: { fontSize: 14, fontWeight: '800', color: theme.onAccent },
+  metricsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
     marginBottom: 20,
   },
-  statCard: {
-    width: (SCREEN_WIDTH - 44) / 2,
-    borderRadius: 20,
-    padding: 18,
-    paddingTop: 16,
+  metricCard: {
+    // Same two-up geometry as statCard below: 16px container padding each side
+    // plus the 12px grid gap.
+    width: (screenWidth - 44) / 2,
+    backgroundColor: theme.surface,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: theme.border,
-    backgroundColor: theme.surface,
-    overflow: 'hidden',
+    gap: 4,
   },
-  statAccentBar: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 3,
-  },
-  statIconWrap: {
-    width: 36,
-    height: 36,
-    borderRadius: 11,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  statNumber: {
-    fontFamily: legacyTypography.heading,
-    fontSize: 26,
-    fontWeight: '900',
-    color: theme.text,
-    letterSpacing: -0.5,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: theme.textSecondary,
-    fontWeight: '600',
-    marginTop: 4,
-  },
+  metricHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  metricLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, color: theme.textSecondary, flex: 1 },
+  metricValue: { fontFamily: legacyTypography.heading, fontSize: 20, fontWeight: '800', color: theme.text },
+  metricValueSmall: { fontSize: 13, fontWeight: '700' },
+  metricSub: { fontSize: 11, fontWeight: '500', color: theme.textSecondary },
+
 
   // Today at a Glance
   todayCard: {
@@ -4517,7 +4698,8 @@ const createStyles = (theme: ThemeColors, isDark: boolean = false) => StyleSheet
     marginBottom: 20,
   },
   weekGridCard: {
-    width: (SCREEN_WIDTH - 42) / 4,
+    // Four per row: container padding (16 each side) plus three 10px gaps.
+    width: (screenWidth - 42) / 4,
     backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 16,
