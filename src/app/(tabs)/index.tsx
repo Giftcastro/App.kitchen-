@@ -407,42 +407,47 @@ export default function MenuScreen() {
 
     return (
       <View style={styles.categoryFilterContainer}>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryFilterContent}
-          data={categories}
-          keyExtractor={(cat) => cat}
-          renderItem={({ item: category }) => {
-            const isActive = selectedCategory === category;
-            return (
-              <TouchableOpacity
-                style={[styles.categoryChip, isActive && styles.categoryChipActive]}
-                onPress={() => setSelectedCategory(isActive ? null : category)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isActive }}
-                accessibilityLabel={`${formatCategoryLabel(category)} category`}
-              >
-                <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>
-                  {formatCategoryLabel(category)}
-                </Text>
-              </TouchableOpacity>
-            );
-          }}
-          ListHeaderComponent={
-            <TouchableOpacity
-              style={[styles.categoryChip, selectedCategory === null && styles.categoryChipActive]}
-              onPress={() => setSelectedCategory(null)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: selectedCategory === null }}
-              accessibilityLabel="All categories"
-            >
-              <Text style={[styles.categoryChipText, selectedCategory === null && styles.categoryChipTextActive]}>
-                All
-              </Text>
-            </TouchableOpacity>
-          }
-        />
+        <View style={styles.categoryFilterRow}>
+          {/* "All" sits outside the scrolling FlatList entirely, rather than
+              as its ListHeaderComponent, so it stays put as a fixed anchor
+              while the rest of the categories scroll past it — a customer
+              can always get back to the full menu without scrolling back. */}
+          <TouchableOpacity
+            style={[styles.categoryChip, selectedCategory === null && styles.categoryChipActive]}
+            onPress={() => setSelectedCategory(null)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: selectedCategory === null }}
+            accessibilityLabel="All categories"
+          >
+            <Text style={[styles.categoryChipText, selectedCategory === null && styles.categoryChipTextActive]}>
+              All
+            </Text>
+          </TouchableOpacity>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoryFilterList}
+            contentContainerStyle={styles.categoryFilterContent}
+            data={categories}
+            keyExtractor={(cat) => cat}
+            renderItem={({ item: category }) => {
+              const isActive = selectedCategory === category;
+              return (
+                <TouchableOpacity
+                  style={[styles.categoryChip, isActive && styles.categoryChipActive]}
+                  onPress={() => setSelectedCategory(isActive ? null : category)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: isActive }}
+                  accessibilityLabel={`${formatCategoryLabel(category)} category`}
+                >
+                  <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>
+                    {formatCategoryLabel(category)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </View>
       </View>
     );
   };
@@ -1336,11 +1341,18 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   // A transparent bottom border of the same width sits on every tab so the
   // active one gaining a real border never shifts the row's height.
   categoryFilterContainer: { marginBottom: 16 },
-  // The list itself has no horizontal margin, unlike every sibling on this
-  // screen (search bar, toggle, heading all sit 16px in) — without this the
-  // first chip ("All") renders flush against the very edge of the screen,
-  // where a device's rounded corner/edge can clip a sliver of its text.
-  categoryFilterContent: { paddingHorizontal: 16 },
+  // "All" is a fixed sibling, not part of the scrolling FlatList, so the row
+  // itself carries the left inset that keeps it off the very edge of the
+  // screen (matching every other element here — search bar, toggle,
+  // heading all sit 16px in) — a device's rounded corner/edge can otherwise
+  // clip a sliver of flush-left text.
+  categoryFilterRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16 },
+  // flex: 1, not flexGrow — this must be bounded to the row's remaining
+  // width so the category list scrolls *within* that space instead of the
+  // FlatList itself growing to fit all its content and pushing "All" along
+  // with it out of view.
+  categoryFilterList: { flex: 1 },
+  categoryFilterContent: { paddingRight: 16 },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
