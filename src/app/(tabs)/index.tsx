@@ -44,16 +44,6 @@ const CYCLE_ITEM_PRICE = 80;
 const PAGE_PADDING = 16;
 const CARD_GAP = 20; // minimum horizontal gutter (actual gap grows via space-between)
 
-/**
- * Split a list into fixed-size rows — the layout `numColumns` used to give us
- * back when these grids were FlatLists. See the Today's Menu grid for why they
- * are plain Views now.
- */
-function chunkRows<T>(items: T[], size: number): T[][] {
-  const rows: T[][] = [];
-  for (let i = 0; i < items.length; i += size) rows.push(items.slice(i, i + size));
-  return rows;
-}
 const ROW_GAP = 28; // vertical spacing between grid rows
 
 // A per-category and per-meal-type colour used to live here, painting a 4px
@@ -705,24 +695,34 @@ export default function MenuScreen() {
       const mealName = meal.mealDescription;
       const qty = getItemQuantity(`cycle-${weekKeyStr}-${day.dayName}-${meal.mealType}-${mealName.replace(/\s+/g, '')}`);
 
+      // Same full-width row the Main Menu uses (styles.listCard*), not the
+      // narrow two-up card this used to be: at half the screen's width these
+      // dish names — "Crispy Fish & Chips with Tartar Sauce" and the like —
+      // were truncating to an ellipsis after two lines. Cycle meals carry no
+      // ingredients, sizes, tags or discounts, so those parts of the Main
+      // Menu row simply have nothing to render here.
       return (
         <TouchableOpacity
-          style={[styles.uberCard, { width: CARD_WIDTH }]}
-          activeOpacity={0.7}
+          style={styles.listCard}
+          activeOpacity={0.9}
           onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
           accessibilityLabel={`${mealName}, R${CYCLE_ITEM_PRICE}`}
         >
-          <View style={styles.uberContent}>
-            <View style={styles.uberTopRow}>
-              <Text style={[styles.uberItemName, styles.uberItemNameFlex]} numberOfLines={2}>{mealName}</Text>
-              <QuickAddButton
-                quantity={qty}
-                onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
-                theme={theme}
-              />
+          <View style={styles.listCardTopRow}>
+            <View style={styles.listCardNameCol}>
+              <Text style={styles.listCardName} numberOfLines={2}>{mealName}</Text>
             </View>
-            <View style={styles.uberMetaRow}>
-              <Text style={styles.uberPrice}>R{CYCLE_ITEM_PRICE}</Text>
+            <View style={styles.listCardPriceCol}>
+              <View style={styles.uberPriceRow}>
+                <Text style={styles.uberPrice}>R{CYCLE_ITEM_PRICE}</Text>
+              </View>
+              <View style={styles.listCardAddBtn}>
+                <QuickAddButton
+                  quantity={qty}
+                  onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
+                  theme={theme}
+                />
+              </View>
             </View>
           </View>
         </TouchableOpacity>
@@ -770,14 +770,12 @@ export default function MenuScreen() {
                 groupMealsByType(meals).map(([mealType, groupMeals]) => (
                   <View key={`cycle-${day.iso}-${mealType}`} style={styles.mealTypeSection}>
                     <Text style={styles.mealTypeLabel}>{formatCategoryLabel(mealType)}</Text>
-                    {chunkRows(groupMeals, numColumns).map((row, rowIdx) => (
-                      <View key={`cycle-${day.iso}-${mealType}-row-${rowIdx}`} style={styles.gridRow}>
-                        {row.map((meal, colIdx) => (
-                          <React.Fragment key={`cycle-${day.iso}-${mealType}-${rowIdx}-${colIdx}`}>
-                            {renderCycleCard(meal, day, weekKey)}
-                          </React.Fragment>
-                        ))}
-                      </View>
+                    {/* Stacked full-width rows, no column chunking — these are
+                        Main Menu-style list rows now, one per line. */}
+                    {groupMeals.map((meal, idx) => (
+                      <React.Fragment key={`cycle-${day.iso}-${mealType}-${idx}`}>
+                        {renderCycleCard(meal, day, weekKey)}
+                      </React.Fragment>
                     ))}
                   </View>
                 ))
