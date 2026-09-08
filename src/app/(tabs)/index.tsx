@@ -1558,7 +1558,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
   },
-  modalTitle: { fontSize: 22, fontWeight: '900', color: theme.text, letterSpacing: -0.5 },
+  modalTitle: { fontFamily: legacyTypography.heading, fontSize: 22, fontWeight: '900', color: theme.text, letterSpacing: -0.5 },
   modalClose: { fontSize: 28, color: theme.textSecondary, fontWeight: '600' },
   modalItemInfo: {
     flexDirection: 'row',
@@ -1571,8 +1571,8 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     borderColor: theme.border,
   },
   modalItemDetails: { flex: 1 },
-  modalItemName: { fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 4 },
-  modalItemPrice: { fontSize: 18, fontWeight: '900', color: theme.text },
+  modalItemName: { fontFamily: legacyTypography.heading, fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 4 },
+  modalItemPrice: { fontFamily: legacyTypography.heading, fontSize: 18, fontWeight: '900', color: theme.text },
   modalItemMealType: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginTop: 2 },
   notesSection: { marginBottom: 20 },
   notesLabel: { fontSize: 13, fontWeight: '700', color: theme.textSecondary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -1645,7 +1645,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     borderRadius: 14,
     padding: 22,
   },
-  addedTitle: { fontSize: 17, fontWeight: '700', color: theme.text, marginBottom: 6 },
+  addedTitle: { fontFamily: legacyTypography.heading, fontSize: 17, fontWeight: '700', color: theme.text, marginBottom: 6 },
   addedBody: { fontSize: 13, color: theme.textSecondary, lineHeight: 19, marginBottom: 20 },
   addedPrimaryBtn: {
     backgroundColor: theme.accent,
