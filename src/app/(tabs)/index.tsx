@@ -410,6 +410,7 @@ export default function MenuScreen() {
         <FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoryFilterContent}
           data={categories}
           keyExtractor={(cat) => cat}
           renderItem={({ item: category }) => {
@@ -1335,6 +1336,11 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   // A transparent bottom border of the same width sits on every tab so the
   // active one gaining a real border never shifts the row's height.
   categoryFilterContainer: { marginBottom: 16 },
+  // The list itself has no horizontal margin, unlike every sibling on this
+  // screen (search bar, toggle, heading all sit 16px in) — without this the
+  // first chip ("All") renders flush against the very edge of the screen,
+  // where a device's rounded corner/edge can clip a sliver of its text.
+  categoryFilterContent: { paddingHorizontal: 16 },
   categoryChip: {
     flexDirection: 'row',
     alignItems: 'center',
