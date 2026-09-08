@@ -46,7 +46,16 @@ export default function SelectDateScreen() {
   const { change, view } = useLocalSearchParams<{ change?: string; view?: string }>();
   const isChanging = change === '1';
 
-  const days = useMemo(() => getUpcomingOrderableWeekdays(), []);
+  // Today's Menu (the rotating cycle menu) can only be pre-ordered up to a
+  // week ahead — narrower than the Main Menu's ~2 week horizon — so this
+  // drops the "In 2 weeks" bucket for that view. Mirrors index.tsx's
+  // `cycleOrderableDays`; keep the two in sync, since this is the screen
+  // that actually gates which date lands in `orderingForDate`.
+  const allDays = useMemo(() => getUpcomingOrderableWeekdays(), []);
+  const days = useMemo(
+    () => (view === 'today' ? allDays.filter(d => d.weekLabel !== 'In 2 weeks') : allDays),
+    [allDays, view]
+  );
 
   // Local until Confirm, so backing out of a "change" visit leaves the day
   // already in play untouched. Seeded with the current choice when there is

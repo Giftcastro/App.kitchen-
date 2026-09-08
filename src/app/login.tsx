@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Text, TextInput } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
-  import { useKitchen } from '../context/KitchenCoContext';
+  import { useKitchen, DeliveryAddress } from '../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
 import KitchenLogo from '../components/KitchenLogo';
 import { Ionicons } from '@expo/vector-icons';
@@ -14,11 +14,16 @@ import { findCompanyForEmail } from '../utils/companyMatch';
 import { ThemeColors } from '../utils/theme';
 import { haptics } from '../utils/haptics';
 
+// A real street address has a number and a name — catches the common slip
+// of typing just a suburb/city into the street field. Mirrors the same
+// check used for addresses added later from Profile.
+const isValidStreet = (value: string) => /\d/.test(value) && /[a-zA-Z]/.test(value) && value.trim().length >= 5;
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ADMIN_EMAIL = 'admin@gmail.com';
 
 export default function LoginScreen() {
-  const { login, companies, theme, isDark } = useKitchen();
+  const { login, addAddress, companies, theme, isDark } = useKitchen();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
 
@@ -50,11 +55,19 @@ export default function LoginScreen() {
   }, [matchedCompany, companyAddressId]);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
 
+  // Individuals (no matched company) put in their own delivery address
+  // during signup instead of afterwards from Profile — same fields/shape
+  // (DeliveryAddress) Profile's "+ Add" modal collects.
+  const [addressStreet, setAddressStreet] = useState('');
+  const [addressSuburb, setAddressSuburb] = useState('');
+  const [addressCity, setAddressCity] = useState('');
+  const [addressCode, setAddressCode] = useState('');
+
   // Mode states
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
 
   // UI states
-  const [errors, setErrors] = useState<{ email?: string; password?: string; name?: string; confirmPassword?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; name?: string; confirmPassword?: string; addressStreet?: string; addressSuburb?: string; addressCity?: string }>({});
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
@@ -111,7 +124,7 @@ export default function LoginScreen() {
   };
 
   const validateSignup = () => {
-    const newErrors: { email?: string; password?: string; name?: string; confirmPassword?: string } = {};
+    const newErrors: { email?: string; password?: string; name?: string; confirmPassword?: string; addressStreet?: string; addressSuburb?: string; addressCity?: string } = {};
     const trimmedEmail = email.trim();
 
     if (!name.trim()) {
@@ -134,6 +147,20 @@ export default function LoginScreen() {
 
     if (password !== confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
+    }
+
+    // Individuals put in their delivery address now instead of later from
+    // Profile; company staff deliver to a registered company address instead.
+    if (!matchedCompany) {
+      if (!addressStreet.trim() || !isValidStreet(addressStreet)) {
+        newErrors.addressStreet = 'Include the street number and name';
+      }
+      if (!addressSuburb.trim()) {
+        newErrors.addressSuburb = 'Please enter your suburb';
+      }
+      if (!addressCity.trim()) {
+        newErrors.addressCity = 'Please enter your city';
+      }
     }
 
     setErrors(newErrors);
@@ -167,6 +194,18 @@ export default function LoginScreen() {
         matchedCompany?.name,
         resolvedCompanyAddressId
       );
+      if (!isCompanyAccount) {
+        const newAddress: DeliveryAddress = {
+          id: `addr-${Date.now()}`,
+          label: 'Home',
+          street: addressStreet.trim(),
+          suburb: addressSuburb.trim(),
+          city: addressCity.trim(),
+          code: addressCode.trim(),
+          isDefault: true,
+        };
+        addAddress(newAddress);
+      }
       router.replace(role === 'admin' ? '/admin' : '/');
     } else {
       haptics.warning();
@@ -338,6 +377,86 @@ export default function LoginScreen() {
           </View>
         ) : null}
       </View>
+
+      {/* Individuals deliver to their own address, collected here up front
+          instead of afterwards from Profile; company staff deliver to a
+          registered company address (picked below when there's more than
+          one), so this is skipped entirely once a company match is found. */}
+      {!matchedCompany && (
+        <>
+          <View style={styles.inputGroup}>
+            <View style={[styles.inputWrapper, focusedField === 'addressStreet' && styles.inputWrapperFocused, errors.addressStreet ? styles.inputWrapperError : null]}>
+              <TextInput
+                style={styles.input}
+                placeholder="Street Address (e.g., 12 Oak Street)"
+                placeholderTextColor={theme.textTertiary}
+                value={addressStreet}
+                onChangeText={(val) => { setAddressStreet(val); if (errors.addressStreet) setErrors({ ...errors, addressStreet: undefined }); }}
+                onFocus={() => setFocusedField('addressStreet')}
+                onBlur={() => setFocusedField(null)}
+                autoCorrect={false}
+                autoComplete="street-address"
+                returnKeyType="next"
+                accessibilityLabel="Street address"
+              />
+            </View>
+            {errors.addressStreet && <Text style={styles.fieldError}>{errors.addressStreet}</Text>}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <View style={[styles.inputWrapper, focusedField === 'addressSuburb' && styles.inputWrapperFocused, errors.addressSuburb ? styles.inputWrapperError : null]}>
+              <TextInput
+                style={styles.input}
+                placeholder="Suburb"
+                placeholderTextColor={theme.textTertiary}
+                value={addressSuburb}
+                onChangeText={(val) => { setAddressSuburb(val); if (errors.addressSuburb) setErrors({ ...errors, addressSuburb: undefined }); }}
+                onFocus={() => setFocusedField('addressSuburb')}
+                onBlur={() => setFocusedField(null)}
+                autoCorrect={false}
+                returnKeyType="next"
+                accessibilityLabel="Suburb"
+              />
+            </View>
+            {errors.addressSuburb && <Text style={styles.fieldError}>{errors.addressSuburb}</Text>}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <View style={[styles.inputWrapper, focusedField === 'addressCity' && styles.inputWrapperFocused, errors.addressCity ? styles.inputWrapperError : null]}>
+              <TextInput
+                style={styles.input}
+                placeholder="City"
+                placeholderTextColor={theme.textTertiary}
+                value={addressCity}
+                onChangeText={(val) => { setAddressCity(val); if (errors.addressCity) setErrors({ ...errors, addressCity: undefined }); }}
+                onFocus={() => setFocusedField('addressCity')}
+                onBlur={() => setFocusedField(null)}
+                autoCorrect={false}
+                returnKeyType="next"
+                accessibilityLabel="City"
+              />
+            </View>
+            {errors.addressCity && <Text style={styles.fieldError}>{errors.addressCity}</Text>}
+          </View>
+
+          <View style={styles.inputGroup}>
+            <View style={[styles.inputWrapper, focusedField === 'addressCode' && styles.inputWrapperFocused]}>
+              <TextInput
+                style={styles.input}
+                placeholder="Postal Code (optional)"
+                placeholderTextColor={theme.textTertiary}
+                value={addressCode}
+                onChangeText={setAddressCode}
+                onFocus={() => setFocusedField('addressCode')}
+                onBlur={() => setFocusedField(null)}
+                keyboardType="numeric"
+                returnKeyType="next"
+                accessibilityLabel="Postal code"
+              />
+            </View>
+          </View>
+        </>
+      )}
 
       <View style={styles.inputGroup}>
         <View style={[styles.inputWrapper, focusedField === 'signupPassword' && styles.inputWrapperFocused, errors.password ? styles.inputWrapperError : null]}>
