@@ -505,6 +505,13 @@ export default function TabOrdersScreen() {
     const badge = getStatusBadge(item);
     const isDelivered = item.status === 'delivered';
     const isDisputed = Boolean(item.dispute);
+    // While support is still tracing a missing meal, don't ask the customer to
+    // rate it — they have just told us it never arrived. The reference build
+    // got this for free because its dispute flipped status to 'unfulfilled';
+    // ours can't (status is batch-shared, see reportOrderNonDelivery), so the
+    // rating block is gated explicitly. Once the ticket is resolved or
+    // refunded the prompt returns, since by then there is something to rate.
+    const disputeOpen = item.dispute?.status === 'investigating';
     const hasRating = Boolean(item.rating);
     const activeStar = draftRatings[item.id] ?? item.rating?.rating ?? 0;
     const allergyNote = item.items.find(i => i.notes)?.notes;
@@ -613,8 +620,9 @@ export default function TabOrdersScreen() {
           </View>
         )}
 
-        {/* Post-delivery block — only once the meal has actually landed */}
-        {isDelivered && (
+        {/* Post-delivery block — only once the meal has actually landed, and
+            not while a non-delivery ticket on it is still open. */}
+        {isDelivered && !disputeOpen && (
           <View style={styles.ratingSection}>
             {hasRating ? (
               <View style={styles.ratedContainer}>

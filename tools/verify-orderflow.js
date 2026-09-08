@@ -130,11 +130,18 @@ const labels = (page) => page.evaluate(() =>
   text = await bodyText(page);
   check('confirming leaves the picker', !text.includes('Which day are you ordering for?'));
 
-  // 4. Menu: the old date row must be gone, replaced by the "Ordering for" bar.
-  check('menu shows the chosen day', text.includes('Ordering for'), text.slice(0, 120).replace(/\n/g, ' | '));
-  check('chosen day carried through', target ? text.includes(target.replace(/, selected$/, '')) : false, String(target));
+  // 4. Menu: the old date row must be gone. The chosen day now lives only on
+  //    the calendar button's accessibility label ("Ordering for <day>. Change
+  //    delivery day") — the visible row was removed at the client's request,
+  //    so these assert against labels rather than body text.
+  const menuLabels = await labels(page);
+  const orderingFor = menuLabels.find((l) => /^Ordering for /.test(l));
+  check('menu shows the chosen day', Boolean(orderingFor), orderingFor || JSON.stringify(menuLabels.slice(0, 6)));
+  check('chosen day carried through',
+    Boolean(orderingFor && target && orderingFor.includes(target.replace(/, selected$/, ''))),
+    (orderingFor || '(none)') + ' vs ' + String(target));
   check('old DELIVERY DATE row is gone', !text.includes('DELIVERY DATE'));
-  check('Change control present', (await labels(page)).includes('Change the day you are ordering for'));
+  check('Change control present', Boolean(orderingFor && /Change delivery day/.test(orderingFor)));
   await page.screenshot({ path: OUT + '3-menu.png' });
 
   // 5. Today's Menu should render a single day's meals, with no date picker.
@@ -171,13 +178,15 @@ const labels = (page) => page.evaluate(() =>
   check('change visit has a back button', (await labels(page)).includes('Go back without changing the delivery day'));
   await page.screenshot({ path: OUT + '6-change-day.png' });
 
-  // 8. Tracker: the reworked vertical batch timeline.
+  // 8. Orders: batch tracking lives on the Orders tab now — the separate
+  //    /tracker route is gone, and the screen was reworked into the reference
+  //    build's "Orders & Invoices" layout with the timeline above the history.
   await clickLabel(page, 'Go back without changing the delivery day', 1500);
-  check('switched to the Orders tab', await clickTab(page, '/tracker', 2200));
+  check('switched to the Orders tab', await clickTab(page, '/orders', 2500));
   text = await bodyText(page);
-  const onTracker = text.includes('Live Delivery Tracker') || text.includes('No active order');
-  check('tracker screen renders', onTracker, text.slice(0, 120).replace(/\n/g, ' | '));
-  if (text.includes('Live Delivery Tracker')) {
+  const onTracker = text.includes('Orders & Invoices') || text.includes('No Past Orders Yet');
+  check('orders screen renders', onTracker, text.slice(0, 120).replace(/\n/g, ' | '));
+  if (text.includes('Active Orders')) {
     check('timeline stage: Payment Verified', text.includes('Payment Verified'));
     check('timeline stage: Kitchen Prepping', text.includes('Kitchen Prepping'));
     check('timeline stage: Out for Batch Drop', text.includes('Out for Batch Drop'));

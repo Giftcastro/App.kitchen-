@@ -95,6 +95,37 @@ const labels = (page, re) => page.evaluate((src) => {
     check('rating is recorded on the card', (await bodyText(page)).includes('Your Rating'));
   }
 
+  // Filing a dispute must stop the card asking the customer to rate a meal
+  // they just reported missing. The reference build got that for free (its
+  // dispute set status to 'unfulfilled'); ours cannot, because status is
+  // shared across a company+day batch, so the gate is explicit and worth a test.
+  const report2 = (await labels(page, '^Report an issue with order'))[0];
+  if (report2) {
+    const orderRef = report2.replace('Report an issue with order ', '');
+    await clickLabel(page, report2, 1600);
+    await clickLabel(page, 'Confirm and dispatch ticket', 2500);
+    const after = await bodyText(page);
+    check('filing a dispute logs a ticket on the card', /Non-Delivery Ticket: TCK-\d+/.test(after),
+      (after.match(/Non-Delivery Ticket: TCK-\d+/) || ['(none)'])[0]);
+
+    // Scoped to the disputed card, not the page: other delivered orders are
+    // still legitimately asking to be rated, so a body-wide check would fail
+    // for the wrong reason.
+    const cardText = await page.evaluate((ref) => {
+      const nodes = Array.from(document.querySelectorAll('div'))
+        .filter((e) => (e.textContent || '').includes(ref) && (e.textContent || '').includes('Non-Delivery Ticket'));
+      // Deepest match is the card itself rather than one of its ancestors.
+      return nodes.length ? (nodes[nodes.length - 1].textContent || '').replace(/[\uE000-\uF8FF]/g, '') : null;
+    }, orderRef);
+    check('the disputed card was found', Boolean(cardText), orderRef);
+    check('an open dispute hides that card\'s rating prompt',
+      Boolean(cardText) && !cardText.includes('How was your meal drop'),
+      cardText ? cardText.slice(0, 90) : '(card not found)');
+    check('a disputed order stops offering Report Issue',
+      !(await labels(page, '^Report an issue with order')).includes(report2));
+    await page.screenshot({ path: OUT + 'disputed.png' });
+  }
+
   log(errors.length ? 'PAGE ERRORS: ' + JSON.stringify(errors.slice(0, 3)) : 'no page errors');
   log(fails.length ? 'FAILURES: ' + JSON.stringify(fails) : 'ALL CHECKS PASSED');
   await browser.close();

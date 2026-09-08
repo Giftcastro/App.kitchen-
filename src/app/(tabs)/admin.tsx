@@ -1071,6 +1071,9 @@ export default function AdminScreen() {
                       }}
                       accessibilityRole="button"
                       accessibilityState={{ selected: isActive }}
+                      // react-native-web drops accessibilityState — see the
+                      // same pattern on the Chef tab's toggles.
+                      aria-checked={isActive}
                     >
                       <Text style={[styles.categoryPickerChipText, isActive && styles.categoryPickerChipTextActive]}>
                         {label}
@@ -1093,6 +1096,7 @@ export default function AdminScreen() {
                       onPress={() => { haptics.selection(); setCompanyFilter(opt.id); }}
                       accessibilityRole="button"
                       accessibilityState={{ selected: isActive }}
+                      aria-checked={isActive}
                       accessibilityLabel={`Scope report to ${opt.name}`}
                     >
                       <Text style={[styles.categoryPickerChipText, isActive && styles.categoryPickerChipTextActive]}>
