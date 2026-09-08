@@ -23,9 +23,9 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
-  View, TouchableOpacity, StyleSheet, ScrollView, StatusBar,
+  View, TouchableOpacity, StyleSheet, ScrollView, StatusBar, TextProps,
 } from 'react-native';
-import { Text } from '../components/AppText';
+import { Text as BrandText } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -33,6 +33,15 @@ import { useKitchen } from '../context/KitchenCoContext';
 import { getUpcomingOrderableWeekdays, UpcomingWeekday, ORDER_CUTOFF_LABEL } from '../utils/deliveryHelpers';
 import { ThemeColors } from '../utils/theme';
 import { haptics } from '../utils/haptics';
+import { legacyTypography } from '../utils/legacyTypography';
+
+// Same pre-KitchenCo RobotoCondensed body / GotchaGothic headline pairing as
+// Menu, Activity, and Profile (see legacyTypography.ts) — this is the
+// screen those three route to for picking a delivery day, so it keeps the
+// same look rather than snapping back to Montserrat mid-flow.
+const Text: React.FC<TextProps> = ({ style, ...rest }) => (
+  <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
 
 // Order the three buckets deliberately rather than relying on the order they
 // happen to appear in the data — "This week" must always lead, even when it
@@ -40,9 +49,12 @@ import { haptics } from '../utils/haptics';
 const WEEK_GROUPS: UpcomingWeekday['weekLabel'][] = ['This week', 'Next week', 'In 2 weeks'];
 
 export default function SelectDateScreen() {
-  const { orderingForDate, setOrderingForDate, theme } = useKitchen();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { orderingForDate, setOrderingForDate, theme, isDark } = useKitchen();
+  const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
   const router = useRouter();
+  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
+  // stark white — light mode only, matching Menu/Activity/Profile.
+  const screenBackground = isDark ? theme.background : '#F7F2E8';
   const { change, view } = useLocalSearchParams<{ change?: string; view?: string }>();
   const isChanging = change === '1';
 
@@ -82,8 +94,8 @@ export default function SelectDateScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+    <SafeAreaView style={[styles.container, { backgroundColor: screenBackground }]}>
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
 
       {isChanging && (
         <View style={styles.topBar}>
@@ -172,12 +184,13 @@ export default function SelectDateScreen() {
   );
 }
 
-const createStyles = (theme: ThemeColors) => StyleSheet.create({
+const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create({
   container: { flex: 1 },
   topBar: { paddingHorizontal: 12, paddingTop: 4, height: 44, justifyContent: 'center' },
   backBtn: { width: 40, height: 40, alignItems: 'flex-start', justifyContent: 'center' },
   scrollContent: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 },
   title: {
+    fontFamily: legacyTypography.heading,
     fontSize: 24,
     fontWeight: '700',
     color: theme.text,
@@ -233,7 +246,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     paddingBottom: 20,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: theme.border,
-    backgroundColor: theme.background,
+    backgroundColor: isDark ? theme.background : '#F7F2E8',
   },
   confirmBtn: {
     backgroundColor: theme.accent,
