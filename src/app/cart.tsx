@@ -14,18 +14,35 @@ import {
   StatusBar,
   Platform,
   Modal,
+  TextProps,
+  TextInputProps,
 } from 'react-native';
-import { Text, TextInput } from '../components/AppText';
+import { Text as BrandText, TextInput as BrandTextInput } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen } from '../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
 import { getOrderCutoffInfo } from '../utils/deliveryHelpers';
 import { ThemeColors } from '../utils/theme';
+import { legacyTypography } from '../utils/legacyTypography';
+
+// Same pre-KitchenCo RobotoCondensed body / GotchaGothic headline pairing as
+// Menu/Activity/Profile (see legacyTypography.ts) — Cart is the next stop
+// after those, so it keeps the same look rather than snapping back to
+// Montserrat mid-flow.
+const Text: React.FC<TextProps> = ({ style, ...rest }) => (
+  <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
+const TextInput: React.FC<TextInputProps> = ({ style, ...rest }) => (
+  <BrandTextInput style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
 
 export default function CartScreen() {
-  const { cart, removeFromCart, clearCart, addToCart, discounts, appliedDiscount, setAppliedDiscount, isItemEligibleForDiscount, calculateDiscountAmount, calculateSubsidyAmount, deliveryInfo, theme } = useKitchen();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const { cart, removeFromCart, clearCart, addToCart, discounts, appliedDiscount, setAppliedDiscount, isItemEligibleForDiscount, calculateDiscountAmount, calculateSubsidyAmount, deliveryInfo, theme, isDark } = useKitchen();
+  const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
   const router = useRouter();
+  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
+  // stark white — light mode only, matching the customer-facing screens.
+  const screenBackground = isDark ? theme.background : '#F7F2E8';
 
   const [discountCode, setDiscountCode] = useState('');
   const [discountError, setDiscountError] = useState('');
@@ -324,7 +341,7 @@ export default function CartScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Status bar */}
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
 
       {/* Header with back button and clear cart action */}
       <View style={styles.header}>
@@ -387,8 +404,10 @@ export default function CartScreen() {
 // intentionally kept as literal hex rather than theme tokens, matching how
 // the Menu screen keeps its own discount badges and dietary tag chips literal
 // — these are content/status colors, not grayscale UI chrome.
-const createStyles = (theme: ThemeColors) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background },
+const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create({
+  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
+  // stark white — light mode only, matching the customer-facing screens.
+  container: { flex: 1, backgroundColor: isDark ? theme.background : '#F7F2E8' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -399,7 +418,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   },
   backBtn: { padding: 5 },
   backBtnText: { color: theme.text, fontSize: 15, fontWeight: '700', textDecorationLine: 'underline' },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: theme.text },
+  headerTitle: { fontFamily: legacyTypography.heading, fontSize: 18, fontWeight: '800', color: theme.text },
   clearText: { color: theme.error, fontSize: 14, fontWeight: '700' },
 
   // Empty state styles
@@ -639,7 +658,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     marginBottom: 0,
   },
     totalLabel: { fontSize: 15, fontWeight: '800', color: theme.text },
-  totalValue: { fontSize: 16, fontWeight: '900', color: theme.text },
+  totalValue: { fontFamily: legacyTypography.heading, fontSize: 16, fontWeight: '900', color: theme.text },
 
   // Cutoff notice — a decorative "heads up" amber card, kept literal for the
   // same reason as the discount badge/coupon colors above.

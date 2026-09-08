@@ -8,8 +8,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FlyToCartOverlay, FlyToCartOverlayHandle } from '../../components/FlyToCartOverlay';
 
 export default function TabsLayout() {
-  const { user, cart, theme, cartPulseSignal, registerCartFlyHandler } = useKitchen();
+  const { user, cart, theme, isDark, cartPulseSignal, registerCartFlyHandler } = useKitchen();
   const router = useRouter();
+  // Menu/Orders/Profile now sit on a warm cream backdrop instead of stark
+  // white (see legacyTypography.ts) — this shared native header would
+  // otherwise read as a jarring white seam above it. Admin hides this header
+  // entirely (headerShown: false) and renders its own, so this only ever
+  // touches the three screens that already carry the warm background.
+  const headerBackground = isDark ? theme.headerBg : '#F7F2E8';
   // Android gesture/back-button nav bar sits below the tab bar's fixed
   // content height — without adding this inset, tab icons/labels render
   // partially behind that system UI on devices with gesture navigation.
@@ -71,12 +77,16 @@ export default function TabsLayout() {
             paddingTop: 8,
           },
           headerStyle: {
-            backgroundColor: theme.headerBg,
+            backgroundColor: headerBackground,
             borderBottomWidth: 1,
             borderBottomColor: theme.border,
           },
           headerTitleStyle: {
-            fontFamily: 'Montserrat_900Black',
+            // Only ever visible on Orders/Profile (Menu supplies its own
+            // custom headerTitle; Admin hides this header) — both already
+            // carry the GotchaGothic/cream look, so this matches instead of
+            // sitting out as a leftover Montserrat title above it.
+            fontFamily: 'GotchaGothic',
             fontWeight: '900',
             fontSize: 20,
             color: theme.text,

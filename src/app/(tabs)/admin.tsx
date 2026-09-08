@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { StyleSheet, View, TouchableOpacity, StatusBar, ScrollView, Modal, Dimensions, RefreshControl, Linking, Platform } from 'react-native';
-import { Text, TextInput } from '../../components/AppText';
+import { StyleSheet, View, TouchableOpacity, StatusBar, ScrollView, Modal, Dimensions, RefreshControl, Linking, Platform, TextProps, TextInputProps } from 'react-native';
+import { Text as BrandText, TextInput as BrandTextInput } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useKitchen, createUserId, createCompanyAddressId, Order, AppUser, Company, CompanyAddress, AddOnOption } from '../../context/KitchenCoContext';
@@ -9,8 +9,21 @@ import { calculateDeliveryFee, getItemDueDate, isSameDay } from '../../utils/del
 import { ThemeColors } from '../../utils/theme';
 import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { haptics } from '../../utils/haptics';
+import { legacyTypography } from '../../utils/legacyTypography';
 import * as Print from 'expo-print';
 import * as MailComposer from 'expo-mail-composer';
+
+// Same pre-KitchenCo RobotoCondensed body / GotchaGothic headline pairing as
+// the customer-facing screens (see legacyTypography.ts) — one override here
+// cascades to every section below (Dashboard, Meals, Orders, Chef, Notify,
+// Weeks), since they all import Text/TextInput from this same module scope
+// rather than each importing AppText directly.
+const Text: React.FC<TextProps> = ({ style, ...rest }) => (
+  <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
+const TextInput: React.FC<TextInputProps> = ({ style, ...rest }) => (
+  <BrandTextInput style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
+);
 
 // One row of the Add/Edit Company modal's "Delivery Addresses" section — a
 // company can register any number of sites. `key` is stable across
@@ -279,8 +292,11 @@ const TAB_ICONS: Record<TabType, string> = {
 };
 
 export default function AdminScreen() {
-    const { orders, activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRotation, allUsers, discounts, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, addCompany, updateCompany, deleteCompany, updateOrderStatus, theme, kitchenEmail, setKitchenEmail } = useKitchen();
-  const styles = useMemo(() => createStyles(theme), [theme]);
+    const { orders, activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRotation, allUsers, discounts, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, addCompany, updateCompany, deleteCompany, updateOrderStatus, theme, isDark, kitchenEmail, setKitchenEmail } = useKitchen();
+  const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
+  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
+  // stark white — light mode only, matching the customer-facing screens.
+  const screenBackground = isDark ? theme.background : '#F7F2E8';
   const STATUS_COLORS = useMemo(() => getStatusColors(theme), [theme]);
   const { refreshing, refresh } = useSimulatedLoad();
   const router = useRouter();
@@ -791,7 +807,7 @@ export default function AdminScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.background} />
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
 
       {/* Shell header — identity + the one action that matters everywhere: previewing the live app */}
       <View style={styles.shellHeader}>
@@ -3756,8 +3772,13 @@ function WeeksSection({ activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRo
   );
 }
 
-const createStyles = (theme: ThemeColors) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background },
+// isDark defaults to false since every section but AdminScreen itself calls
+// this with just `theme` — none of them render the root container/StatusBar
+// that isDark actually affects.
+const createStyles = (theme: ThemeColors, isDark: boolean = false) => StyleSheet.create({
+  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
+  // stark white — light mode only, matching the customer-facing screens.
+  container: { flex: 1, backgroundColor: isDark ? theme.background : '#F7F2E8' },
 
   // Shell header
   shellHeader: {
@@ -3768,7 +3789,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     paddingTop: 12,
     paddingBottom: 4,
   },
-  shellTitle: { fontSize: 20, fontWeight: '900', color: theme.text, letterSpacing: -0.3 },
+  shellTitle: { fontFamily: legacyTypography.heading, fontSize: 20, fontWeight: '900', color: theme.text, letterSpacing: -0.3 },
   shellSubtitle: { fontSize: 12, color: theme.textSecondary, fontWeight: '600', marginTop: 2 },
   previewBtn: {
     flexDirection: 'row',
@@ -3827,6 +3848,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     marginBottom: 20,
   },
   greeting: {
+    fontFamily: legacyTypography.heading,
     fontSize: 24,
     fontWeight: '900',
     color: theme.text,
@@ -3875,6 +3897,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     marginBottom: 14,
   },
   statNumber: {
+    fontFamily: legacyTypography.heading,
     fontSize: 26,
     fontWeight: '900',
     color: theme.text,
