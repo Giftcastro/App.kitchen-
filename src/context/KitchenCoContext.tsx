@@ -38,6 +38,10 @@ let nextOrderNumber = 1299;
 let nextUserNumber = 1008;
 export const createUserId = () => `USR-${nextUserNumber++}`;
 
+/** Sequential id source for company addresses — same reasoning as createUserId above. */
+let nextCompanyAddressNumber = 1;
+export const createCompanyAddressId = () => `addr-${nextCompanyAddressNumber++}`;
+
 export type AccountType = 'individual' | 'company';
 
 export interface User {
@@ -46,8 +50,8 @@ export interface User {
   role: string;
   accountType?: AccountType;
   companyName?: string;
-  /** Which of the company's registered delivery locations (see Company.address / address2) this employee belongs to — only meaningful when accountType is 'company'. Defaults to the primary address when unset. */
-  companyLocation?: 1 | 2;
+  /** Which of the company's registered delivery addresses (see Company.addresses) this employee belongs to — only meaningful when accountType is 'company'. References CompanyAddress.id; falls back to the first registered address when unset or when it no longer matches one (an admin can delete an address after someone signed up against it). */
+  companyAddressId?: string;
 }
 
 export interface AppUser extends User {
@@ -115,6 +119,9 @@ export interface MenuCategory {
 }
 
 export interface CompanyAddress {
+  id: string;
+  /** Admin-given name for this site, e.g. "Head Office" or "Sandton Branch" — shown wherever an employee has to tell two of a company's addresses apart (signup, the address picker). Falls back to the street when unset. */
+  label?: string;
   street: string;
   /** Floor / suite / unit within the building, e.g. "Floor 4, Suite 402". */
   unit?: string;
@@ -133,10 +140,14 @@ export interface Company {
   name: string;
   /** Lowercase domains, no "@" — e.g. "acmelogistics.com". */
   domains: string[];
-  /** Registered delivery address for bulk/company orders. */
-  address?: CompanyAddress;
-  /** A second registered site, for companies delivering to more than one location — an employee picks between the two at signup (see User.companyLocation). */
-  address2?: CompanyAddress;
+  /**
+   * Registered delivery addresses for bulk/company orders — a company can
+   * have any number of sites (client request, Sep 2026: "one company can
+   * have many addresses"), not just a primary + one alternate. The first
+   * entry is the default/primary address; an employee with more than one to
+   * choose from picks one at signup (see User.companyAddressId).
+   */
+  addresses: CompanyAddress[];
   /** Fixed amount (Rand, VAT-inclusive) the company subsidizes per meal ordered by its employees. Deducted automatically at checkout, capped per item so it can't exceed that item's price. */
   mealSubsidy?: number;
 }
@@ -219,7 +230,7 @@ interface KitchenContextType {
    */
   orderingForDate: string | null;
   setOrderingForDate: (iso: string | null) => void;
-  login: (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string, companyLocation?: 1 | 2) => void;
+  login: (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string, companyAddressId?: string) => void;
   logout: () => void;
   addToCart: (item: CartItem) => void;
   removeFromCart: (itemId: string) => void;
@@ -630,36 +641,57 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       id: 'co-ecogra',
       name: 'Ecogra',
       domains: ['ecogra.org'],
-      address: {
-        street: '160 Jan Smuts Ave',
-        suburb: 'Rosebank',
-        city: 'Johannesburg',
-        code: '',
-      },
+      // Two seeded sites — demo data proving the multi-address signup
+      // picker actually has something to pick between out of the box,
+      // rather than only working once an admin adds a second address by
+      // hand (which doesn't persist across a reload; this app has no
+      // backend yet).
+      addresses: [
+        {
+          id: 'addr-ecogra-1',
+          label: 'Head Office',
+          street: '160 Jan Smuts Ave',
+          suburb: 'Rosebank',
+          city: 'Johannesburg',
+          code: '',
+        },
+        {
+          id: 'addr-ecogra-2',
+          label: 'Sandton Branch',
+          street: '1 Sandton Drive',
+          suburb: 'Sandton',
+          city: 'Johannesburg',
+          code: '',
+        },
+      ],
       mealSubsidy: 80.0,
     },
     {
       id: 'co-tata',
       name: 'TATA',
       domains: ['tcs.com'],
-      address: {
+      addresses: [{
+        id: 'addr-tata-1',
+        label: 'Head Office',
         street: '39 Ferguson Road',
         suburb: 'Illovo',
         city: 'Johannesburg',
         code: '',
-      },
+      }],
       mealSubsidy: 85.0,
     },
     {
       id: 'co-rcl',
       name: 'RCL',
       domains: ['rclfoods.com'],
-      address: {
+      addresses: [{
+        id: 'addr-rcl-1',
+        label: 'Head Office',
         street: '15 Railey Road',
         suburb: 'Bedfordview',
         city: 'Johannesburg',
         code: '',
-      },
+      }],
       mealSubsidy: 40.0,
     },
   ]);
@@ -749,8 +781,8 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
 
   // Demo data for orders and users
 
-  const login = (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string, companyLocation?: 1 | 2) => {
-    const newUser = { email, role, name: name || email.split('@')[0], accountType, companyName, companyLocation };
+  const login = (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string, companyAddressId?: string) => {
+    const newUser = { email, role, name: name || email.split('@')[0], accountType, companyName, companyAddressId };
     setUser(newUser);
 
     // Track this user in allUsers for admin view
@@ -760,7 +792,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         // Refresh accountType/companyName too — a company registered after this
         // user's original signup should still get linked on their next sign-in.
         return prev.map(u =>
-          u.email === email ? { ...u, accountType, companyName, companyLocation } : u
+          u.email === email ? { ...u, accountType, companyName, companyAddressId } : u
         );
       }
       return [...prev, {
@@ -770,7 +802,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         name: name || email.split('@')[0],
         accountType,
         companyName,
-        companyLocation,
+        companyAddressId,
         joinedDate: new Date().toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }),
         orderCount: 0,
       }];
@@ -888,14 +920,15 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
 
     if (user.companyName) {
       const company = companies.find(c => c.name === user.companyName);
-      // A company with two registered sites has each employee pick one at
-      // signup (User.companyLocation) — default to the primary address for
-      // anyone signed up before that choice existed, or whose company only
-      // has the one location.
-      const companyAddress = user.companyLocation === 2 && company?.address2 ? company.address2 : company?.address;
+      // A company with more than one registered site has each employee pick
+      // one at signup (User.companyAddressId) — fall back to the first
+      // registered address for anyone signed up before that choice existed,
+      // whose company only has the one site, or whose picked address an
+      // admin has since deleted.
+      const companyAddress = company?.addresses.find(a => a.id === user.companyAddressId) ?? company?.addresses[0];
       if (companyAddress?.distanceKm != null) {
         const resolvedAddress: DeliveryAddress = {
-          id: `company-${company!.id}-${user.companyLocation ?? 1}`,
+          id: `company-${company!.id}-${companyAddress.id}`,
           label: company!.name,
           street: companyAddress.unit ? `${companyAddress.unit}, ${companyAddress.street}` : companyAddress.street,
           suburb: companyAddress.suburb,

@@ -3,7 +3,7 @@ import { StyleSheet, View, TouchableOpacity, StatusBar, ScrollView, Modal, Dimen
 import { Text, TextInput } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useKitchen, createUserId, Order, AppUser, Company, AddOnOption } from '../../context/KitchenCoContext';
+import { useKitchen, createUserId, createCompanyAddressId, Order, AppUser, Company, CompanyAddress, AddOnOption } from '../../context/KitchenCoContext';
 import { Ionicons } from '@expo/vector-icons';
 import { calculateDeliveryFee, getItemDueDate, isSameDay } from '../../utils/deliveryHelpers';
 import { ThemeColors } from '../../utils/theme';
@@ -11,6 +11,32 @@ import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { haptics } from '../../utils/haptics';
 import * as Print from 'expo-print';
 import * as MailComposer from 'expo-mail-composer';
+
+// One row of the Add/Edit Company modal's "Delivery Addresses" section — a
+// company can register any number of sites. `key` is stable across
+// add/remove so React never remounts a row's inputs mid-edit; `existingId`
+// is set only when this draft mirrors an address already saved on the
+// company being edited, so saving reuses that CompanyAddress's real id
+// instead of minting a new one for it.
+interface AddressDraft {
+  key: string;
+  existingId?: string;
+  label: string;
+  street: string;
+  unit: string;
+  suburb: string;
+  city: string;
+  code: string;
+  instructions: string;
+  distance: string;
+}
+let addressDraftKeySeq = 0;
+function makeEmptyAddressDraft(): AddressDraft {
+  return {
+    key: `draft-${addressDraftKeySeq++}`,
+    label: '', street: '', unit: '', suburb: '', city: '', code: '', instructions: '', distance: '',
+  };
+}
 
 // Order-status colours, matching activity.tsx's getStatusColor. Colour is
 // spent only where it carries meaning in the black-and-white repaint: amber
@@ -276,23 +302,20 @@ export default function AdminScreen() {
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
   const [newCompanyName, setNewCompanyName] = useState('');
   const [newCompanyDomains, setNewCompanyDomains] = useState('');
-  const [newCompanyStreet, setNewCompanyStreet] = useState('');
-  const [newCompanyUnit, setNewCompanyUnit] = useState('');
-  const [newCompanySuburb, setNewCompanySuburb] = useState('');
-  const [newCompanyCity, setNewCompanyCity] = useState('');
-  const [newCompanyCode, setNewCompanyCode] = useState('');
-  const [newCompanyDistance, setNewCompanyDistance] = useState('');
-  const [newCompanyInstructions, setNewCompanyInstructions] = useState('');
   const [newCompanySubsidy, setNewCompanySubsidy] = useState('');
-  // Second registered site (optional) — some companies deliver to two
-  // locations, and each employee picks between them at signup.
-  const [showSecondLocation, setShowSecondLocation] = useState(false);
-  const [newCompanyStreet2, setNewCompanyStreet2] = useState('');
-  const [newCompanyUnit2, setNewCompanyUnit2] = useState('');
-  const [newCompanySuburb2, setNewCompanySuburb2] = useState('');
-  const [newCompanyCity2, setNewCompanyCity2] = useState('');
-  const [newCompanyCode2, setNewCompanyCode2] = useState('');
-  const [newCompanyDistance2, setNewCompanyDistance2] = useState('');
+  // Registered delivery addresses — any number of them (client request, Sep
+  // 2026: "one company can have many addresses"), not a fixed primary +
+  // one alternate. `existingId` is set only when this draft mirrors a
+  // CompanyAddress already saved on the company being edited, so saving
+  // keeps that address's real id instead of minting a new one; `key` is
+  // always stable (falls back to a draft-local id) so React doesn't remount
+  // the row's inputs as other drafts are added/removed.
+  const [addressDrafts, setAddressDrafts] = useState<AddressDraft[]>([makeEmptyAddressDraft()]);
+  const addAddressDraft = () => { haptics.selection(); setAddressDrafts(prev => [...prev, makeEmptyAddressDraft()]); };
+  const removeAddressDraft = (key: string) => { haptics.selection(); setAddressDrafts(prev => prev.filter(d => d.key !== key)); };
+  const updateAddressDraft = (key: string, patch: Partial<AddressDraft>) => {
+    setAddressDrafts(prev => prev.map(d => d.key === key ? { ...d, ...patch } : d));
+  };
   const [showKitchenEmailModal, setShowKitchenEmailModal] = useState(false);
   const [kitchenEmailDraft, setKitchenEmailDraft] = useState('');
   const [kitchenEmailError, setKitchenEmailError] = useState('');
@@ -680,21 +703,8 @@ export default function AdminScreen() {
     setEditingCompanyId(null);
     setNewCompanyName('');
     setNewCompanyDomains('');
-    setNewCompanyStreet('');
-    setNewCompanyUnit('');
-    setNewCompanySuburb('');
-    setNewCompanyCity('');
-    setNewCompanyCode('');
-    setNewCompanyDistance('');
-    setNewCompanyInstructions('');
     setNewCompanySubsidy('');
-    setShowSecondLocation(false);
-    setNewCompanyStreet2('');
-    setNewCompanyUnit2('');
-    setNewCompanySuburb2('');
-    setNewCompanyCity2('');
-    setNewCompanyCode2('');
-    setNewCompanyDistance2('');
+    setAddressDrafts([makeEmptyAddressDraft()]);
     setShowAddCompany(false);
   };
 
@@ -702,21 +712,23 @@ export default function AdminScreen() {
     setEditingCompanyId(company.id);
     setNewCompanyName(company.name);
     setNewCompanyDomains(company.domains.join(', '));
-    setNewCompanyStreet(company.address?.street ?? '');
-    setNewCompanyUnit(company.address?.unit ?? '');
-    setNewCompanySuburb(company.address?.suburb ?? '');
-    setNewCompanyCity(company.address?.city ?? '');
-    setNewCompanyCode(company.address?.code ?? '');
-    setNewCompanyDistance(company.address?.distanceKm != null ? String(company.address.distanceKm) : '');
-    setNewCompanyInstructions(company.address?.instructions ?? '');
     setNewCompanySubsidy(company.mealSubsidy != null ? String(company.mealSubsidy) : '');
-    setShowSecondLocation(!!company.address2);
-    setNewCompanyStreet2(company.address2?.street ?? '');
-    setNewCompanyUnit2(company.address2?.unit ?? '');
-    setNewCompanySuburb2(company.address2?.suburb ?? '');
-    setNewCompanyCity2(company.address2?.city ?? '');
-    setNewCompanyCode2(company.address2?.code ?? '');
-    setNewCompanyDistance2(company.address2?.distanceKm != null ? String(company.address2.distanceKm) : '');
+    setAddressDrafts(
+      company.addresses.length > 0
+        ? company.addresses.map(a => ({
+            key: a.id,
+            existingId: a.id,
+            label: a.label ?? '',
+            street: a.street,
+            unit: a.unit ?? '',
+            suburb: a.suburb,
+            city: a.city,
+            code: a.code,
+            instructions: a.instructions ?? '',
+            distance: a.distanceKm != null ? String(a.distanceKm) : '',
+          }))
+        : [makeEmptyAddressDraft()]
+    );
     setShowAddCompany(true);
   };
 
@@ -727,31 +739,27 @@ export default function AdminScreen() {
       .map(d => d.trim().toLowerCase().replace(/^@/, ''))
       .filter(Boolean);
     if (domains.length === 0) return;
-    const hasAddress = newCompanyStreet.trim() && newCompanySuburb.trim() && newCompanyCity.trim();
-    const hasAddress2 = showSecondLocation && newCompanyStreet2.trim() && newCompanySuburb2.trim() && newCompanyCity2.trim();
-    const parsedDistance = parseFloat(newCompanyDistance);
-    const parsedDistance2 = parseFloat(newCompanyDistance2);
     const parsedSubsidy = parseFloat(newCompanySubsidy);
+    const addresses: CompanyAddress[] = addressDrafts
+      .filter(d => d.street.trim() && d.suburb.trim() && d.city.trim())
+      .map(d => {
+        const parsedDistance = parseFloat(d.distance);
+        return {
+          id: d.existingId ?? createCompanyAddressId(),
+          label: d.label.trim() || undefined,
+          street: d.street.trim(),
+          unit: d.unit.trim() || undefined,
+          suburb: d.suburb.trim(),
+          city: d.city.trim(),
+          code: d.code.trim(),
+          instructions: d.instructions.trim() || undefined,
+          distanceKm: Number.isFinite(parsedDistance) ? parsedDistance : undefined,
+        };
+      });
     const payload = {
       name: newCompanyName.trim(),
       domains,
-      address: hasAddress ? {
-        street: newCompanyStreet.trim(),
-        unit: newCompanyUnit.trim() || undefined,
-        suburb: newCompanySuburb.trim(),
-        city: newCompanyCity.trim(),
-        code: newCompanyCode.trim(),
-        instructions: newCompanyInstructions.trim() || undefined,
-        distanceKm: Number.isFinite(parsedDistance) ? parsedDistance : undefined,
-      } : undefined,
-      address2: hasAddress2 ? {
-        street: newCompanyStreet2.trim(),
-        unit: newCompanyUnit2.trim() || undefined,
-        suburb: newCompanySuburb2.trim(),
-        city: newCompanyCity2.trim(),
-        code: newCompanyCode2.trim(),
-        distanceKm: Number.isFinite(parsedDistance2) ? parsedDistance2 : undefined,
-      } : undefined,
+      addresses,
       mealSubsidy: Number.isFinite(parsedSubsidy) && parsedSubsidy > 0 ? parsedSubsidy : undefined,
     };
     if (editingCompanyId) {
@@ -1476,31 +1484,42 @@ export default function AdminScreen() {
                           </Text>
                         </View>
                       ) : null}
-                      {company.address ? (
+                      {company.addresses.length > 0 ? (
                         <>
                           <View style={styles.companyAddressRow}>
                             <Ionicons name="location" size={11} color={theme.textSecondary} />
                             <Text style={styles.companyAddressText} numberOfLines={1}>
-                              {company.address.unit ? `${company.address.unit}, ` : ''}
-                              {company.address.street}, {company.address.suburb}
+                              {company.addresses[0].label ? `${company.addresses[0].label} — ` : ''}
+                              {company.addresses[0].unit ? `${company.addresses[0].unit}, ` : ''}
+                              {company.addresses[0].street}, {company.addresses[0].suburb}
                             </Text>
                           </View>
-                          {company.address.instructions ? (
+                          {company.addresses[0].instructions ? (
                             <View style={styles.companyAddressRow}>
                               <Ionicons name="information-circle" size={11} color={theme.textSecondary} />
                               <Text style={[styles.companyAddressText, { color: theme.textSecondary }]} numberOfLines={1}>
-                                {company.address.instructions}
+                                {company.addresses[0].instructions}
                               </Text>
                             </View>
                           ) : null}
                           <View style={styles.companyAddressRow}>
-                            <Ionicons name="bicycle" size={11} color={company.address.distanceKm != null ? theme.textSecondary : theme.warning} />
-                            <Text style={[styles.companyAddressText, { color: company.address.distanceKm != null ? theme.textSecondary : theme.warning }]} numberOfLines={1}>
-                              {company.address.distanceKm != null
-                                ? `${company.address.distanceKm}km · R${calculateDeliveryFee(company.address.distanceKm) ?? '—'} delivery fee`
+                            <Ionicons name="bicycle" size={11} color={company.addresses[0].distanceKm != null ? theme.textSecondary : theme.warning} />
+                            <Text style={[styles.companyAddressText, { color: company.addresses[0].distanceKm != null ? theme.textSecondary : theme.warning }]} numberOfLines={1}>
+                              {company.addresses[0].distanceKm != null
+                                ? `${company.addresses[0].distanceKm}km · R${calculateDeliveryFee(company.addresses[0].distanceKm) ?? '—'} delivery fee`
                                 : 'Add a distance to set the delivery fee'}
                             </Text>
                           </View>
+                          {/* Every other registered site, compact — the
+                              primary above already got the full detail. */}
+                          {company.addresses.slice(1).map(addr => (
+                            <View key={addr.id} style={styles.companyAddressRow}>
+                              <Ionicons name="location" size={11} color={theme.textSecondary} />
+                              <Text style={styles.companyAddressText} numberOfLines={1}>
+                                + {addr.label ? `${addr.label} — ` : ''}{addr.unit ? `${addr.unit}, ` : ''}{addr.street}, {addr.suburb}
+                              </Text>
+                            </View>
+                          ))}
                         </>
                       ) : (
                         <View style={styles.companyAddressRow}>
@@ -1508,14 +1527,6 @@ export default function AdminScreen() {
                           <Text style={[styles.companyAddressText, { color: '#FF9500' }]}>No delivery address on file</Text>
                         </View>
                       )}
-                      {company.address2 ? (
-                        <View style={styles.companyAddressRow}>
-                          <Ionicons name="location" size={11} color={theme.textSecondary} />
-                          <Text style={styles.companyAddressText} numberOfLines={1}>
-                            + {company.address2.unit ? `${company.address2.unit}, ` : ''}{company.address2.street}, {company.address2.suburb}
-                          </Text>
-                        </View>
-                      ) : null}
                     </View>
                     <View style={styles.companyActions}>
                       <TouchableOpacity
@@ -1748,97 +1759,62 @@ export default function AdminScreen() {
             <Text style={styles.modalHint}>
               e.g. acmelogistics.com — anyone signing up with an @acmelogistics.com address will be auto-linked to this company.
             </Text>
-            <Text style={styles.modalFieldLabel}>DELIVERY ADDRESS</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Street address"
-              placeholderTextColor={theme.textTertiary}
-              value={newCompanyStreet}
-              onChangeText={setNewCompanyStreet}
-            />
-            <TextInput
-              style={styles.modalInput}
-              placeholder="Floor / suite / unit (optional)"
-              placeholderTextColor={theme.textTertiary}
-              value={newCompanyUnit}
-              onChangeText={setNewCompanyUnit}
-            />
-            <View style={styles.modalRow}>
-              <TextInput
-                style={[styles.modalInput, styles.modalRowInput]}
-                placeholder="Suburb"
-                placeholderTextColor={theme.textTertiary}
-                value={newCompanySuburb}
-                onChangeText={setNewCompanySuburb}
-              />
-              <TextInput
-                style={[styles.modalInput, styles.modalRowInput]}
-                placeholder="City"
-                placeholderTextColor={theme.textTertiary}
-                value={newCompanyCity}
-                onChangeText={setNewCompanyCity}
-              />
-            </View>
-            <View style={styles.modalRow}>
-              <TextInput
-                style={[styles.modalInput, styles.modalRowInput]}
-                placeholder="Postal code"
-                placeholderTextColor={theme.textTertiary}
-                value={newCompanyCode}
-                onChangeText={setNewCompanyCode}
-                keyboardType="numeric"
-              />
-              <TextInput
-                style={[styles.modalInput, styles.modalRowInput]}
-                placeholder="Distance (km)"
-                placeholderTextColor={theme.textTertiary}
-                value={newCompanyDistance}
-                onChangeText={setNewCompanyDistance}
-                keyboardType="numeric"
-              />
-            </View>
-            <Text style={styles.modalHint}>
-              Used as the default delivery destination for bulk company orders. Distance sets the delivery fee (R100–R350 by band).
-            </Text>
-
-            {/* Second site (optional) — some companies deliver to two
-                locations; each employee picks between them at signup. */}
-            {showSecondLocation ? (
-              <>
+            {/* Delivery addresses — any number of them (client request, Sep
+                2026: "one company can have many addresses"). The first is
+                the default delivery destination for bulk company orders;
+                employees pick between all of them at signup once there's
+                more than one. */}
+            {addressDrafts.map((draft, idx) => (
+              <View key={draft.key} style={idx > 0 ? styles.addressDraftBlock : undefined}>
                 <View style={styles.modalRow}>
-                  <Text style={[styles.modalFieldLabel, { flex: 1 }]}>SECOND LOCATION (OPTIONAL)</Text>
-                  <TouchableOpacity onPress={() => setShowSecondLocation(false)} accessibilityRole="button">
-                    <Text style={styles.modalRemoveLocationText}>Remove</Text>
-                  </TouchableOpacity>
+                  <Text style={[styles.modalFieldLabel, { flex: 1 }]}>
+                    {idx === 0 ? 'PRIMARY ADDRESS' : `ADDRESS ${idx + 1}`}
+                  </Text>
+                  {addressDrafts.length > 1 && (
+                    <TouchableOpacity
+                      onPress={() => removeAddressDraft(draft.key)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove address ${idx + 1}`}
+                    >
+                      <Text style={styles.modalRemoveLocationText}>Remove</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Site name (optional, e.g. Head Office)"
+                  placeholderTextColor={theme.textTertiary}
+                  value={draft.label}
+                  onChangeText={(v) => updateAddressDraft(draft.key, { label: v })}
+                />
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Street address"
                   placeholderTextColor={theme.textTertiary}
-                  value={newCompanyStreet2}
-                  onChangeText={setNewCompanyStreet2}
+                  value={draft.street}
+                  onChangeText={(v) => updateAddressDraft(draft.key, { street: v })}
                 />
                 <TextInput
                   style={styles.modalInput}
                   placeholder="Floor / suite / unit (optional)"
                   placeholderTextColor={theme.textTertiary}
-                  value={newCompanyUnit2}
-                  onChangeText={setNewCompanyUnit2}
+                  value={draft.unit}
+                  onChangeText={(v) => updateAddressDraft(draft.key, { unit: v })}
                 />
                 <View style={styles.modalRow}>
                   <TextInput
                     style={[styles.modalInput, styles.modalRowInput]}
                     placeholder="Suburb"
                     placeholderTextColor={theme.textTertiary}
-                    value={newCompanySuburb2}
-                    onChangeText={setNewCompanySuburb2}
+                    value={draft.suburb}
+                    onChangeText={(v) => updateAddressDraft(draft.key, { suburb: v })}
                   />
                   <TextInput
                     style={[styles.modalInput, styles.modalRowInput]}
                     placeholder="City"
                     placeholderTextColor={theme.textTertiary}
-                    value={newCompanyCity2}
-                    onChangeText={setNewCompanyCity2}
+                    value={draft.city}
+                    onChangeText={(v) => updateAddressDraft(draft.key, { city: v })}
                   />
                 </View>
                 <View style={styles.modalRow}>
@@ -1846,44 +1822,39 @@ export default function AdminScreen() {
                     style={[styles.modalInput, styles.modalRowInput]}
                     placeholder="Postal code"
                     placeholderTextColor={theme.textTertiary}
-                    value={newCompanyCode2}
-                    onChangeText={setNewCompanyCode2}
+                    value={draft.code}
+                    onChangeText={(v) => updateAddressDraft(draft.key, { code: v })}
                     keyboardType="numeric"
                   />
                   <TextInput
                     style={[styles.modalInput, styles.modalRowInput]}
                     placeholder="Distance (km)"
                     placeholderTextColor={theme.textTertiary}
-                    value={newCompanyDistance2}
-                    onChangeText={setNewCompanyDistance2}
+                    value={draft.distance}
+                    onChangeText={(v) => updateAddressDraft(draft.key, { distance: v })}
                     keyboardType="numeric"
                   />
                 </View>
-                <Text style={styles.modalHint}>
-                  Employees at this company will be asked to pick which of the two locations they're delivering to when they sign up.
-                </Text>
-              </>
-            ) : (
-              <TouchableOpacity onPress={() => setShowSecondLocation(true)} accessibilityRole="button" style={styles.modalAddLocationBtn}>
-                <Ionicons name="add-circle-outline" size={16} color={theme.accent} />
-                <Text style={styles.modalAddLocationText}>Add a second location</Text>
-              </TouchableOpacity>
-            )}
-
-            <Text style={styles.modalFieldLabel}>DELIVERY INSTRUCTIONS (OPTIONAL)</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="e.g. Use the loading bay entrance, sign in at security, ask for reception on floor 6"
-              placeholderTextColor={theme.textTertiary}
-              value={newCompanyInstructions}
-              onChangeText={setNewCompanyInstructions}
-              multiline
-              numberOfLines={3}
-              textAlignVertical="top"
-            />
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="Delivery instructions (optional)"
+                  placeholderTextColor={theme.textTertiary}
+                  value={draft.instructions}
+                  onChangeText={(v) => updateAddressDraft(draft.key, { instructions: v })}
+                  multiline
+                  numberOfLines={2}
+                  textAlignVertical="top"
+                />
+              </View>
+            ))}
+            <TouchableOpacity onPress={addAddressDraft} accessibilityRole="button" style={styles.modalAddLocationBtn}>
+              <Ionicons name="add-circle-outline" size={16} color={theme.accent} />
+              <Text style={styles.modalAddLocationText}>Add another address</Text>
+            </TouchableOpacity>
             <Text style={styles.modalHint}>
-              Standing access notes shown to the courier on every order to this company — no need to re-enter them per order.
+              The first address is the default delivery destination for bulk company orders — employees pick between all of them at signup once a company has more than one. Distance sets each address's own delivery fee (R100–R350 by band).
             </Text>
+
             <Text style={styles.modalFieldLabel}>MEAL SUBSIDY (OPTIONAL)</Text>
             <TextInput
               style={styles.modalInput}
@@ -2692,8 +2663,8 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
       const company = companyByName.get(clientName);
       const addressLine = o.deliveryAddress
         ? [o.deliveryAddress.street, o.deliveryAddress.suburb, o.deliveryAddress.city].filter(Boolean).join(', ')
-        : company?.address
-          ? [company.address.unit, company.address.street, company.address.suburb, company.address.city].filter(Boolean).join(', ')
+        : company?.addresses[0]
+          ? [company.addresses[0].unit, company.addresses[0].street, company.addresses[0].suburb, company.addresses[0].city].filter(Boolean).join(', ')
           : undefined;
 
       o.items.forEach(item => {
@@ -2853,8 +2824,8 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
       const client = scopedSheet.clients.find(c => c.name === sendModalClient);
       if (!client) return;
       const company = companyByName.get(client.name);
-      const addressLine = company?.address
-        ? [company.address.unit, company.address.street, company.address.suburb, company.address.city].filter(Boolean).join(', ')
+      const addressLine = company?.addresses[0]
+        ? [company.addresses[0].unit, company.addresses[0].street, company.addresses[0].suburb, company.addresses[0].city].filter(Boolean).join(', ')
         : client.address;
 
       subject = `Delivery Note — ${client.name} — ${dateLabel}`;
@@ -5146,6 +5117,10 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   },
   modalAddLocationText: { color: theme.accent, fontSize: 13, fontWeight: '700' },
   modalRemoveLocationText: { color: theme.error, fontSize: 12, fontWeight: '700' },
+  // Visually separates the 2nd+ address in the Add/Edit Company modal from
+  // the one before it, since there's no card/border around each address
+  // group otherwise.
+  addressDraftBlock: { marginTop: 6, paddingTop: 14, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border },
 
   // Meals tab header actions
   mealsHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 10 },

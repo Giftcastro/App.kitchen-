@@ -53,12 +53,13 @@ export default function TabProfileScreen() {
   // since it's the effective delivery destination until the employee
   // explicitly picks a personal one instead.
   const company = user?.companyName ? companies.find(c => c.name === user.companyName) : null;
-  // A company with two registered sites has each employee pick one at
-  // signup (user.companyLocation) — falls back to the primary address for
-  // anyone signed up before that choice existed, or a single-site company.
-  const rawCompanyAddress = user?.companyLocation === 2 && company?.address2 ? company.address2 : company?.address;
+  // A company with more than one registered address has each employee pick
+  // one at signup (user.companyAddressId) — falls back to the first
+  // registered address for anyone signed up before that choice existed, a
+  // single-site company, or a picked address an admin has since deleted.
+  const rawCompanyAddress = company?.addresses.find(a => a.id === user?.companyAddressId) ?? company?.addresses[0];
   const companyAddress = rawCompanyAddress?.distanceKm != null ? rawCompanyAddress : null;
-  const isCompanyAddressDefault = companyAddress != null && deliveryInfo.address?.id === `company-${company?.id}-${user?.companyLocation ?? 1}`;
+  const isCompanyAddressDefault = companyAddress != null && deliveryInfo.address?.id === `company-${company?.id}-${rawCompanyAddress?.id}`;
 
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [addressLabel, setAddressLabel] = useState("");

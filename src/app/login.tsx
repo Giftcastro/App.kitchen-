@@ -28,32 +28,27 @@ export default function LoginScreen() {
   const [name, setName] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // Signup: "Select your company" is a real open dropdown over every
-  // registered company (client's explicit call) — not narrowed to the
-  // email's domain. `domainMatch` only pre-fills the field as a convenience
-  // default before the user has touched the picker; once they've opened it
-  // and picked anything (including "No company"), that choice wins outright,
-  // domain match or not.
-  const domainMatch = useMemo(() => findCompanyForEmail(email, companies), [email, companies]);
-  const NO_COMPANY = '__none__';
-  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
-  const selectedCompany = useMemo(() => {
-    if (selectedCompanyId === NO_COMPANY) return undefined;
-    if (selectedCompanyId) return companies.find(c => c.id === selectedCompanyId);
-    return domainMatch;
-  }, [selectedCompanyId, companies, domainMatch]);
-  const [showCompanyPicker, setShowCompanyPicker] = useState(false);
-
-  // A company employee whose employer has two registered sites picks which
-  // one they deliver to (see companyLocation); individuals set up their own
-  // delivery address afterwards from Profile.
-  const [companyLocation, setCompanyLocation] = useState<1 | 2>(1);
-  const [showLocationPicker, setShowLocationPicker] = useState(false);
-
-  // Sign-in only: re-checked on every login (see handleSignin) so a company
-  // registered after someone's original signup still links retroactively —
-  // no picker UI there, just the single best match.
+  // Company is auto-detected from the email's domain (client's call) — no
+  // manual override. `matchedCompany` drives both sign-in's retroactive
+  // linking and signup's company assignment; only the delivery *location*
+  // (see companyAddressId below) is a real user choice.
   const matchedCompany = useMemo(() => findCompanyForEmail(email, companies), [email, companies]);
+
+  // A company employee whose employer has more than one registered address
+  // picks which one they deliver to (see companyAddressId); individuals set
+  // up their own delivery address afterwards from Profile. Null until the
+  // picker is opened and something is chosen.
+  const [companyAddressId, setCompanyAddressId] = useState<string | null>(null);
+  // Resolved choice — falls back to the matched company's first registered
+  // address so a single-site company (the common case) never requires an
+  // extra tap, and a stale pick from a previously-matched company (the
+  // email got edited) is never carried over onto a different one.
+  const resolvedCompanyAddressId = useMemo(() => {
+    if (!matchedCompany || matchedCompany.addresses.length === 0) return undefined;
+    if (companyAddressId && matchedCompany.addresses.some(a => a.id === companyAddressId)) return companyAddressId;
+    return matchedCompany.addresses[0].id;
+  }, [matchedCompany, companyAddressId]);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
 
   // Mode states
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
@@ -161,18 +156,16 @@ export default function LoginScreen() {
   const handleSignup = () => {
     if (validateSignup()) {
       const role = isAdminEmail ? 'admin' : 'customer';
-      // Whether this is a company account is still driven entirely by the
-      // work-email domain match, not a manual toggle — selectedCompany is
-      // just which of the (usually one) domain-eligible companies the
-      // picker below landed on.
-      const isCompanyAccount = !!selectedCompany;
+      // Whether this is a company account is driven entirely by the
+      // work-email domain match — no manual override.
+      const isCompanyAccount = !!matchedCompany;
       login(
         email.trim(),
         role,
         name.trim(),
         isCompanyAccount ? 'company' : 'individual',
-        selectedCompany?.name,
-        isCompanyAccount && selectedCompany?.address2 ? companyLocation : undefined
+        matchedCompany?.name,
+        resolvedCompanyAddressId
       );
       router.replace(role === 'admin' ? '/admin' : '/');
     } else {
@@ -311,9 +304,9 @@ export default function LoginScreen() {
             onChangeText={(val) => {
               setEmail(val);
               if (errors.email) setErrors({ ...errors, email: undefined });
-              // The company field is a free choice, not tied to the email
-              // domain (client's call) — editing the email here deliberately
-              // does not touch whatever was already picked below.
+              // A changed email can match a different company (or none) —
+              // drop whatever delivery address was picked for the old one.
+              setCompanyAddressId(null);
             }}
             onFocus={() => setFocusedField('signupEmail')}
             onBlur={() => setFocusedField(null)}
@@ -326,6 +319,24 @@ export default function LoginScreen() {
           />
         </View>
         {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
+        {/* Company is auto-detected by work-email domain — no manual
+            picker, just this confirmation either way once the email looks
+            like an email at all. A personal address (gmail.com etc.) is
+            just as much a real, confirmed outcome as a company match — it
+            shouldn't read as if nothing happened. */}
+        {matchedCompany ? (
+          <View style={styles.companyDetectedRow}>
+            <Ionicons name="business" size={14} color={theme.success} />
+            <Text style={styles.companyDetectedText}>
+              Joining as <Text style={styles.companyDetectedName}>{matchedCompany.name}</Text>
+            </Text>
+          </View>
+        ) : email.includes('@') ? (
+          <View style={styles.companyDetectedRow}>
+            <Ionicons name="person" size={14} color={theme.textSecondary} />
+            <Text style={styles.companyDetectedText}>Joining as Individual</Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.inputGroup}>
@@ -378,32 +389,11 @@ export default function LoginScreen() {
         {errors.confirmPassword && <Text style={styles.fieldError}>{errors.confirmPassword}</Text>}
       </View>
 
-      {/* Open dropdown over every registered company (client's explicit
-          call) — not narrowed to the email's domain. Pre-filled from the
-          domain match as a convenience default until the user opens this and
-          picks something themselves, including "No company" outright. */}
-      <View style={styles.inputGroup}>
-        <TouchableOpacity
-          style={[styles.inputWrapper, styles.selectWrapper]}
-          onPress={() => { haptics.selection(); setShowCompanyPicker(true); }}
-          accessibilityRole="button"
-          accessibilityLabel={selectedCompany ? `Company: ${selectedCompany.name}. Change` : 'Select your company'}
-        >
-          <Text style={[styles.selectValue, !selectedCompany && selectedCompanyId !== NO_COMPANY && styles.selectPlaceholder]} numberOfLines={1}>
-            {selectedCompany
-              ? selectedCompany.name
-              : selectedCompanyId === NO_COMPANY
-                ? 'No Company (Individual)'
-                : 'Select your company'}
-          </Text>
-          <Ionicons name="chevron-down" size={16} color={theme.textTertiary} />
-        </TouchableOpacity>
-      </View>
-
-      {/* Company staff whose employer has two registered sites pick which
-          one they deliver to — anyone whose company only has one location
-          skips this entirely. */}
-      {selectedCompany?.address2 && (
+      {/* Company staff whose employer has more than one registered address
+          pick which one they deliver to — anyone whose company only has one
+          site (or whose email doesn't match a company at all) skips this
+          entirely. */}
+      {matchedCompany && matchedCompany.addresses.length > 1 && (
         <View style={styles.inputGroup}>
           <TouchableOpacity
             style={[styles.inputWrapper, styles.selectWrapper]}
@@ -412,9 +402,12 @@ export default function LoginScreen() {
             accessibilityLabel="Select your delivery location"
           >
             <Text style={styles.selectValue} numberOfLines={1}>
-              {companyLocation === 1
-                ? `${selectedCompany.address?.unit ? selectedCompany.address.unit + ', ' : ''}${selectedCompany.address?.street}, ${selectedCompany.address?.suburb}`
-                : `${selectedCompany.address2.unit ? selectedCompany.address2.unit + ', ' : ''}${selectedCompany.address2.street}, ${selectedCompany.address2.suburb}`}
+              {(() => {
+                const addr = matchedCompany.addresses.find(a => a.id === resolvedCompanyAddressId) ?? matchedCompany.addresses[0];
+                return addr.label
+                  ? addr.label
+                  : `${addr.unit ? addr.unit + ', ' : ''}${addr.street}, ${addr.suburb}`;
+              })()}
             </Text>
             <Ionicons name="chevron-down" size={16} color={theme.textTertiary} />
           </TouchableOpacity>
@@ -648,109 +641,43 @@ export default function LoginScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Company picker — every registered company, open choice (client's
-          explicit call), plus an explicit "No company" for individuals. */}
-      <Modal visible={showCompanyPicker} animationType="slide" transparent onRequestClose={() => setShowCompanyPicker(false)}>
-        <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowCompanyPicker(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.pickerSheet} onPress={() => {}}>
-            <View style={styles.pickerHandle} />
-            <Text style={styles.pickerTitle}>Select your company</Text>
-            <ScrollView style={styles.pickerList} bounces={false}>
-              <TouchableOpacity
-                style={styles.pickerRow}
-                onPress={() => { haptics.selection(); setSelectedCompanyId(NO_COMPANY); setShowCompanyPicker(false); }}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityState={{ selected: !selectedCompany && selectedCompanyId === NO_COMPANY }}
-              >
-                <View style={styles.pickerRowIconWrap}>
-                  <Ionicons name="person-outline" size={16} color={theme.textSecondary} />
-                </View>
-                <Text style={styles.pickerRowText}>No Company (Individual)</Text>
-                {!selectedCompany && selectedCompanyId === NO_COMPANY && (
-                  <View style={styles.pickerCheckBadge}>
-                    <Ionicons name="checkmark" size={13} color={theme.onAccent} />
-                  </View>
-                )}
-              </TouchableOpacity>
-              {companies.map(co => (
-                <TouchableOpacity
-                  key={co.id}
-                  style={styles.pickerRow}
-                  onPress={() => { haptics.selection(); setSelectedCompanyId(co.id); setCompanyLocation(1); setShowCompanyPicker(false); }}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: selectedCompany?.id === co.id }}
-                >
-                  <View style={styles.pickerRowIconWrap}>
-                    <Ionicons name="business" size={16} color={theme.textSecondary} />
-                  </View>
-                  <Text style={styles.pickerRowText} numberOfLines={1}>{co.name}</Text>
-                  {selectedCompany?.id === co.id && (
-                    <View style={styles.pickerCheckBadge}>
-                      <Ionicons name="checkmark" size={13} color={theme.onAccent} />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TouchableOpacity style={styles.pickerCancelBtn} onPress={() => setShowCompanyPicker(false)} accessibilityRole="button">
-              <Text style={styles.pickerCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* Delivery-site picker — only reachable when the selected company has
-          a second registered address (see selectedCompany?.address2 above). */}
+      {/* Delivery-site picker — only reachable when the auto-detected
+          company has more than one registered address (see
+          matchedCompany.addresses above). Every registered site, not just a
+          fixed primary/alternate pair (client request, Sep 2026: "one
+          company can have many addresses"). Company itself is not picked
+          here — it's auto-detected by email domain (client's later call). */}
       <Modal visible={showLocationPicker} animationType="slide" transparent onRequestClose={() => setShowLocationPicker(false)}>
         <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowLocationPicker(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.pickerSheet} onPress={() => {}}>
             <View style={styles.pickerHandle} />
             <Text style={styles.pickerTitle}>Select your delivery location</Text>
             <View style={styles.pickerList}>
-              {selectedCompany?.address && (
+              {matchedCompany?.addresses.map(addr => (
                 <TouchableOpacity
+                  key={addr.id}
                   style={styles.pickerRow}
-                  onPress={() => { haptics.selection(); setCompanyLocation(1); setShowLocationPicker(false); }}
+                  onPress={() => { haptics.selection(); setCompanyAddressId(addr.id); setShowLocationPicker(false); }}
                   activeOpacity={0.7}
                   accessibilityRole="button"
-                  accessibilityState={{ selected: companyLocation === 1 }}
+                  accessibilityState={{ selected: resolvedCompanyAddressId === addr.id }}
                 >
                   <View style={styles.pickerRowIconWrap}>
                     <Ionicons name="location" size={16} color={theme.textSecondary} />
                   </View>
-                  <Text style={styles.pickerRowText} numberOfLines={1}>
-                    {selectedCompany.address.unit ? `${selectedCompany.address.unit}, ` : ''}{selectedCompany.address.street}, {selectedCompany.address.suburb}
-                  </Text>
-                  {companyLocation === 1 && (
+                  <View style={{ flex: 1 }}>
+                    {addr.label && <Text style={styles.pickerRowText} numberOfLines={1}>{addr.label}</Text>}
+                    <Text style={[styles.pickerRowSubtext, !addr.label && styles.pickerRowText]} numberOfLines={1}>
+                      {addr.unit ? `${addr.unit}, ` : ''}{addr.street}, {addr.suburb}
+                    </Text>
+                  </View>
+                  {resolvedCompanyAddressId === addr.id && (
                     <View style={styles.pickerCheckBadge}>
                       <Ionicons name="checkmark" size={13} color={theme.onAccent} />
                     </View>
                   )}
                 </TouchableOpacity>
-              )}
-              {selectedCompany?.address2 && (
-                <TouchableOpacity
-                  style={styles.pickerRow}
-                  onPress={() => { haptics.selection(); setCompanyLocation(2); setShowLocationPicker(false); }}
-                  activeOpacity={0.7}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: companyLocation === 2 }}
-                >
-                  <View style={styles.pickerRowIconWrap}>
-                    <Ionicons name="location" size={16} color={theme.textSecondary} />
-                  </View>
-                  <Text style={styles.pickerRowText} numberOfLines={1}>
-                    {selectedCompany.address2.unit ? `${selectedCompany.address2.unit}, ` : ''}{selectedCompany.address2.street}, {selectedCompany.address2.suburb}
-                  </Text>
-                  {companyLocation === 2 && (
-                    <View style={styles.pickerCheckBadge}>
-                      <Ionicons name="checkmark" size={13} color={theme.onAccent} />
-                    </View>
-                  )}
-                </TouchableOpacity>
-              )}
+              ))}
             </View>
             <TouchableOpacity style={styles.pickerCancelBtn} onPress={() => setShowLocationPicker(false)} accessibilityRole="button">
               <Text style={styles.pickerCancelText}>Cancel</Text>
@@ -824,6 +751,10 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   input: { flex: 1, fontSize: 15, color: theme.text, paddingVertical: 0, height: 46 },
   fieldError: { color: theme.error, fontSize: 12, fontWeight: '600', marginTop: 5, marginLeft: 4 },
   helpText: { color: theme.textSecondary, fontSize: 12, marginTop: 6, marginLeft: 4 },
+  // Auto-detected company confirmation (signup, work-email domain match)
+  companyDetectedRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, marginLeft: 4, gap: 6 },
+  companyDetectedText: { color: theme.textSecondary, fontSize: 12, fontWeight: '600' },
+  companyDetectedName: { color: theme.success, fontWeight: '800' },
 
   // "Select your company" / "Select your delivery location" — styled like
   // the other inputWrapper fields plus a chevron, opening pickerSheet below.
@@ -872,6 +803,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     justifyContent: 'center',
   },
   pickerRowText: { flex: 1, fontSize: 14, color: theme.text, fontWeight: '600' },
+  pickerRowSubtext: { fontSize: 12, color: theme.textSecondary, marginTop: 1 },
   pickerCheckBadge: {
     width: 22,
     height: 22,
