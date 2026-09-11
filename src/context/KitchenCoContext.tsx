@@ -747,14 +747,26 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       id: 'co-tata',
       name: 'TATA',
       domains: ['tcs.com'],
-      addresses: [{
-        id: 'addr-tata-1',
-        label: 'Head Office',
-        street: '39 Ferguson Road',
-        suburb: 'Illovo',
-        city: 'Johannesburg',
-        code: '',
-      }],
+      // Two seeded sites, same reasoning as Ecogra above — gives the
+      // multi-address signup picker something to pick between for TATA too.
+      addresses: [
+        {
+          id: 'addr-tata-1',
+          label: 'Head Office',
+          street: '39 Ferguson Road',
+          suburb: 'Illovo',
+          city: 'Johannesburg',
+          code: '',
+        },
+        {
+          id: 'addr-tata-2',
+          label: 'Woodmead Office',
+          street: '6 Maxwell Drive',
+          suburb: 'Woodmead',
+          city: 'Johannesburg',
+          code: '',
+        },
+      ],
       mealSubsidy: 85.0,
     },
     {

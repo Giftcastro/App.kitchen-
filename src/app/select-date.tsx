@@ -9,12 +9,18 @@
  * then on; the added-to-basket sheet on the Menu screen routes back here
  * whenever someone wants a second day.
  *
+ * Rendered as a centered card over a dimmed backdrop (client reference,
+ * 2026-09-10) rather than a full-bleed page — the wordmark + close-X header,
+ * flat (ungrouped) day list and single-line "Cutoff: <day> at <time>" row are
+ * all part of that reference, replacing the earlier "This week / Next week /
+ * In 2 weeks" section headers and the multi-line cutoff paragraph.
+ *
  * Two ways in:
  *   - forced  — a signed-in customer with no day chosen yet is redirected
- *               here by src/app/_layout.tsx. No back button; Confirm is the
+ *               here by src/app/_layout.tsx. No close button; Confirm is the
  *               only way out.
  *   - change  — `?change=1`, opened from the menu header pill or the
- *               added-to-basket sheet. Shows a back button and pre-selects
+ *               added-to-basket sheet. Shows a close button and pre-selects
  *               the day already in play.
  *
  * Only genuinely orderable weekdays are offered: getUpcomingOrderableWeekdays()
@@ -30,7 +36,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useKitchen } from '../context/KitchenCoContext';
-import { getUpcomingOrderableWeekdays, UpcomingWeekday, ORDER_CUTOFF_LABEL } from '../utils/deliveryHelpers';
+import KitchenLogo from '../components/KitchenLogo';
+import { getUpcomingOrderableWeekdays, getOrderCutoffInfo, ORDER_CUTOFF_LABEL } from '../utils/deliveryHelpers';
 import { ThemeColors } from '../utils/theme';
 import { haptics } from '../utils/haptics';
 import { legacyTypography } from '../utils/legacyTypography';
@@ -43,18 +50,10 @@ const Text: React.FC<TextProps> = ({ style, ...rest }) => (
   <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
 );
 
-// Order the three buckets deliberately rather than relying on the order they
-// happen to appear in the data — "This week" must always lead, even when it
-// is empty (late in the week every remaining slot is already in the next one).
-const WEEK_GROUPS: UpcomingWeekday['weekLabel'][] = ['This week', 'Next week', 'In 2 weeks'];
-
 export default function SelectDateScreen() {
   const { orderingForDate, setOrderingForDate, theme, isDark } = useKitchen();
-  const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
-  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
-  // stark white — light mode only, matching Menu/Activity/Profile.
-  const screenBackground = isDark ? theme.background : '#F7F2E8';
   const { change, view } = useLocalSearchParams<{ change?: string; view?: string }>();
   const isChanging = change === '1';
 
@@ -69,11 +68,23 @@ export default function SelectDateScreen() {
     [allDays, view]
   );
 
+  // "Cutoff: Friday, 11 Sept at 9:00 AM SAST" — the next 9am cutoff that
+  // hasn't passed yet, computed once at mount same as `allDays` above.
+  const cutoffInfo = useMemo(() => getOrderCutoffInfo(), []);
+  const cutoffDayLabel = cutoffInfo.nextCutoffDate.toLocaleDateString('en-ZA', {
+    weekday: 'long', day: 'numeric', month: 'short',
+  });
+
   // Local until Confirm, so backing out of a "change" visit leaves the day
-  // already in play untouched. Seeded with the current choice when there is
-  // one, otherwise the earliest day the kitchen can still cook.
+  // already in play untouched. Seeded with the current choice when it's
+  // actually one of the days on offer here — a date picked under a wider
+  // horizon (e.g. Main Menu's ~2 weeks) can land outside this view's own
+  // window (Today's Menu caps at 1 week), in which case that stale value
+  // wouldn't match any chip anyway and would just leave nothing selected;
+  // falling back to the earliest orderable day instead means arriving here
+  // always shows one real, confirmable choice.
   const [draft, setDraft] = useState<string | null>(
-    () => orderingForDate ?? days[0]?.iso ?? null
+    () => (orderingForDate && days.some(d => d.iso === orderingForDate) ? orderingForDate : days[0]?.iso) ?? null
   );
 
   // A day chosen before (say) a midnight rollover can fall out of the
@@ -94,123 +105,144 @@ export default function SelectDateScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: screenBackground }]}>
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
+    <SafeAreaView style={[styles.backdrop, { backgroundColor: theme.modalOverlay }]}>
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.modalOverlay} />
 
-      {isChanging && (
-        <View style={styles.topBar}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={styles.backBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Go back without changing the delivery day"
+      <View style={styles.cardOuter}>
+        <View style={styles.card}>
+          {isChanging && (
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={styles.closeBtn}
+              accessibilityRole="button"
+              accessibilityLabel="Close without changing the delivery day"
+            >
+              <Ionicons name="close" size={20} color={theme.textSecondary} />
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.logoWrap}>
+            <KitchenLogo compact variant={isDark ? 'onDark' : 'onLight'} />
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
           >
-            <Ionicons name="arrow-back" size={22} color={theme.text} />
+            <Text style={styles.title}>Which day are you ordering for?</Text>
+            <Text style={styles.subtitle}>
+              This sets the default delivery day for everything you add to your basket. You can change it any time.
+            </Text>
+
+            {days.length === 0 ? (
+              <View style={styles.emptyState}>
+                <Ionicons name="calendar-outline" size={30} color={theme.textTertiary} />
+                <Text style={styles.emptyTitle}>No delivery days open</Text>
+                <Text style={styles.emptySub}>
+                  Orders close {ORDER_CUTOFF_LABEL} at least 2 business days ahead. Check back shortly.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.dayGrid}>
+                {days.map((day) => {
+                  const isSelected = draft === day.iso;
+                  return (
+                    <TouchableOpacity
+                      key={day.iso}
+                      style={[styles.dayChip, isSelected && styles.dayChipActive]}
+                      onPress={() => { haptics.selection(); setDraft(day.iso); }}
+                      activeOpacity={0.85}
+                      accessibilityRole="radio"
+                      // react-native-web drops accessibilityState, so the
+                      // aria attribute is what actually reaches the DOM and
+                      // what any web driver can assert on.
+                      accessibilityState={{ selected: isSelected }}
+                      aria-checked={isSelected}
+                      accessibilityLabel={`${day.label}${isSelected ? ', selected' : ''}`}
+                    >
+                      <Text style={[styles.dayChipText, isSelected && styles.dayChipTextActive]}>
+                        {day.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+
+            <View style={styles.cutoffRow}>
+              <Ionicons name="time-outline" size={13} color={theme.textTertiary} />
+              <Text style={styles.cutoffText}>
+                Cutoff: {cutoffDayLabel} at {ORDER_CUTOFF_LABEL} SAST
+              </Text>
+            </View>
+          </ScrollView>
+
+          <TouchableOpacity
+            style={[styles.confirmBtn, !draftIsOrderable && styles.confirmBtnDisabled]}
+            onPress={handleConfirm}
+            disabled={!draftIsOrderable}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="Confirm delivery day"
+          >
+            <Text style={styles.confirmBtnText}>Confirm</Text>
           </TouchableOpacity>
         </View>
-      )}
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <Text style={styles.title}>Which day are you ordering for?</Text>
-        <Text style={styles.subtitle}>
-          This sets the delivery day for everything you add to your basket. You can change it at any time.
-        </Text>
-
-        {days.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={30} color={theme.textTertiary} />
-            <Text style={styles.emptyTitle}>No delivery days open</Text>
-            <Text style={styles.emptySub}>
-              Orders close {ORDER_CUTOFF_LABEL} at least 2 business days ahead. Check back shortly.
-            </Text>
-          </View>
-        ) : (
-          WEEK_GROUPS.map((group) => {
-            const groupDays = days.filter(d => d.weekLabel === group);
-            if (groupDays.length === 0) return null;
-            return (
-              <View key={group} style={styles.group}>
-                <Text style={styles.groupLabel}>{group}</Text>
-                <View style={styles.dayGrid}>
-                  {groupDays.map((day) => {
-                    const isSelected = draft === day.iso;
-                    return (
-                      <TouchableOpacity
-                        key={day.iso}
-                        style={[styles.dayChip, isSelected && styles.dayChipActive]}
-                        onPress={() => { haptics.selection(); setDraft(day.iso); }}
-                        activeOpacity={0.85}
-                        accessibilityRole="radio"
-                        // react-native-web drops accessibilityState, so the
-                        // aria attribute is what actually reaches the DOM and
-                        // what any web driver can assert on.
-                        accessibilityState={{ selected: isSelected }}
-                        aria-checked={isSelected}
-                        accessibilityLabel={`${day.label}${isSelected ? ', selected' : ''}`}
-                      >
-                        <Text style={[styles.dayChipText, isSelected && styles.dayChipTextActive]}>
-                          {day.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
-            );
-          })
-        )}
-
-        <Text style={styles.cutoffHint}>
-          Orders close {ORDER_CUTOFF_LABEL} on business days, at least 2 business days before delivery.
-        </Text>
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.confirmBtn, !draftIsOrderable && styles.confirmBtnDisabled]}
-          onPress={handleConfirm}
-          disabled={!draftIsOrderable}
-          activeOpacity={0.9}
-          accessibilityRole="button"
-          accessibilityLabel="Confirm delivery day"
-        >
-          <Text style={styles.confirmBtnText}>Confirm</Text>
-        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
-const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create({
-  container: { flex: 1 },
-  topBar: { paddingHorizontal: 12, paddingTop: 4, height: 44, justifyContent: 'center' },
-  backBtn: { width: 40, height: 40, alignItems: 'flex-start', justifyContent: 'center' },
-  scrollContent: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 },
+const createStyles = (theme: ThemeColors) => StyleSheet.create({
+  backdrop: { flex: 1 },
+  cardOuter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 380,
+    maxHeight: '100%',
+    backgroundColor: theme.cardBg,
+    borderRadius: 22,
+    paddingTop: 22,
+    paddingBottom: 20,
+    paddingHorizontal: 22,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  closeBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1,
+  },
+  logoWrap: { alignItems: 'center', marginBottom: 18 },
+  scrollContent: { paddingBottom: 4 },
   title: {
     fontFamily: legacyTypography.heading,
-    fontSize: 24,
+    fontSize: 21,
     fontWeight: '700',
     color: theme.text,
-    letterSpacing: -0.4,
+    letterSpacing: -0.3,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 13,
+    fontSize: 12.5,
     color: theme.textSecondary,
-    lineHeight: 19,
-    marginBottom: 26,
-  },
-  group: { marginBottom: 22 },
-  groupLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: theme.textTertiary,
-    letterSpacing: 1.1,
-    textTransform: 'uppercase',
-    marginBottom: 10,
+    lineHeight: 18,
+    marginBottom: 18,
   },
   // Two per row via flexWrap + a 48% basis, so an odd day count leaves the
   // last chip half-width rather than stretching it across the row.
@@ -231,28 +263,22 @@ const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create(
   },
   dayChipText: { fontSize: 13, fontWeight: '600', color: theme.text },
   dayChipTextActive: { color: theme.onAccent, fontWeight: '700' },
-  cutoffHint: {
-    fontSize: 11,
-    color: theme.textTertiary,
-    lineHeight: 16,
-    marginTop: 2,
+  cutoffRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
   },
-  emptyState: { alignItems: 'center', paddingVertical: 48, gap: 8 },
+  cutoffText: { fontSize: 11.5, color: theme.textTertiary },
+  emptyState: { alignItems: 'center', paddingVertical: 36, gap: 8 },
   emptyTitle: { fontSize: 15, fontWeight: '700', color: theme.text, marginTop: 4 },
   emptySub: { fontSize: 12, color: theme.textSecondary, textAlign: 'center', lineHeight: 18 },
-  footer: {
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    paddingBottom: 20,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.border,
-    backgroundColor: isDark ? theme.background : '#F7F2E8',
-  },
   confirmBtn: {
     backgroundColor: theme.accent,
     paddingVertical: 16,
     borderRadius: 10,
     alignItems: 'center',
+    marginTop: 16,
   },
   confirmBtnDisabled: { opacity: 0.4 },
   confirmBtnText: { fontSize: 15, fontWeight: '700', color: theme.onAccent, letterSpacing: 0.2 },

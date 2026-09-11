@@ -41,12 +41,11 @@ export const QuickAddButton: React.FC<QuickAddButtonProps> = ({
       <Animated.View
         style={[
           styles.btn,
-          quantity > 0 && styles.btnActive,
           disabled && styles.btnDisabled,
           { transform: [{ scale }] },
         ]}
       >
-        <Text style={[styles.text, quantity > 0 && styles.textActive]}>{disabled ? '🔒' : quantity > 0 ? String(quantity) : '+'}</Text>
+        <Text style={[styles.text, disabled && styles.textDisabled]}>{disabled ? '🔒' : quantity > 0 ? String(quantity) : '+'}</Text>
       </Animated.View>
     </Pressable>
   );
@@ -57,7 +56,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: theme.surface,
+    backgroundColor: theme.accent,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000000',
@@ -66,8 +65,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     shadowRadius: 6,
     elevation: 4,
   },
-  btnActive: { backgroundColor: theme.accent },
   btnDisabled: { backgroundColor: theme.border },
-  text: { color: theme.text, fontSize: 16, fontWeight: '800', lineHeight: 20 },
-  textActive: { color: theme.onAccent },
+  text: { color: theme.onAccent, fontSize: 16, fontWeight: '800', lineHeight: 20 },
+  textDisabled: { color: theme.textSecondary },
 });

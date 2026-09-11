@@ -276,10 +276,11 @@ const DATE_FILTER_PRESETS: { key: DateFilterKey; label: string; days?: number }[
   { key: 'custom', label: 'Custom' },
 ];
 
-type TabType = 'dashboard' | 'users' | 'orders' | 'chef' | 'weeks' | 'meals' | 'discounts' | 'companies' | 'notify';
+type TabType = 'dashboard' | 'analytics' | 'users' | 'orders' | 'chef' | 'weeks' | 'meals' | 'discounts' | 'companies' | 'notify';
 
 const TAB_ICONS: Record<TabType, string> = {
   dashboard: 'speedometer',
+  analytics: 'bar-chart',
   users: 'people',
   orders: 'receipt',
   chef: 'restaurant-outline',
@@ -553,6 +554,15 @@ export default function AdminScreen() {
       .sort((a, b) => b.dueItemCount - a.dueItemCount);
   }, [orders]);
 
+  // Total meals the kitchen needs to cook today — the same figure the Chef
+  // tab's Production Sheet totals to, surfaced here so it has a Dashboard
+  // entry point of its own instead of only being reachable by clicking into
+  // Chef and scrolling past the order queue.
+  const productionItemsToday = useMemo(
+    () => dueTodayOrders.reduce((sum, x) => sum + x.dueItemCount, 0),
+    [dueTodayOrders]
+  );
+
   // Grouped for the "Today at a Glance" preview list — same "corporate
   // client = one unit" treatment already applied to the Chef tab and Orders
   // tab: a company with many employees ordering today collapses to one row
@@ -770,7 +780,7 @@ export default function AdminScreen() {
       .sort((a, b) => b.revenue - a.revenue);
   }, [companies, orderStatsByCompany]);
 
-    const tabs: TabType[] = ['dashboard', 'users', 'orders', 'chef', 'weeks', 'meals', 'discounts', 'companies', 'notify'];
+    const tabs: TabType[] = ['dashboard', 'analytics', 'users', 'orders', 'chef', 'weeks', 'meals', 'discounts', 'companies', 'notify'];
 
   // Menu categories for discount targeting — sourced from the same live
   // `menus` data admin's Meals tab edits, so a newly-added item can be
@@ -1045,9 +1055,112 @@ export default function AdminScreen() {
               ))}
             </View>
 
-            {/* Reporting Period — scopes everything below (stats, breakdowns,
-                revenue, recent orders); "Today at a Glance" and the live tiles
-                above stay live. */}
+            {/* Production Sheet — the kitchen's most important document:
+                what actually has to be cooked and packed today, broken down
+                by client. Jumps straight into the Chef tab. */}
+            <View style={[styles.weekCard, styles.prodSheetCard]}>
+              <View style={styles.weekCardLeft}>
+                <View style={[styles.weekCardIconWrap, styles.prodSheetIconWrap]}>
+                  <Ionicons name="clipboard" size={22} color={theme.onAccent} />
+                </View>
+                <View>
+                  <Text style={[styles.weekCardLabel, styles.prodSheetLabel]}>Production Sheet</Text>
+                  <Text style={[styles.weekCardValue, styles.prodSheetValue]}>
+                    {productionItemsToday} item{productionItemsToday === 1 ? '' : 's'} due today
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[styles.weekCardBtn, styles.prodSheetBtn]}
+                onPress={() => { haptics.selection(); setSelectedTab('chef'); }}
+                accessibilityRole="button"
+                accessibilityLabel={`View Production Sheet, ${productionItemsToday} item${productionItemsToday === 1 ? '' : 's'} due today`}
+              >
+                <Text style={[styles.weekCardBtnText, styles.prodSheetBtnText]}>View</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Active Week Card */}
+            <View style={styles.weekCard}>
+              <View style={styles.weekCardLeft}>
+                <View style={styles.weekCardIconWrap}>
+                  <Ionicons name="calendar" size={24} color={theme.text} />
+                </View>
+                <View>
+                  <Text style={styles.weekCardLabel}>Active Menu Cycle</Text>
+                  <Text style={styles.weekCardValue}>Week {activeWeek}</Text>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.weekCardBtn} onPress={() => setSelectedTab('weeks')}>
+                <Text style={styles.weekCardBtnText}>Change</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Kitchen Notifications — where Chef tab "Send" (Production Sheet / Delivery Note) defaults its recipient. Internal back-of-house inbox, not a client contact. */}
+            <View style={styles.weekCard}>
+              <View style={styles.weekCardLeft}>
+                <View style={[styles.weekCardIconWrap, { backgroundColor: theme.surfaceSecondary }]}>
+                  <Ionicons name="mail" size={22} color={theme.textSecondary} />
+                </View>
+                <View>
+                  <Text style={styles.weekCardLabel}>Kitchen Notifications</Text>
+                  <Text style={styles.weekCardValue} numberOfLines={1}>{kitchenEmail || 'Not set'}</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.weekCardBtn}
+                onPress={openKitchenEmailModal}
+                accessibilityRole="button"
+                accessibilityLabel="Edit kitchen notification email"
+              >
+                <Text style={styles.weekCardBtnText}>{kitchenEmail ? 'Change' : 'Set'}</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Recent Orders */}
+            {filteredOrders.length > 0 && (
+              <View style={styles.sectionCard}>
+                <View style={styles.sectionCardHeader}>
+                  <Text style={styles.sectionCardTitle}>Recent Orders</Text>
+                  <TouchableOpacity onPress={() => setSelectedTab('orders')}>
+                    <Text style={styles.seeAllText}>See All</Text>
+                  </TouchableOpacity>
+                </View>
+                {filteredOrders.slice(0, 4).map((order, idx) => (
+                  <View key={order.id} style={[styles.recentOrderItem, idx === 0 && { borderTopWidth: 0 }]}>
+                    <View style={styles.recentOrderLeft}>
+                      <View style={[styles.recentOrderStatusDot, { backgroundColor: STATUS_COLORS[order.status] || '#6B6B6B' }]} />
+                      <View>
+                        <Text style={styles.recentOrderId}>{order.id}</Text>
+                        <Text style={styles.recentOrderUser}>{order.userName || 'Guest'}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.recentOrderRight}>
+                      <Text style={styles.recentOrderTotal}>R{order.total.toFixed(2)}</Text>
+                      <View style={[styles.recentStatusBadge, { backgroundColor: (STATUS_COLORS[order.status] || '#6B6B6B') + '20' }]}>
+                        <Text style={[styles.recentStatusText, { color: STATUS_COLORS[order.status] || '#6B6B6B' }]}>
+                          {STATUS_LABELS[order.status] || order.status}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            )}
+          </>
+        )}
+
+        {selectedTab === 'analytics' && (
+          <>
+            {/* Header */}
+            <View style={styles.pageHeader}>
+              <Text style={styles.greeting}>Analytics</Text>
+              <Text style={styles.greetingSub}>Reports &amp; performance over time</Text>
+            </View>
+
+            {/* Reporting Period — scopes everything on this tab (stats,
+                breakdowns, revenue, recent orders); Dashboard's "Today at a
+                Glance" and live tiles stay separate and always-current. */}
             <View style={styles.sectionCard}>
               <Text style={styles.sectionCardTitle}>Reporting Period</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryPickerRow}>
@@ -1229,43 +1342,6 @@ export default function AdminScreen() {
               </View>
             </View>
 
-            {/* Active Week Card */}
-            <View style={styles.weekCard}>
-              <View style={styles.weekCardLeft}>
-                <View style={styles.weekCardIconWrap}>
-                  <Ionicons name="calendar" size={24} color={theme.text} />
-                </View>
-                <View>
-                  <Text style={styles.weekCardLabel}>Active Menu Cycle</Text>
-                  <Text style={styles.weekCardValue}>Week {activeWeek}</Text>
-                </View>
-              </View>
-              <TouchableOpacity style={styles.weekCardBtn} onPress={() => setSelectedTab('weeks')}>
-                <Text style={styles.weekCardBtnText}>Change</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Kitchen Notifications — where Chef tab "Send" (Production Sheet / Delivery Note) defaults its recipient. Internal back-of-house inbox, not a client contact. */}
-            <View style={styles.weekCard}>
-              <View style={styles.weekCardLeft}>
-                <View style={[styles.weekCardIconWrap, { backgroundColor: theme.surfaceSecondary }]}>
-                  <Ionicons name="mail" size={22} color={theme.textSecondary} />
-                </View>
-                <View>
-                  <Text style={styles.weekCardLabel}>Kitchen Notifications</Text>
-                  <Text style={styles.weekCardValue} numberOfLines={1}>{kitchenEmail || 'Not set'}</Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={styles.weekCardBtn}
-                onPress={openKitchenEmailModal}
-                accessibilityRole="button"
-                accessibilityLabel="Edit kitchen notification email"
-              >
-                <Text style={styles.weekCardBtnText}>{kitchenEmail ? 'Change' : 'Set'}</Text>
-              </TouchableOpacity>
-            </View>
-
             {/* Revenue Trend — one series, so no legend: the card title names
                 it. Past buckets sit in the de-emphasis ink with the most
                 recent one in full ink, which is the "current period" emphasis
@@ -1402,37 +1478,6 @@ export default function AdminScreen() {
               </View>
             )}
 
-            {/* Recent Orders */}
-            {filteredOrders.length > 0 && (
-              <View style={styles.sectionCard}>
-                <View style={styles.sectionCardHeader}>
-                  <Text style={styles.sectionCardTitle}>Recent Orders</Text>
-                  <TouchableOpacity onPress={() => setSelectedTab('orders')}>
-                    <Text style={styles.seeAllText}>See All</Text>
-                  </TouchableOpacity>
-                </View>
-                {filteredOrders.slice(0, 4).map((order, idx) => (
-                  <View key={order.id} style={[styles.recentOrderItem, idx === 0 && { borderTopWidth: 0 }]}>
-                    <View style={styles.recentOrderLeft}>
-                      <View style={[styles.recentOrderStatusDot, { backgroundColor: STATUS_COLORS[order.status] || '#6B6B6B' }]} />
-                      <View>
-                        <Text style={styles.recentOrderId}>{order.id}</Text>
-                        <Text style={styles.recentOrderUser}>{order.userName || 'Guest'}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.recentOrderRight}>
-                      <Text style={styles.recentOrderTotal}>R{order.total.toFixed(2)}</Text>
-                      <View style={[styles.recentStatusBadge, { backgroundColor: (STATUS_COLORS[order.status] || '#6B6B6B') + '20' }]}>
-                        <Text style={[styles.recentStatusText, { color: STATUS_COLORS[order.status] || '#6B6B6B' }]}>
-                          {STATUS_LABELS[order.status] || order.status}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-
             {/* Power BI reporting teaser — honest about what's live vs. what's coming */}
             <View style={styles.biCard}>
               <View style={styles.biCardHeader}>
@@ -1466,7 +1511,7 @@ export default function AdminScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Add user"
               >
-                <Ionicons name="add" size={22} color={theme.text} />
+                <Ionicons name="add" size={22} color={theme.onAccent} />
               </TouchableOpacity>
             </View>
             {allUsers.length === 0 ? (
@@ -1568,7 +1613,7 @@ export default function AdminScreen() {
                 accessibilityRole="button"
                 accessibilityLabel="Add discount"
               >
-                <Ionicons name="add" size={22} color={theme.text} />
+                <Ionicons name="add" size={22} color={theme.onAccent} />
               </TouchableOpacity>
             </View>
 
@@ -1629,18 +1674,19 @@ export default function AdminScreen() {
         {selectedTab === 'companies' && (
           <>
             <View style={styles.pageHeader}>
-              <View>
-                <Text style={styles.greeting}>Corporate Clients</Text>
-                <Text style={styles.greetingSub}>{companies.length} companies registered</Text>
+              <View style={styles.companyHeaderTextCol}>
+                <Text style={styles.companyHeaderTitle}>Corporate Partner Accounts ({companies.length})</Text>
+                <Text style={styles.greetingSub}>Domain-gated corporate access, distance tiers &amp; pantries</Text>
               </View>
               <TouchableOpacity
-                style={styles.addBtn}
+                style={styles.newPartnerBtn}
                 onPress={() => { setEditingCompanyId(null); setShowAddCompany(true); }}
                 testID="add-company-button"
                 accessibilityRole="button"
                 accessibilityLabel="Add company"
               >
-                <Ionicons name="add" size={22} color={theme.text} />
+                <Ionicons name="add" size={16} color={theme.onAccent} />
+                <Text style={styles.newPartnerBtnText}>New</Text>
               </TouchableOpacity>
             </View>
 
@@ -1667,87 +1713,155 @@ export default function AdminScreen() {
             ) : (
               companies.map((company, idx) => {
                 const employeeCount = employeeCountByCompany.get(company.name) ?? 0;
-                // The card stays a plain View: on react-native-web a wrapper
-                // with accessibilityRole="button" renders a real <button>, and
-                // the edit/delete buttons inside it would then be illegally
-                // nested. Editing is the pencil button instead.
+                const primaryAddress = company.addresses[0];
+                const deliveryFee = primaryAddress?.distanceKm != null ? calculateDeliveryFee(primaryAddress.distanceKm) : null;
+                // First active discount targeting this company by name — a
+                // company can in principle have more than one over time, but
+                // only one is ever live at once in practice, so the card
+                // shows that one and "Edit Discount" hands off to the full
+                // Discounts tab rather than reinventing list management here.
+                const companyDiscount = discounts.find(d => d.company === company.name && d.active);
+                // Derived, not stored: Company has no join-date field, so
+                // "partner since" is read off whichever of this company's
+                // employees signed up first, rather than inventing a date.
+                const partnerSince = (() => {
+                  const joinDates = allUsers
+                    .filter(u => u.companyName === company.name)
+                    .map(u => new Date(u.joinedDate))
+                    .filter(d => !isNaN(d.getTime()));
+                  if (joinDates.length === 0) return null;
+                  return new Date(Math.min(...joinDates.map(d => d.getTime())))
+                    .toLocaleDateString('en-ZA', { month: 'short', year: 'numeric' });
+                })();
+
                 return (
-                  <View key={company.id} style={[styles.userCard, idx === 0 && { marginTop: 4 }]}>
-                    <View style={[styles.userAvatar, { backgroundColor: theme.surfaceSecondary }]}>
-                      <Ionicons name="business" size={20} color={theme.textSecondary} />
+                  <View key={company.id} style={[styles.companyCard, idx === 0 && { marginTop: 4 }]}>
+                    <View style={styles.companyCardHeader}>
+                      <View style={styles.companyCardTitleRow}>
+                        <View style={styles.companyIconWrap}>
+                          <Ionicons name="business" size={15} color={theme.onAccent} />
+                        </View>
+                        <Text style={styles.companyCardName} numberOfLines={1}>{company.name}</Text>
+                      </View>
+                      <View style={styles.activeProfilesBadge}>
+                        <Text style={styles.activeProfilesBadgeText}>
+                          {employeeCount} Active Profile{employeeCount === 1 ? '' : 's'}
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.userInfo}>
-                      <Text style={styles.userName}>{company.name}</Text>
-                      <Text style={styles.userEmail}>{company.domains.map(d => `@${d}`).join(', ')}</Text>
-                      <Text style={styles.userMeta}>{employeeCount} user{employeeCount === 1 ? '' : 's'} matched</Text>
-                      {company.mealSubsidy ? (
-                        <View style={styles.companyAddressRow}>
-                          <Ionicons name="cash" size={11} color={theme.success} />
-                          <Text style={[styles.companyAddressText, { color: theme.success }]} numberOfLines={1}>
-                            R{company.mealSubsidy.toFixed(2)} meal subsidy (incl. VAT)
+                    {partnerSince && <Text style={styles.partnerSinceText}>Partner since {partnerSince}</Text>}
+
+                    <View style={styles.companyDetailRow}>
+                      <View style={styles.companyDetailIconWrap}>
+                        <Ionicons name="navigate" size={13} color={theme.textSecondary} />
+                      </View>
+                      <View style={styles.companyDetailTextCol}>
+                        <Text style={styles.companyDetailLabel} numberOfLines={1}>
+                          {primaryAddress?.distanceKm != null
+                            ? `Distance: ${primaryAddress.distanceKm} km from Central Kitchen`
+                            : 'Distance not set'}
+                        </Text>
+                        <Text style={styles.companyDetailSub} numberOfLines={1}>
+                          Delivery Tier Fee: {deliveryFee != null ? `R${deliveryFee.toFixed(2)}` : '—'}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.companyDetailEditBtn}
+                        onPress={() => { haptics.selection(); openEditCompany(company); }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit ${company.name} delivery distance`}
+                      >
+                        <Ionicons name="create-outline" size={12} color={theme.text} />
+                        <Text style={styles.companyDetailEditText}>Edit km</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.companyDetailRow}>
+                      <View style={styles.companyDetailIconWrap}>
+                        <Ionicons name="pricetag" size={13} color={theme.textSecondary} />
+                      </View>
+                      <View style={styles.companyDetailTextCol}>
+                        <Text style={styles.companyDetailLabel} numberOfLines={1}>
+                          {companyDiscount ? `Corporate Discount: ${companyDiscount.percentage}% OFF` : 'No corporate discount set'}
+                        </Text>
+                        <Text style={styles.companyDetailSub} numberOfLines={1}>
+                          Automatic subtotal reduction on employee orders
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.companyDetailEditBtn}
+                        onPress={() => {
+                          haptics.selection();
+                          if (companyDiscount) {
+                            setSelectedTab('discounts');
+                          } else {
+                            setDiscountCompany(company.name);
+                            setShowAddDiscount(true);
+                          }
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={companyDiscount ? `Edit ${company.name} corporate discount` : `Add a corporate discount for ${company.name}`}
+                      >
+                        <Ionicons name={companyDiscount ? 'create-outline' : 'add'} size={12} color={theme.text} />
+                        <Text style={styles.companyDetailEditText}>{companyDiscount ? 'Edit Discount' : 'Add Discount'}</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={styles.companySectionLabel}>Approved Email Domains</Text>
+                    <View style={styles.domainPillsRow}>
+                      {company.domains.map(d => (
+                        <View key={d} style={styles.domainPill}>
+                          <Ionicons name="checkmark-circle" size={12} color={theme.success} />
+                          <Text style={styles.domainPillText}>@{d}</Text>
+                        </View>
+                      ))}
+                      <TouchableOpacity
+                        style={styles.addDomainPill}
+                        onPress={() => { haptics.selection(); openEditCompany(company); }}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Add an email domain for ${company.name}`}
+                      >
+                        <Ionicons name="add" size={12} color={theme.text} />
+                        <Text style={styles.addDomainPillText}>Domain</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <Text style={styles.companySectionLabel}>Designated Pantry Drop-off Points</Text>
+                    {company.addresses.length === 0 ? (
+                      <View style={styles.pantryRow}>
+                        <Ionicons name="alert-circle" size={13} color={theme.warning} />
+                        <Text style={[styles.pantryText, { color: theme.warning }]}>No delivery address on file</Text>
+                      </View>
+                    ) : (
+                      company.addresses.map(addr => (
+                        <View key={addr.id} style={styles.pantryRow}>
+                          <Ionicons name="location" size={13} color={theme.textSecondary} />
+                          <Text style={styles.pantryText}>
+                            {addr.unit ? `${addr.unit}, ` : ''}{addr.street}, {addr.suburb}
+                            {addr.label ? ` (${addr.label})` : ''}
                           </Text>
                         </View>
-                      ) : null}
-                      {company.addresses.length > 0 ? (
-                        <>
-                          <View style={styles.companyAddressRow}>
-                            <Ionicons name="location" size={11} color={theme.textSecondary} />
-                            <Text style={styles.companyAddressText} numberOfLines={1}>
-                              {company.addresses[0].label ? `${company.addresses[0].label} — ` : ''}
-                              {company.addresses[0].unit ? `${company.addresses[0].unit}, ` : ''}
-                              {company.addresses[0].street}, {company.addresses[0].suburb}
-                            </Text>
-                          </View>
-                          {company.addresses[0].instructions ? (
-                            <View style={styles.companyAddressRow}>
-                              <Ionicons name="information-circle" size={11} color={theme.textSecondary} />
-                              <Text style={[styles.companyAddressText, { color: theme.textSecondary }]} numberOfLines={1}>
-                                {company.addresses[0].instructions}
-                              </Text>
-                            </View>
-                          ) : null}
-                          <View style={styles.companyAddressRow}>
-                            <Ionicons name="bicycle" size={11} color={company.addresses[0].distanceKm != null ? theme.textSecondary : theme.warning} />
-                            <Text style={[styles.companyAddressText, { color: company.addresses[0].distanceKm != null ? theme.textSecondary : theme.warning }]} numberOfLines={1}>
-                              {company.addresses[0].distanceKm != null
-                                ? `${company.addresses[0].distanceKm}km · R${calculateDeliveryFee(company.addresses[0].distanceKm) ?? '—'} delivery fee`
-                                : 'Add a distance to set the delivery fee'}
-                            </Text>
-                          </View>
-                          {/* Every other registered site, compact — the
-                              primary above already got the full detail. */}
-                          {company.addresses.slice(1).map(addr => (
-                            <View key={addr.id} style={styles.companyAddressRow}>
-                              <Ionicons name="location" size={11} color={theme.textSecondary} />
-                              <Text style={styles.companyAddressText} numberOfLines={1}>
-                                + {addr.label ? `${addr.label} — ` : ''}{addr.unit ? `${addr.unit}, ` : ''}{addr.street}, {addr.suburb}
-                              </Text>
-                            </View>
-                          ))}
-                        </>
-                      ) : (
-                        <View style={styles.companyAddressRow}>
-                          <Ionicons name="alert-circle" size={11} color="#FF9500" />
-                          <Text style={[styles.companyAddressText, { color: '#FF9500' }]}>No delivery address on file</Text>
-                        </View>
-                      )}
-                    </View>
-                    <View style={styles.companyActions}>
+                      ))
+                    )}
+
+                    <View style={styles.companyCardFooter}>
                       <TouchableOpacity
-                        style={styles.editBtn}
+                        style={styles.companyFooterBtn}
                         onPress={() => { haptics.selection(); openEditCompany(company); }}
                         accessibilityRole="button"
                         accessibilityLabel={`Edit company ${company.name}`}
                       >
-                        <Ionicons name="create-outline" size={18} color={theme.textSecondary} />
+                        <Ionicons name="create-outline" size={15} color={theme.textSecondary} />
+                        <Text style={styles.companyFooterBtnText}>Edit</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        style={styles.deleteBtn}
+                        style={styles.companyFooterBtn}
                         onPress={() => { haptics.warning(); deleteCompany(company.id); }}
                         accessibilityRole="button"
                         accessibilityLabel={`Delete company ${company.name}`}
                       >
-                        <Ionicons name="trash-outline" size={18} color={theme.error} />
+                        <Ionicons name="trash-outline" size={15} color={theme.error} />
+                        <Text style={[styles.companyFooterBtnText, { color: theme.error }]}>Delete</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2274,7 +2388,7 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
             accessibilityRole="button"
             accessibilityLabel="Add menu item"
           >
-            <Ionicons name="add" size={22} color={theme.text} />
+            <Ionicons name="add" size={22} color={theme.onAccent} />
           </TouchableOpacity>
         </View>
       </View>
@@ -2991,14 +3105,16 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
     setSendModalClient(target);
   };
 
-  const handleSendNote = async () => {
-    const email = sendEmail.trim();
-    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      setSendEmailError('Enter a valid email address');
-      return;
-    }
+  /**
+   * Builds the subject/body/HTML for either document the Chef tab produces —
+   * the whole day's Production Sheet (PRODUCTION_SHEET_SENTINEL, scoped by
+   * `activeScope` like the on-screen sheet) or one client's Delivery Note.
+   * Shared by the "Send" email flow and the "Download" print/save flow below
+   * so the two never drift apart on what they actually hand over.
+   */
+  const buildSheetDocument = (target: string) => {
     const dateLabel = prodDate.toLocaleDateString('en-ZA', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const isWholeSheet = sendModalClient === PRODUCTION_SHEET_SENTINEL;
+    const isWholeSheet = target === PRODUCTION_SHEET_SENTINEL;
 
     let subject: string;
     let body: string;
@@ -3018,8 +3134,8 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
       body = lines.join('\n');
       buildHtml = () => buildProductionSheetHtml(dateLabel, scopedSheet.grandTotal, scopedSheet.clients, activeScope);
     } else {
-      const client = scopedSheet.clients.find(c => c.name === sendModalClient);
-      if (!client) return;
+      const client = scopedSheet.clients.find(c => c.name === target);
+      if (!client) return null;
       const company = companyByName.get(client.name);
       const addressLine = company?.addresses[0]
         ? [company.addresses[0].unit, company.addresses[0].street, company.addresses[0].suburb, company.addresses[0].city].filter(Boolean).join(', ')
@@ -3041,6 +3157,46 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
       body = lines.join('\n');
       buildHtml = () => buildDeliveryNoteHtml(client.name, dateLabel, addressLine, client.rows);
     }
+
+    return { subject, body, buildHtml };
+  };
+
+  // Save/print the sheet directly — no email required. Same PDF the "Send"
+  // flow attaches, just handed to the OS share/print sheet (native) or the
+  // browser's print-to-PDF dialog (web) instead of an email draft. `target`
+  // is PRODUCTION_SHEET_SENTINEL for the whole (possibly client-scoped) day,
+  // or one client's name for just their Delivery Note.
+  const [downloadingTarget, setDownloadingTarget] = useState<string | null>(null);
+
+  const handleDownloadSheet = async (target: string) => {
+    const doc = buildSheetDocument(target);
+    if (!doc) return;
+    setDownloadingTarget(target);
+    try {
+      if (Platform.OS === 'web') {
+        await Print.printAsync({ html: doc.buildHtml() });
+      } else {
+        const { uri } = await Print.printToFileAsync({ html: doc.buildHtml() });
+        if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri);
+      }
+      haptics.success();
+    } catch {
+      // Nothing partial is left behind — the sheet is generated from live
+      // state on each press, so a retry is safe.
+    } finally {
+      setDownloadingTarget(null);
+    }
+  };
+
+  const handleSendNote = async () => {
+    const email = sendEmail.trim();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setSendEmailError('Enter a valid email address');
+      return;
+    }
+    const doc = sendModalClient ? buildSheetDocument(sendModalClient) : null;
+    if (!doc) return;
+    const { subject, body, buildHtml } = doc;
 
     const mailtoFallback = () =>
       Linking.openURL(`mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
@@ -3248,6 +3404,19 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
               </TouchableOpacity>
             )}
             <TouchableOpacity
+              onPress={() => handleDownloadSheet(PRODUCTION_SHEET_SENTINEL)}
+              disabled={downloadingTarget === PRODUCTION_SHEET_SENTINEL}
+              accessibilityRole="button"
+              accessibilityLabel={activeScope ? `Download the ${activeScope} production sheet` : "Download the whole day's production sheet"}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons
+                name="download-outline"
+                size={16}
+                color={downloadingTarget === PRODUCTION_SHEET_SENTINEL ? theme.textTertiary : theme.textSecondary}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
               onPress={() => openSendModal(PRODUCTION_SHEET_SENTINEL)}
               accessibilityRole="button"
               accessibilityLabel={activeScope ? `Send the ${activeScope} production sheet to the kitchen` : "Send the whole day's production sheet to the kitchen"}
@@ -3424,14 +3593,29 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
                         </Text>
                       )}
                     </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => openSendModal(client.name)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Send ${client.name} delivery note`}
-                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                    >
-                      <Ionicons name="mail-outline" size={16} color={theme.textSecondary} />
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                      <TouchableOpacity
+                        onPress={() => handleDownloadSheet(client.name)}
+                        disabled={downloadingTarget === client.name}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Download ${client.name} delivery note`}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons
+                          name="download-outline"
+                          size={16}
+                          color={downloadingTarget === client.name ? theme.textTertiary : theme.textSecondary}
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => openSendModal(client.name)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Send ${client.name} delivery note`}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <Ionicons name="mail-outline" size={16} color={theme.textSecondary} />
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   {client.address ? <Text style={styles.prodAddressText}>{client.address}</Text> : null}
 
@@ -4077,9 +4261,15 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     marginBottom: 20,
   },
   metricCard: {
-    // Same two-up geometry as statCard below: 16px container padding each side
-    // plus the 12px grid gap.
-    width: (screenWidth - 44) / 2,
+    // Percentage-based two-up sizing (same pattern as liveStatCard below),
+    // not a `screenWidth`-derived pixel width — that read the raw window
+    // width rather than the centered app frame's actual rendered width, so
+    // on any viewport wider than the frame (most desktop/web windows) each
+    // card computed far wider than the frame itself and the row silently
+    // dropped to one column with dead space on the right.
+    flexGrow: 1,
+    flexBasis: '46%',
+    minWidth: 150,
     backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 14,
@@ -4391,6 +4581,25 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     fontWeight: '700',
   },
 
+  // Production Sheet card — inverted (theme.accent) so it visually leads the
+  // Dashboard's card stack instead of blending in with Active Menu Cycle /
+  // Kitchen Notifications, which is the point: it's the one document the
+  // kitchen actually cooks from today.
+  prodSheetCard: {
+    backgroundColor: theme.accent,
+    borderColor: theme.accent,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 5,
+  },
+  prodSheetIconWrap: { backgroundColor: theme.onAccent + '26' },
+  prodSheetLabel: { color: theme.onAccent, opacity: 0.75 },
+  prodSheetValue: { color: theme.onAccent },
+  prodSheetBtn: { backgroundColor: theme.onAccent },
+  prodSheetBtnText: { color: theme.accent },
+
   // Recent Orders
   recentOrderItem: {
     flexDirection: 'row',
@@ -4701,8 +4910,11 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     marginBottom: 20,
   },
   weekGridCard: {
-    // Four per row: container padding (16 each side) plus three 10px gaps.
-    width: (screenWidth - 42) / 4,
+    // Percentage-based four-up sizing — see metricCard's comment above for
+    // why a `screenWidth`-derived pixel width breaks on wide viewports.
+    flexGrow: 1,
+    flexBasis: '21%',
+    minWidth: 72,
     backgroundColor: theme.surface,
     borderRadius: 16,
     padding: 16,
@@ -5301,9 +5513,113 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
   biSubtitle: { fontSize: 11, color: '#6B6B6B', fontWeight: '600', marginTop: 2 },
   biText: { fontSize: 12, color: '#6B6B6B', lineHeight: 18 },
 
-  // Company address (Companies tab)
-  companyAddressRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
-  companyAddressText: { fontSize: 11, color: theme.textSecondary, fontWeight: '500', flexShrink: 1 },
+  // Companies tab — "Corporate Partner Accounts" cards
+  companyHeaderTextCol: { flex: 1, paddingRight: 12 },
+  companyHeaderTitle: {
+    fontFamily: legacyTypography.heading,
+    fontSize: 19,
+    fontWeight: '900',
+    color: theme.text,
+    letterSpacing: -0.4,
+  },
+  newPartnerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: theme.accent,
+    paddingHorizontal: 16,
+    height: 42,
+    borderRadius: 21,
+  },
+  newPartnerBtnText: { color: theme.onAccent, fontSize: 14, fontWeight: '800' },
+
+  companyCard: {
+    backgroundColor: theme.surface,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  companyCardHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  companyCardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  companyIconWrap: {
+    width: 28, height: 28, borderRadius: 9,
+    backgroundColor: theme.accent,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  companyCardName: { fontSize: 15, fontWeight: '800', color: theme.text, flexShrink: 1 },
+  activeProfilesBadge: {
+    backgroundColor: theme.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: theme.border,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  activeProfilesBadgeText: { fontSize: 10.5, fontWeight: '700', color: theme.textSecondary },
+  partnerSinceText: { fontSize: 11.5, color: theme.textTertiary, fontWeight: '600', marginTop: 4, marginLeft: 36 },
+
+  companyDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: theme.surfaceSecondary,
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 12,
+  },
+  companyDetailIconWrap: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: theme.surface,
+    borderWidth: 1, borderColor: theme.border,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  companyDetailTextCol: { flex: 1 },
+  companyDetailLabel: { fontSize: 12.5, fontWeight: '700', color: theme.text },
+  companyDetailSub: { fontSize: 11, color: theme.textSecondary, marginTop: 2 },
+  companyDetailEditBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: theme.surface,
+    borderWidth: 1, borderColor: theme.border,
+    borderRadius: 8, paddingHorizontal: 9, paddingVertical: 6,
+  },
+  companyDetailEditText: { fontSize: 11, fontWeight: '700', color: theme.text },
+
+  companySectionLabel: {
+    fontSize: 10.5, fontWeight: '800', color: theme.textTertiary,
+    textTransform: 'uppercase', letterSpacing: 0.6,
+    marginTop: 14, marginBottom: 8,
+  },
+  domainPillsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  domainPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: theme.surfaceSecondary,
+    borderWidth: 1, borderColor: theme.border,
+    borderRadius: 8, paddingHorizontal: 9, paddingVertical: 6,
+  },
+  domainPillText: { fontSize: 11.5, fontWeight: '600', color: theme.text },
+  addDomainPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    borderWidth: 1, borderColor: theme.border, borderStyle: 'dashed',
+    borderRadius: 8, paddingHorizontal: 9, paddingVertical: 6,
+  },
+  addDomainPillText: { fontSize: 11.5, fontWeight: '700', color: theme.text },
+
+  pantryRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginBottom: 6 },
+  pantryText: { fontSize: 12, color: theme.textSecondary, fontWeight: '500', flex: 1, lineHeight: 17 },
+
+  companyCardFooter: {
+    flexDirection: 'row', gap: 8,
+    marginTop: 14, paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.border,
+  },
+  companyFooterBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    minHeight: 40, borderRadius: 10,
+    borderWidth: 1, borderColor: theme.border, backgroundColor: theme.surfaceSecondary,
+  },
+  companyFooterBtnText: { fontSize: 12.5, fontWeight: '700', color: theme.text },
 
   // Modal helper layout
   modalRow: { flexDirection: 'row', gap: 10 },

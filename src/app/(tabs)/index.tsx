@@ -21,8 +21,8 @@ import cycleMenuData from '../../data/cycleMenu.json';
 // instead of the app-wide Montserrat (see legacyTypography.ts) — every
 // existing Text/TextInput usage below picks this up automatically since none
 // set their own fontFamily already; a handful of headline-level styles
-// (exploreHeading, listCardName, uberItemName, dayTitle) override back to
-// GotchaGothic, matching how the old app split the two fonts.
+// (listCardName, uberItemName, dayTitle) override back to GotchaGothic,
+// matching how the old app split the two fonts.
 const Text: React.FC<TextProps> = ({ style, ...rest }) => (
   <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
 );
@@ -180,6 +180,25 @@ export default function MenuScreen() {
     () => cycleOrderableDays.find(d => d.iso === orderingForDate) ?? cycleOrderableDays[0] ?? null,
     [cycleOrderableDays, orderingForDate]
   );
+
+  // A date picked under the Main Menu's ~2-week horizon can land outside
+  // Today's Menu's narrower 1-week one (e.g. "Fri, 25 Sept" is orderable for
+  // Standard Classics but not for the rotating cycle). Without this, the
+  // fallback above would silently swap in the earliest cycle day instead —
+  // fine for the admin "Preview App" case that fallback exists for, but for a
+  // real customer it means Today's Menu quietly adds items to a different day
+  // than the one they actually chose. Send them back through the same
+  // delivery-day picker, scoped to what Today's Menu can actually offer.
+  useEffect(() => {
+    if (
+      menuView === 'today' &&
+      user?.role !== 'admin' &&
+      orderingForDate &&
+      !cycleOrderableDays.some(d => d.iso === orderingForDate)
+    ) {
+      router.push('/select-date?change=1&view=today');
+    }
+  }, [menuView, user, orderingForDate, cycleOrderableDays, router]);
 
   // Copy for the Added to Basket sheet. Derived from the ISO dates the add was
   // applied to rather than stored as text, so the labels can't drift out of
@@ -873,7 +892,7 @@ export default function MenuScreen() {
           opening the dedicated /select-date picker instead. */}
       <View style={styles.searchSection}>
         <View style={styles.searchWrapper}>
-          <Text style={styles.searchIcon}>🔍</Text>
+          <Ionicons name="search" size={17} color={theme.textTertiary} style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search dishes, meals..."
@@ -927,9 +946,6 @@ export default function MenuScreen() {
         </TouchableOpacity>
       </View>
 
-      {menuView === 'main' && (
-        <Text style={styles.exploreHeading}>Explore the menu</Text>
-      )}
       {menuView === 'main' ? renderCategoryFilter() : null}
 
       {isLoading ? renderMenuSkeleton() : (menuView === 'main' ? renderStaticMenuGrid() : renderCycleMenu())}
@@ -1313,7 +1329,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.border,
   },
-  searchIcon: { fontSize: 15, marginRight: 8 },
+  searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 14, color: theme.text, paddingVertical: 0, height: 44 },
   searchClear: { padding: 4 },
   searchClearIcon: { fontSize: 16, color: theme.textTertiary, fontWeight: '700' },
@@ -1346,16 +1362,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   toggleBtn: { flex: 1, minHeight: 44, paddingVertical: 7, alignItems: 'center', justifyContent: 'center', borderRadius: 9, marginHorizontal: 2 },
   toggleBtnActive: { backgroundColor: theme.accent },
   toggleBtnText: { color: theme.textTertiary, fontSize: 13, fontWeight: '700' },
-  exploreHeading: {
-    fontFamily: legacyTypography.heading,
-    fontSize: 20,
-    fontWeight: '800',
-    color: theme.text,
-    letterSpacing: -0.3,
-    marginHorizontal: 16,
-    marginTop: 4,
-    marginBottom: 10,
-  },
   toggleBtnTextActive: { color: theme.onAccent },
   deliverySection: { marginTop: 8, marginBottom: 12 },
   listContainer: { paddingHorizontal: 16, paddingBottom: 100 },

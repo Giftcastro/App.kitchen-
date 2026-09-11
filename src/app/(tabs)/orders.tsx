@@ -118,6 +118,14 @@ export default function TabOrdersScreen() {
   // nothing there. A real Modal works identically on every platform.
   const [showCantReorder, setShowCantReorder] = useState(false);
 
+  // Current (active + queued) vs. Order History used to render as one long
+  // scroll, which buried History under every active order's full timeline
+  // card — a customer with even one live order had to scroll past all of it
+  // just to reach last week's receipts. Split into the same segmented-toggle
+  // pattern the Menu tab already uses (Standard Classics / Today's Menu), so
+  // switching tabs is a single tap instead of a long scroll.
+  const [ordersView, setOrdersView] = useState<'current' | 'history'>('current');
+
   // yyyy-mm-dd for the device's current date — compared against each order's
   // own scheduled delivery date (not when it was placed) to tell a genuinely
   // in-progress order from one that's merely paid-for and waiting its turn.
@@ -751,37 +759,73 @@ export default function TabOrdersScreen() {
           </View>
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />}
-        >
-          {activeOrders.length > 0 && (
-            <>
-              <Text style={styles.screenSectionTitle}>Active Orders</Text>
-              <Text style={styles.screenSectionSub}>Batch drop at {BATCH_DROP_LABEL}</Text>
-              {activeOrders.map(renderActiveOrderCard)}
-            </>
-          )}
-
-          {queuedOrders.length > 0 && (
-            <>
-              <Text style={[styles.screenSectionTitle, activeOrders.length > 0 && styles.screenSectionTitleSpaced]}>
-                Order Queue
+        <>
+          <View style={styles.toggleContainer}>
+            <TouchableOpacity
+              style={[styles.toggleBtn, ordersView === 'current' && styles.toggleBtnActive]}
+              onPress={() => setOrdersView('current')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: ordersView === 'current' }}
+            >
+              <Text style={[styles.toggleBtnText, ordersView === 'current' && styles.toggleBtnTextActive]}>
+                Active Orders{activeOrders.length + queuedOrders.length > 0 ? ` (${activeOrders.length + queuedOrders.length})` : ''}
               </Text>
-              <Text style={styles.screenSectionSub}>Paid and waiting for their scheduled delivery day</Text>
-              {queuedOrders.map(renderQueuedOrderCard)}
-            </>
-          )}
-
-          {pastOrders.length > 0 && (
-            <>
-              <Text style={[styles.screenSectionTitle, (activeOrders.length > 0 || queuedOrders.length > 0) && styles.screenSectionTitleSpaced]}>
-                Order History
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleBtn, ordersView === 'history' && styles.toggleBtnActive]}
+              onPress={() => setOrdersView('history')}
+              accessibilityRole="button"
+              accessibilityState={{ selected: ordersView === 'history' }}
+            >
+              <Text style={[styles.toggleBtnText, ordersView === 'history' && styles.toggleBtnTextActive]}>
+                Past Orders{pastOrders.length > 0 ? ` (${pastOrders.length})` : ''}
               </Text>
-              {pastOrders.map(renderPastOrderCard)}
-            </>
-          )}
-        </ScrollView>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView
+            contentContainerStyle={styles.list}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />}
+          >
+            {ordersView === 'current' ? (
+              activeOrders.length === 0 && queuedOrders.length === 0 ? (
+                <View style={styles.tabEmptyState}>
+                  <Ionicons name="time-outline" size={40} color={theme.textTertiary} />
+                  <Text style={styles.tabEmptyText}>No current orders. Anything you order will show up here.</Text>
+                </View>
+              ) : (
+                <>
+                  {activeOrders.length > 0 && (
+                    <>
+                      <Text style={styles.screenSectionTitle}>Active Orders</Text>
+                      <Text style={styles.screenSectionSub}>Batch drop at {BATCH_DROP_LABEL}</Text>
+                      {activeOrders.map(renderActiveOrderCard)}
+                    </>
+                  )}
+
+                  {queuedOrders.length > 0 && (
+                    <>
+                      <Text style={[styles.screenSectionTitle, activeOrders.length > 0 && styles.screenSectionTitleSpaced]}>
+                        Order Queue
+                      </Text>
+                      <Text style={styles.screenSectionSub}>Paid and waiting for their scheduled delivery day</Text>
+                      {queuedOrders.map(renderQueuedOrderCard)}
+                    </>
+                  )}
+                </>
+              )
+            ) : (
+              pastOrders.length === 0 ? (
+                <View style={styles.tabEmptyState}>
+                  <Ionicons name="receipt-outline" size={40} color={theme.textTertiary} />
+                  <Text style={styles.tabEmptyText}>No past orders yet. Delivered and cancelled orders will show up here.</Text>
+                </View>
+              ) : (
+                pastOrders.map(renderPastOrderCard)
+              )
+            )}
+          </ScrollView>
+        </>
       )}
 
       <TaxInvoiceModal
@@ -966,6 +1010,28 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   emptySubtitle: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
 
   list: { padding: 16, paddingBottom: 20 },
+
+  // Current / Past Orders toggle — same segmented-pill pattern as the Menu
+  // tab's Standard Classics / Today's Menu switch.
+  toggleContainer: {
+    flexDirection: 'row',
+    padding: 4,
+    paddingHorizontal: 6,
+    backgroundColor: theme.surfaceSecondary,
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.border,
+  },
+  toggleBtn: { flex: 1, minHeight: 44, paddingVertical: 7, alignItems: 'center', justifyContent: 'center', borderRadius: 9, marginHorizontal: 2 },
+  toggleBtnActive: { backgroundColor: theme.accent },
+  toggleBtnText: { color: theme.textTertiary, fontSize: 13, fontWeight: '700' },
+  toggleBtnTextActive: { color: theme.onAccent },
+
+  tabEmptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
+  tabEmptyText: { fontSize: 13, color: theme.textSecondary, textAlign: 'center', paddingHorizontal: 24, lineHeight: 19 },
 
   screenSectionTitle: { fontFamily: legacyTypography.heading, fontSize: 20, fontWeight: '800', color: theme.text, letterSpacing: -0.4 },
   screenSectionTitleSpaced: { marginTop: 8 },
