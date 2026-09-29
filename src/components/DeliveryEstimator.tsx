@@ -43,11 +43,11 @@ export const DeliveryEstimator: React.FC<DeliveryEstimatorProps> = ({ theme }) =
     // states only what's actually true: ordering now gets you that date.
     headline = isOpenToday
       ? 'Kitchen opens 8:00 AM — order by 9:00 AM today'
-      : `Kitchen's closed for the weekend — order now`;
+      : `Kitchen's closed for the weekend`;
   } else if (cutoffPassed) {
-    headline = `Today's 9:00 AM cutoff has passed — order now`;
+    headline = `Today's 9:00 AM cutoff has passed`;
   } else if (minutesLeft > 0 && minutesLeft <= 60) {
-    headline = `${minutesLeft} min left before the 9:00 AM cutoff — order now`;
+    headline = `${minutesLeft} min left before the 9:00 AM cutoff`;
   } else {
     headline = 'Order by 9:00 AM today';
   }
@@ -61,10 +61,10 @@ export const DeliveryEstimator: React.FC<DeliveryEstimatorProps> = ({ theme }) =
       </View>
       <View style={styles.copy}>
         <Text style={[styles.text, isUrgent && styles.textUrgent]} numberOfLines={2}>
-          {isUrgent ? '⚠️ ' : ''}{headline}
+          {headline}
         </Text>
         <Text style={[styles.delivery, isUrgent && styles.textUrgent]} numberOfLines={1}>
-          Delivery {formattedEarliestShort}
+          Earliest delivery: {formattedEarliestShort}
         </Text>
       </View>
     </View>

@@ -38,10 +38,12 @@ export async function fetchMenuCategories(): Promise<MenuCategoryFromDb[]> {
         image: item.image_url ?? undefined,
         tags: item.tags && item.tags.length > 0 ? item.tags : undefined,
         active: item.active,
-        sizes: (item.menu_item_sizes ?? []).map((s: { label: string; price_cents: number }) => ({
-          label: s.label,
-          price: s.price_cents / 100,
-        })),
+        // Cheapest first. The database returns sizes in no guaranteed order, and the
+        // menu card, the add-to-cart default and the admin price range all treat
+        // sizes[0] as the base size.
+        sizes: (item.menu_item_sizes ?? [])
+          .map((s: { label: string; price_cents: number }) => ({ label: s.label, price: s.price_cents / 100 }))
+          .sort((a: { price: number }, b: { price: number }) => a.price - b.price),
       })),
     addOns: (() => {
       const forCategory = (addons ?? [])
@@ -161,12 +163,12 @@ export function mealTypeKeyToDbSlot(key: string): string | undefined {
  * days x 5 slots), so loading everything is simpler and cheaper than
  * chasing which weeks are currently in view.
  */
-export async function fetchAllCycleMenus(): Promise<Record<string, Record<string, string>[]>> {
-  const { data, error } = await supabase.from('cycle_menu_slots').select('week_number, day_of_week, slot, item_name');
+export async function fetchAllCycleMenus(): Promise<Record<string, Record<string, any>[]>> {
+  const { data, error } = await supabase.from('cycle_menu_slots').select('week_number, day_of_week, slot, item_name, description');
   if (error) throw error;
 
   const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-  const byWeek = new Map<number, Map<string, Record<string, string>>>();
+  const byWeek = new Map<number, Map<string, Record<string, any>>>();
 
   for (const row of data ?? []) {
     const dayName = DB_DAY_TO_NAME[row.day_of_week];
@@ -175,10 +177,14 @@ export async function fetchAllCycleMenus(): Promise<Record<string, Record<string
     if (!byWeek.has(row.week_number)) byWeek.set(row.week_number, new Map());
     const byDay = byWeek.get(row.week_number)!;
     if (!byDay.has(dayName)) byDay.set(dayName, { DAY: dayName });
-    byDay.get(dayName)![slotKey] = row.item_name;
+    const dayEntry = byDay.get(dayName)!;
+    dayEntry[slotKey] = row.item_name;
+    // Optional ingredient text per meal, kept in a nested object so the app's
+    // "every key but DAY is a meal" loop can skip it by name.
+    if (row.description) dayEntry.DESCRIPTIONS = { ...dayEntry.DESCRIPTIONS, [slotKey]: row.description };
   }
 
-  const result: Record<string, Record<string, string>[]> = {};
+  const result: Record<string, Record<string, any>[]> = {};
   for (const [weekNumber, byDay] of byWeek) {
     result[`Week ${weekNumber}`] = dayOrder.filter(d => byDay.has(d)).map(d => byDay.get(d)!);
   }

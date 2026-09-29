@@ -285,7 +285,7 @@ export default function LoginScreen() {
             accessibilityLabel="Email address"
           />
         </View>
-        {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
+        {!!errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
       </View>
 
       <View style={styles.inputGroup}>
@@ -362,7 +362,7 @@ export default function LoginScreen() {
             accessibilityLabel="Full name"
           />
         </View>
-        {errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
+        {!!errors.name && <Text style={styles.fieldError}>{errors.name}</Text>}
       </View>
 
       <View style={styles.inputGroup}>
@@ -389,7 +389,7 @@ export default function LoginScreen() {
             accessibilityLabel="Email address"
           />
         </View>
-        {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
+        {!!errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
         {/* Company is auto-detected by work-email domain — no manual
             picker, just this confirmation either way once the email looks
             like an email at all. A personal address (gmail.com etc.) is
@@ -547,7 +547,7 @@ export default function LoginScreen() {
               accessibilityLabel="Email address"
             />
           </View>
-          {errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
+          {!!errors.email && <Text style={styles.fieldError}>{errors.email}</Text>}
 
           <Text style={styles.helpText}>
             We'll send you a link to reset your password
@@ -740,7 +740,7 @@ export default function LoginScreen() {
                     <Ionicons name="location" size={16} color={theme.textSecondary} />
                   </View>
                   <View style={{ flex: 1 }}>
-                    {addr.label && <Text style={styles.pickerRowText} numberOfLines={1}>{addr.label}</Text>}
+                    {!!addr.label && <Text style={styles.pickerRowText} numberOfLines={1}>{addr.label}</Text>}
                     <Text style={[styles.pickerRowSubtext, !addr.label && styles.pickerRowText]} numberOfLines={1}>
                       {addr.unit ? `${addr.unit}, ` : ''}{addr.street}, {addr.suburb}
                     </Text>

@@ -12,6 +12,7 @@
  * omits that row rather than showing a plausible-looking fake.
  */
 import { Order } from '../context/KitchenCoContext';
+import { orderLabel } from '../lib/supabase/orders';
 
 /**
  * When the day's batch lands in the building. Deliveries are one scheduled
@@ -71,7 +72,7 @@ export function presentOrder(order: Order): OrderPresentation {
     : `${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
 
   return {
-    orderNumber: order.id,
+    orderNumber: orderLabel(order),
     deliveryDateFormatted: formatDeliveryDate(order.timestamp),
     deliverySlot: BATCH_DROP_SLOT,
     companyLocation,
@@ -81,7 +82,7 @@ export function presentOrder(order: Order): OrderPresentation {
     subsidyAmount: order.subsidyAmount ?? 0,
     deliveryFee: order.deliveryFee ?? 0,
     totalPaid: order.total,
-    taxInvoiceNumber: `INV-KC-${stamp}-${order.id.replace(/[^0-9]/g, '') || '0000'}`,
+    taxInvoiceNumber: order.invoiceNumber ?? `INV-KC-${stamp}-${order.id.replace(/[^0-9]/g, "") || "0000"}`,
     paymentReference: order.paymentReference,
   };
 }

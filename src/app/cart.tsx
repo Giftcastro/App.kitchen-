@@ -62,7 +62,8 @@ export default function CartScreen() {
   const discountAmount = calculateDiscountAmount(cart, appliedDiscount);
   // Company meal subsidy — automatic, no code needed; zero unless the user
   // is attached to a subsidizing company.
-  const subsidyAmount = calculateSubsidyAmount(cart);
+  // Capped at what is left after the discount, exactly as place_order does on the server.
+  const subsidyAmount = Math.min(calculateSubsidyAmount(cart), Math.max(0, totalPrice - discountAmount));
   // Distance-based delivery fee — resolved automatically from the user's
   // company address (corporate accounts) or default saved address.
   const deliveryFee = deliveryInfo.fee ?? 0;
@@ -130,7 +131,7 @@ export default function CartScreen() {
           <Text style={styles.itemAddOns}>+ {item.addOns.map((a: any) => a.name).join(', ')}</Text>
         )}
         {/* Display notes captured from menu (no duplicate input needed) */}
-        {item.notes && (
+        {!!item.notes && (
           <Text style={styles.itemNotes}>📝 {item.notes}</Text>
         )}
         {appliedDiscount && isItemEligibleForDiscount(item, appliedDiscount) && (
@@ -326,7 +327,8 @@ export default function CartScreen() {
               ? "Today's 9:00 AM cutoff has passed"
               : 'Ordering open · cutoff 9:00 AM'}
           </Text>
-          <Text style={styles.cutoffNoticeText}>{cutoffInfo.message}</Text>
+          {/* When the cutoff has passed the title and the date below already say it all; the long message just repeated them. */}
+          {!cutoffInfo.cutoffPassed && <Text style={styles.cutoffNoticeText}>{cutoffInfo.message}</Text>}
           <Text style={styles.cutoffNoticeDate}>
             Earliest delivery: {cutoffInfo.formattedEarliest}
           </Text>

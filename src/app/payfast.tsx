@@ -36,7 +36,7 @@ Notifications.setNotificationHandler({
 });
 
 export default function PayFastSandboxScreen() {
-  const { cart, placeOrder, user, savedCards, saveCard, orderNote, appliedDiscount, calculateDiscountAmount, deliveryInfo, theme, isDark } = useKitchen();
+  const { cart, placeOrder, user, savedCards, saveCard, orderNote, appliedDiscount, calculateDiscountAmount, calculateSubsidyAmount, deliveryInfo, theme, isDark } = useKitchen();
   const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
   // A warm cream backdrop instead of stark white — light mode only, matching
   // the rest of the ordering flow. Sourced from the client's own CI palette:
@@ -73,7 +73,12 @@ export default function PayFastSandboxScreen() {
   const totalPrice = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const discountAmount = calculateDiscountAmount(cart, appliedDiscount);
   const deliveryFee = deliveryInfo.fee ?? 0;
-  const finalTotal = totalPrice - discountAmount + deliveryFee;
+  // Same arithmetic as the cart and the place_order RPC: the company subsidy is
+  // capped at what is left after the discount, and the goods part never goes
+  // below zero. Leaving the subsidy out here charged subsidised customers more
+  // than the cart total they had just agreed to.
+  const subsidyAmount = Math.min(calculateSubsidyAmount(cart), Math.max(0, totalPrice - discountAmount));
+  const finalTotal = Math.max(0, totalPrice - discountAmount - subsidyAmount) + deliveryFee;
 
   // Card form fields
   const [cardholderName, setCardholderName] = useState('');
@@ -227,7 +232,7 @@ export default function PayFastSandboxScreen() {
       await Notifications.scheduleNotificationAsync({
         content: {
           title: "🍳 Order Confirmed!",
-          body: "We have received your payment of R" + (appliedDiscount ? finalTotal.toFixed(2) : totalPrice.toFixed(2)) + ". The kitchen has started preparing your order!",
+          body: "We have received your payment of R" + finalTotal.toFixed(2) + ". The kitchen has started preparing your order!",
           sound: true,
         },
         trigger: null,
@@ -248,7 +253,7 @@ export default function PayFastSandboxScreen() {
     // Log the email for debugging
     console.log("Email sent to: " + userEmail);
     console.log("Subject: Order Confirmed - Kitchen Co.");
-    console.log("Body: Hi " + userName + ", your payment of R" + (appliedDiscount ? finalTotal.toFixed(2) : totalPrice.toFixed(2)) + " was successful! Your order is being prepared.");
+    console.log("Body: Hi " + userName + ", your payment of R" + finalTotal.toFixed(2) + " was successful! Your order is being prepared.");
 
     setEmailSent(true);
     return true;
@@ -501,6 +506,15 @@ export default function PayFastSandboxScreen() {
                 <View style={styles.summaryDiscountRow}>
                   <Text style={styles.summaryDiscountLabel}>Discount ({appliedDiscount.percentage}%)</Text>
                   <Text style={styles.summaryDiscountValue}>-R{discountAmount.toFixed(2)}</Text>
+                </View>
+              </>
+            ) : null}
+            {subsidyAmount > 0 ? (
+              <>
+                <View style={styles.summaryDivider} />
+                <View style={styles.summaryDiscountRow}>
+                  <Text style={styles.summaryDiscountLabel}>Company meal subsidy</Text>
+                  <Text style={styles.summaryDiscountValue}>-R{subsidyAmount.toFixed(2)}</Text>
                 </View>
               </>
             ) : null}
@@ -786,6 +800,15 @@ export default function PayFastSandboxScreen() {
               <View style={styles.summaryDiscountRow}>
                 <Text style={styles.summaryDiscountLabel}>Discount ({appliedDiscount.percentage}%)</Text>
                 <Text style={styles.summaryDiscountValue}>-R{discountAmount.toFixed(2)}</Text>
+              </View>
+            </>
+          ) : null}
+          {subsidyAmount > 0 ? (
+            <>
+              <View style={styles.summaryDivider} />
+              <View style={styles.summaryDiscountRow}>
+                <Text style={styles.summaryDiscountLabel}>Company meal subsidy</Text>
+                <Text style={styles.summaryDiscountValue}>-R{subsidyAmount.toFixed(2)}</Text>
               </View>
             </>
           ) : null}

@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Skeleton } from '../../components/Skeleton';
 import { RatingBar } from '../../components/RatingBar';
 import { TaxInvoiceModal } from '../../components/TaxInvoiceModal';
+import { orderLabel } from '../../lib/supabase/orders';
 import { DisputeModal } from '../../components/DisputeModal';
 import { presentOrder } from '../../utils/orderPresentation';
 import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
@@ -293,7 +294,7 @@ export default function TabOrdersScreen() {
           <View style={styles.orderCardTop}>
             <View style={styles.orderCardLeft}>
               <Text style={styles.orderCaption}>ACTIVE ORDER</Text>
-              <Text style={styles.orderId}>{order.id}</Text>
+              <Text style={styles.orderId}>{orderLabel(order)}</Text>
             </View>
             <Text style={styles.orderTotal}>R {order.total.toFixed(2)}</Text>
           </View>
@@ -383,8 +384,8 @@ export default function TabOrdersScreen() {
               </View>
               <View style={styles.itemInfo}>
                 <Text style={styles.itemName}>{item.name}</Text>
-                {item.selectedSize && <Text style={styles.itemMeta}>{item.selectedSize}</Text>}
-                {item.category && !item.selectedSize && <Text style={styles.itemMeta}>{item.category}</Text>}
+                {!!item.selectedSize && <Text style={styles.itemMeta}>{item.selectedSize}</Text>}
+                {!!item.category && !item.selectedSize && <Text style={styles.itemMeta}>{item.category}</Text>}
                 {item.addOns && item.addOns.length > 0 && (
                   <Text style={styles.itemMeta}>+ {item.addOns.map(a => a.name).join(', ')}</Text>
                 )}
@@ -442,7 +443,7 @@ export default function TabOrdersScreen() {
           <View style={styles.orderCardTop}>
             <View style={styles.orderCardLeft}>
               <Text style={styles.orderCaption}>QUEUED ORDER</Text>
-              <Text style={styles.orderId}>{order.id}</Text>
+              <Text style={styles.orderId}>{orderLabel(order)}</Text>
             </View>
             <Text style={styles.orderTotal}>R {order.total.toFixed(2)}</Text>
           </View>
@@ -477,8 +478,8 @@ export default function TabOrdersScreen() {
               </View>
               <View style={styles.itemInfo}>
                 <Text style={styles.itemName}>{item.name}</Text>
-                {item.selectedSize && <Text style={styles.itemMeta}>{item.selectedSize}</Text>}
-                {item.category && !item.selectedSize && <Text style={styles.itemMeta}>{item.category}</Text>}
+                {!!item.selectedSize && <Text style={styles.itemMeta}>{item.selectedSize}</Text>}
+                {!!item.category && !item.selectedSize && <Text style={styles.itemMeta}>{item.category}</Text>}
                 {item.addOns && item.addOns.length > 0 && (
                   <Text style={styles.itemMeta}>+ {item.addOns.map(a => a.name).join(', ')}</Text>
                 )}

@@ -118,6 +118,8 @@ export interface DisputeInfo {
 
 export interface Order {
   id: string;
+  /** Short human-facing reference (e.g. INV-20260929-00012) minted by place_order. `id` stays the lookup key; show this to people. */
+  invoiceNumber?: string;
   items: CartItem[];
   total: number;
   totalPrice: number;

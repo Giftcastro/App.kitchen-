@@ -14,6 +14,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as MailComposer from 'expo-mail-composer';
 import { fetchAllAddressesForAdmin, adminSetAddressDistance, AdminAddress } from '../../lib/supabase/addresses';
+import { orderLabel } from '../../lib/supabase/orders';
 
 // Same pre-KitchenCo RobotoCondensed body / GotchaGothic headline pairing as
 // the customer-facing screens (see legacyTypography.ts) — one override here
@@ -636,7 +637,7 @@ export default function AdminScreen() {
     dueTodayOrders.forEach(({ order, dueItemCount }) => {
       const companyName = order.userEmail ? emailToCompany.get(order.userEmail) : undefined;
       if (!companyName) {
-        singles.push({ key: order.id, title: order.id, subtitle: order.userName || 'Guest', isBatch: false, status: order.status, dueItemCount });
+        singles.push({ key: order.id, title: orderLabel(order), subtitle: order.userName || 'Guest', isBatch: false, status: order.status, dueItemCount });
         return;
       }
       const entry = batches.get(companyName) ?? { orders: [], dueItemCount: 0 };
@@ -1250,7 +1251,7 @@ export default function AdminScreen() {
                     <View style={styles.recentOrderLeft}>
                       <View style={[styles.recentOrderStatusDot, { backgroundColor: STATUS_COLORS[order.status] || '#6B6B6B' }]} />
                       <View>
-                        <Text style={styles.recentOrderId}>{order.id}</Text>
+                        <Text style={styles.recentOrderId}>{orderLabel(order)}</Text>
                         <Text style={styles.recentOrderUser}>{order.userName || 'Guest'}</Text>
                       </View>
                     </View>
@@ -2975,11 +2976,11 @@ function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders:
               onPress={() => setExpandedOrder(isExpanded ? null : order.id)}
               activeOpacity={0.7}
               accessibilityRole="button"
-              accessibilityLabel={`Order ${order.id}, ${isExpanded ? 'collapse' : 'expand'} details`}
+              accessibilityLabel={`Order ${orderLabel(order)}, ${isExpanded ? 'collapse' : 'expand'} details`}
             >
               <View style={styles.orderCardHeader}>
                 <View style={styles.orderCardLeft}>
-                  <Text style={styles.orderCardId}>{order.id}</Text>
+                  <Text style={styles.orderCardId}>{orderLabel(order)}</Text>
                   <Text style={styles.orderCardUser}>{order.userName || 'Guest'}</Text>
                 </View>
                 <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[order.status] || '#6B6B6B') + '20' }]}>
@@ -3061,7 +3062,7 @@ function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders:
                       style={styles.cancelOrderBtn}
                       onPress={() => { haptics.warning(); handleStatusChange(order.id, 'cancelled'); }}
                       accessibilityRole="button"
-                      accessibilityLabel={`Cancel order ${order.id}`}
+                      accessibilityLabel={`Cancel order ${orderLabel(order)}`}
                     >
                       <Text style={styles.cancelOrderBtnText}>Cancel Order</Text>
                     </TouchableOpacity>
@@ -3495,7 +3496,7 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
       if (!companyName) {
         singles.push({
           key: order.id,
-          title: order.id,
+          title: orderLabel(order),
           subtitle: order.userName || 'Guest',
           isBatch: false,
           dueToday,

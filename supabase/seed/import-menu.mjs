@@ -128,7 +128,12 @@ async function importCycleMenu() {
         const itemName = day[rawSlot];
         if (!itemName) continue;
         const { error } = await supabase.from('cycle_menu_slots').upsert(
-          { week_number: weekNumber, day_of_week: dayOfWeek, slot, item_name: itemName },
+          {
+            week_number: weekNumber, day_of_week: dayOfWeek, slot, item_name: itemName,
+            // Optional ingredient text: day.DESCRIPTIONS = { "MAIN MEAL": "...", ... }. Only sent when
+            // present, so a re-import never wipes text entered in the database.
+            ...(day.DESCRIPTIONS?.[rawSlot] ? { description: day.DESCRIPTIONS[rawSlot] } : {}),
+          },
           { onConflict: 'week_number,day_of_week,slot' }
         );
         if (error) throw error;

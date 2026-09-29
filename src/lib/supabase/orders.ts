@@ -7,6 +7,12 @@ export function isRealOrderId(id: string): boolean {
   return UUID_RE.test(id);
 }
 
+/** What to show a person for an order: its invoice number, else (a raw uuid never belongs on screen) the id's first 8 characters. */
+export function orderLabel(order: { id: string; invoiceNumber?: string }): string {
+  if (order.invoiceNumber) return order.invoiceNumber;
+  return UUID_RE.test(order.id) ? order.id.slice(0, 8).toUpperCase() : order.id;
+}
+
 /** update_order_status/submit_order_rating/report_order_dispute (0003) raise these as plain exception messages — map them to something a customer or admin can actually read. */
 function friendlyRpcError(error: { message?: string } | null | undefined, fallback: string): Error {
   const msg = error?.message ?? '';
@@ -68,6 +74,7 @@ function mapDbOrderRow(row: Record<string, any>): Order {
   const profileRow = firstOrSelf(row.profile);
   return {
     id: row.id,
+    invoiceNumber: row.invoice_number ?? undefined,
     // Who actually placed it — not whoever is signed in. An admin's fetch
     // returns everyone's orders, and every admin view attributes an order to
     // its company through userEmail.

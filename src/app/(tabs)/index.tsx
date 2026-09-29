@@ -34,6 +34,8 @@ interface SizeOption { label: string; price: number; }
 interface UIReadyItem {
   id: string; name: string; description: string;
   category: string; image?: string; sizes: SizeOption[];
+  /** Cycle-menu ingredient text, when the kitchen has supplied it (cycle items only). */
+  ingredients?: string;
   /** Optional dietary tags (e.g. "Keto", "Vegan") — only rendered when present in menu data. */
   tags?: string[];
 }
@@ -113,7 +115,7 @@ export default function MenuScreen() {
   // Today's Menu (cycle) content and its flat price — loaded once from
   // Supabase (see fetchAllCycleMenus's own comment for why all 8 weeks load
   // at once rather than per-viewed-week).
-  const [cycleMenus, setCycleMenus] = useState<Record<string, Record<string, string>[]>>({});
+  const [cycleMenus, setCycleMenus] = useState<Record<string, Record<string, any>[]>>({});
   const [cycleItemPrice, setCycleItemPrice] = useState(80);
   const refetchCycleMenu = () =>
     Promise.all([fetchAllCycleMenus(), fetchCycleItemPriceRands()]).then(([menusResult, priceResult]) => {
@@ -434,11 +436,12 @@ export default function MenuScreen() {
     setSelectedAddOns(new Set());
   };
 
-  const handleAddCycleItem = (mealName: string, mealType: string, day: UpcomingWeekday, weekName: string) => {
+  const handleAddCycleItem = (mealName: string, mealType: string, day: UpcomingWeekday, weekName: string, ingredients?: string) => {
     const cycleItem = {
       id: `cycle-${weekName}-${day.dayName}-${mealType}-${mealName.replace(/\s+/g, '')}`,
       name: mealName,
       description: mealType.replace(/_/g, ' '),
+      ingredients,
       category: `${weekName} • ${day.dayName}`,
       sizes: [{ label: 'Regular', price: cycleItemPrice }],
       mealType,
@@ -720,14 +723,15 @@ export default function MenuScreen() {
     const getMealsForDay = (day: UpcomingWeekday) => {
       const weekKey = getCycleWeekKeyForDate(day);
       const weekData = (cycleMenus as any)[weekKey];
-      if (!weekData || !Array.isArray(weekData)) return { weekKey, meals: null as null | { mealType: string; mealDescription: string }[] };
+      if (!weekData || !Array.isArray(weekData)) return { weekKey, meals: null as null | { mealType: string; mealDescription: string; ingredients?: string }[] };
       const dayData = weekData.find((dayObj: any) => dayObj.DAY === day.dayName);
       const meals = dayData
         ? Object.entries(dayData)
-            .filter(([k]) => k !== 'DAY')
+            .filter(([k]) => k !== 'DAY' && k !== 'DESCRIPTIONS')
             .map(([mealType, mealDescription]: [string, any]) => ({
               mealType,
               mealDescription: typeof mealDescription === 'string' ? mealDescription : String(mealDescription),
+              ingredients: (dayData as any).DESCRIPTIONS?.[mealType] || undefined,
             }))
         : [];
       return { weekKey, meals };
@@ -736,8 +740,8 @@ export default function MenuScreen() {
     // Meal type ("MAIN MEAL", "CURRY OF THE DAY", ...) -> that type's meals,
     // in first-seen order — one dish per type per day today, but this holds
     // even if a future day's data ever lists more than one under the same type.
-    const groupMealsByType = (meals: { mealType: string; mealDescription: string }[]) => {
-      const map = new Map<string, { mealType: string; mealDescription: string }[]>();
+    const groupMealsByType = (meals: { mealType: string; mealDescription: string; ingredients?: string }[]) => {
+      const map = new Map<string, { mealType: string; mealDescription: string; ingredients?: string }[]>();
       meals.forEach((meal) => {
         const arr = map.get(meal.mealType) ?? [];
         arr.push(meal);
@@ -748,7 +752,7 @@ export default function MenuScreen() {
 
     // Cycle meal card renderer
     const renderCycleCard = (
-      meal: { mealType: string; mealDescription: string },
+      meal: { mealType: string; mealDescription: string; ingredients?: string },
       day: UpcomingWeekday,
       weekKeyStr: string
     ) => {
@@ -765,12 +769,15 @@ export default function MenuScreen() {
         <TouchableOpacity
           style={styles.listCard}
           activeOpacity={0.9}
-          onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
+          onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr, meal.ingredients)}
           accessibilityLabel={`${mealName}, R${cycleItemPrice}`}
         >
           <View style={styles.listCardTopRow}>
             <View style={styles.listCardNameCol}>
               <Text style={styles.listCardName} numberOfLines={2}>{mealName}</Text>
+              {meal.ingredients ? (
+                <Text style={styles.listCardDesc} numberOfLines={2}>{meal.ingredients}</Text>
+              ) : null}
             </View>
             <View style={styles.listCardPriceCol}>
               <View style={styles.uberPriceRow}>
@@ -779,7 +786,7 @@ export default function MenuScreen() {
               <View style={styles.listCardAddBtn}>
                 <QuickAddButton
                   quantity={qty}
-                  onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
+                  onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr, meal.ingredients)}
                   theme={theme}
                 />
               </View>
@@ -1034,10 +1041,10 @@ export default function MenuScreen() {
                     {/* Full, untruncated ingredients — shown in full here (unlike the
                         2-line preview on the browsing card) so anyone with an allergy
                         can actually check before adding to cart. */}
-                    {!isCycleItem && selectedItem.description ? (
+                    {(isCycleItem ? selectedItem.ingredients : selectedItem.description) ? (
                       <View style={styles.ingredientsSection}>
                         <Text style={styles.notesLabel}>INGREDIENTS</Text>
-                        <Text style={styles.ingredientsText}>{selectedItem.description}</Text>
+                        <Text style={styles.ingredientsText}>{isCycleItem ? selectedItem.ingredients : selectedItem.description}</Text>
                       </View>
                     ) : null}
 
