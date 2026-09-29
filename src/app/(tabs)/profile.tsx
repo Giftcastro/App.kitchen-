@@ -335,127 +335,52 @@ export default function TabProfileScreen() {
           </View>
         )}
 
-        {/* Delivery Addresses Section */}
+        {/* Delivery Address Section — read-only. Shows deliveryInfo, the same real
+            address checkout charges and delivers to (the point picked at signup,
+            or the company's site). This used to list a separate local address
+            book with an "+ Add" button that checkout never read, so people who
+            had picked a location at signup saw "No delivery address yet". The
+            client also wants delivery points controlled (no self-entered
+            addresses), so there is nothing to add here. */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Delivery Addresses</Text>
-            <TouchableOpacity
-              onPress={openAddressModal}
-              style={styles.addAddressBtn}
-            >
-              <Text style={styles.addAddressBtnText}>+ Add</Text>
-            </TouchableOpacity>
+            <Text style={styles.sectionTitle}>Delivery Address</Text>
           </View>
-          {companyAddress ? (
-            <Text style={styles.companyAddressHint}>
-              {isCompanyAddressDefault
-                ? `Orders deliver to your ${company?.name} address by default. Add a personal address below if you'd like an order sent elsewhere.`
-                : `A personal address is set as default. You can switch back to your ${company?.name} address any time.`}
-            </Text>
-          ) : null}
-          {savedAddresses.length === 0 && !companyAddress ? (
-            <TouchableOpacity
-              style={styles.emptyAddressCard}
-              onPress={openAddressModal}
-            >
-              <Text style={styles.emptyAddressIcon}>📍</Text>
-              <Text style={styles.emptyAddressText}>No delivery address yet</Text>
-              <Text style={styles.emptyAddressSubtext}>
-                Add one so we know where to deliver your orders
-              </Text>
-            </TouchableOpacity>
-          ) : (
+          {deliveryInfo.address ? (
             <View style={styles.menuCard}>
-              {companyAddress && (
-                <View style={styles.addressItem}>
-                  <View style={styles.addressItemLeft}>
-                    {isCompanyAddressDefault && (
-                      <View style={styles.defaultBadge}>
-                        <Text style={styles.defaultBadgeText}>Default</Text>
-                      </View>
-                    )}
-                    <View style={styles.addressInfo}>
-                      <View style={styles.addressLabelRow}>
-                        <Text style={styles.addressLabel}>{company?.name} (Company Address)</Text>
-                        {!isCompanyAddressDefault && (
-                          <TouchableOpacity
-                            onPress={useCompanyAddress}
-                            style={styles.setDefaultLink}
-                          >
-                            <Text style={styles.setDefaultText}>Set as default</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                      <Text style={styles.addressLine1}>
-                        {companyAddress.unit ? `${companyAddress.unit}, ${companyAddress.street}` : companyAddress.street}
-                      </Text>
-                      <Text style={styles.addressLine2}>
-                        {companyAddress.suburb}, {companyAddress.city} {companyAddress.code}
-                      </Text>
-                      <Text style={styles.addressFee}>
-                        {companyAddress.distanceKm}km · R{calculateDeliveryFee(companyAddress.distanceKm!)} delivery fee
-                      </Text>
-                    </View>
+              <View style={styles.addressItem}>
+                <View style={styles.addressItemLeft}>
+                  <View style={styles.addressInfo}>
+                    <Text style={styles.addressLabel}>{deliveryInfo.address.label}</Text>
+                    <Text style={styles.addressLine1}>{deliveryInfo.address.street}</Text>
+                    <Text style={styles.addressLine2}>
+                      {deliveryInfo.address.suburb}, {deliveryInfo.address.city} {deliveryInfo.address.code}
+                    </Text>
+                    <Text style={styles.addressFee}>
+                      {deliveryInfo.distanceKm}km · {deliveryInfo.fee != null ? `R${deliveryInfo.fee} delivery fee` : 'outside delivery area'}
+                    </Text>
                   </View>
                 </View>
-              )}
-              {savedAddresses.map((address, index) => (
-                <React.Fragment key={address.id}>
-                  {(index > 0 || companyAddress) && <View style={styles.menuDivider} />}
-                  <TouchableOpacity
-                    style={styles.addressItem}
-                    onLongPress={() => setShowDeleteConfirm(address.id)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={styles.addressItemLeft}>
-                      {address.isDefault && (
-                        <View style={styles.defaultBadge}>
-                          <Text style={styles.defaultBadgeText}>Default</Text>
-                        </View>
-                      )}
-                      <View style={styles.addressInfo}>
-                        <View style={styles.addressLabelRow}>
-                          <Text style={styles.addressLabel}>{address.label}</Text>
-                          {!address.isDefault && (
-                            <TouchableOpacity
-                              onPress={() => setDefaultAddress(address.id)}
-                              style={styles.setDefaultLink}
-                            >
-                              <Text style={styles.setDefaultText}>
-                                Set as default
-                              </Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                        <Text style={styles.addressLine1}>{address.street}</Text>
-                        <Text style={styles.addressLine2}>
-                          {address.suburb}, {address.city} {address.code}
-                        </Text>
-                        <Text style={styles.addressFee}>
-                          {address.distanceKm != null
-                            ? (() => {
-                                const fee = calculateDeliveryFee(address.distanceKm);
-                                return fee != null
-                                  ? `${address.distanceKm}km · R${fee} delivery fee`
-                                  : `${address.distanceKm}km · outside delivery area`;
-                              })()
-                            : 'Add a distance to see delivery fee'}
-                        </Text>
-                      </View>
-                    </View>
-                    <TouchableOpacity
-                      style={styles.addressDeleteBtn}
-                      onPress={() => setShowDeleteConfirm(address.id)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Delete address: ${address.label}`}
-                    >
-                      <Text style={styles.addressDeleteIcon}>🗑️</Text>
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-                </React.Fragment>
-              ))}
+              </View>
+            </View>
+          ) : (
+            <View style={styles.emptyAddressCard}>
+              <Text style={styles.emptyAddressIcon}>📍</Text>
+              <Text style={styles.emptyAddressText}>
+                {deliveryInfo.addressLabel ? deliveryInfo.addressLabel : 'No delivery point on your account yet'}
+              </Text>
+              <Text style={styles.emptyAddressSubtext}>
+                {deliveryInfo.addressLabel
+                  ? "We're confirming the delivery distance for this location."
+                  : "Please contact us and we'll set one up for you."}
+              </Text>
             </View>
           )}
+          {deliveryInfo.address ? (
+            <Text style={[styles.companyAddressHint, { marginTop: 10, marginBottom: 0 }]}>
+              Orders are delivered to the point you chose when you signed up. To change it, please contact us.
+            </Text>
+          ) : null}
         </View>
 
         {/* Saved Cards Section */}

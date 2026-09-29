@@ -162,6 +162,15 @@ begin
            company_id = v_user.company_id, company_address_id = v_user.address_id,
            created_at = v_user.joined
      where id = v_uid;
+    -- A real individual signup also saves the picked location as their personal
+    -- delivery address (signUpWithEmail); checkout and Profile read that row,
+    -- not profiles.company_address_id, so the demo accounts need one too.
+    if v_user.account_type = 'individual' and v_user.address_id is not null then
+      insert into addresses (user_id, label, street, suburb, city, code, distance_km, is_default)
+      select v_uid, c.name, coalesce(a.unit || ', ', '') || a.street, a.suburb, a.city, a.code, a.distance_km, true
+      from company_addresses a join companies c on c.id = a.company_id
+      where a.id = v_user.address_id;
+    end if;
   end loop;
 
   -- ── Orders: 8 weeks back, 3 weekdays forward ────────────────────────────
