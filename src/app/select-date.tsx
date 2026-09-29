@@ -104,6 +104,17 @@ export default function SelectDateScreen() {
     router.replace(view === 'today' ? '/?view=today' : '/');
   };
 
+  // "Just let me in": someone who only wants their orders or a look at the
+  // menu shouldn't have to make a delivery choice first. Applies the earliest
+  // orderable day (the one already highlighted) so nothing downstream sees a
+  // missing date; the menu's "Ordering for <day> · Change" bar keeps it
+  // visible and one tap to change.
+  const handleSkip = () => {
+    haptics.selection();
+    setOrderingForDate(days[0]?.iso ?? new Date().toISOString().slice(0, 10));
+    router.replace(view === 'today' ? '/?view=today' : '/');
+  };
+
   return (
     <SafeAreaView style={[styles.backdrop, { backgroundColor: theme.modalOverlay }]}>
       <StatusBar barStyle={theme.statusBarStyle} backgroundColor={theme.modalOverlay} />
@@ -187,6 +198,16 @@ export default function SelectDateScreen() {
           >
             <Text style={styles.confirmBtnText}>Confirm</Text>
           </TouchableOpacity>
+          {!isChanging && (
+            <TouchableOpacity
+              style={styles.skipBtn}
+              onPress={handleSkip}
+              accessibilityRole="button"
+              accessibilityLabel="Skip choosing a delivery day for now and use the earliest available day"
+            >
+              <Text style={styles.skipBtnText}>Skip for now</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </SafeAreaView>
@@ -221,9 +242,9 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     position: 'absolute',
     top: 14,
     right: 14,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1,
@@ -281,5 +302,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     marginTop: 16,
   },
   confirmBtnDisabled: { opacity: 0.4 },
+  skipBtn: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  skipBtnText: { fontSize: 14, fontWeight: '600', color: theme.textSecondary, textDecorationLine: 'underline' },
   confirmBtnText: { fontSize: 15, fontWeight: '700', color: theme.onAccent, letterSpacing: 0.2 },
 });
