@@ -53,9 +53,9 @@ export const QuickAddButton: React.FC<QuickAddButtonProps> = ({
 
 const createStyles = (theme: ThemeColors) => StyleSheet.create({
   btn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: theme.accent,
     justifyContent: 'center',
     alignItems: 'center',
@@ -66,6 +66,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     elevation: 4,
   },
   btnDisabled: { backgroundColor: theme.border },
-  text: { color: theme.onAccent, fontSize: 16, fontWeight: '800', lineHeight: 20 },
+  text: { color: theme.onAccent, fontSize: 18, fontWeight: '800', lineHeight: 22 },
   textDisabled: { color: theme.textSecondary },
 });

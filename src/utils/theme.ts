@@ -20,9 +20,9 @@ export interface ThemeColors {
    * driving every primary button/CTA — this is only for a handful of narrow,
    * mostly-decorative spots (active tab bar icon, the login glow, the
    * "Ordering for <day>" bar) so the app still *reads* as black and white
-   * everywhere else. Sourced from the client's own CI palette (the brand
-   * blue from their 29-page moodboard PDF, #3571B7/#B6DFF8 — see
-   * brand-and-clients memory), not a new guess.
+   * everywhere else. Currently plain black/white (same as accent) by
+   * choice — the client's moodboard blue #3571B7 (dark: #B6DFF8) read cold
+   * against the warm menu, so it was dropped. Change here to bring a pop back.
    */
   brandPop: string;
   success: string;
@@ -63,7 +63,7 @@ export const lightColors: ThemeColors = {
   textTertiary: '#9E9E9E',
   accent: '#000000',
   onAccent: '#FFFFFF',
-  brandPop: '#3571B7',
+  brandPop: '#000000',
   success: '#1DA836',
   warning: '#E8A100',
   error: '#AF1718',
@@ -95,7 +95,7 @@ export const darkColors: ThemeColors = {
   textTertiary: '#6B6B6B',
   accent: '#FFFFFF',
   onAccent: '#000000',
-  brandPop: '#B6DFF8',
+  brandPop: '#FFFFFF',
   success: '#22C55E',
   warning: '#F5A623',
   error: '#CB6869',

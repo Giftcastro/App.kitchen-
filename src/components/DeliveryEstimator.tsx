@@ -95,7 +95,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   },
   iconWrapperUrgent: { backgroundColor: '#FFFFFF' },
   copy: { flex: 1 },
-  text: { fontSize: 12.5, fontWeight: '700', color: theme.text },
-  delivery: { fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginTop: 2 },
+  text: { fontSize: 13.5, fontWeight: '700', color: theme.text },
+  delivery: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginTop: 2 },
   textUrgent: { color: '#8A6D00' },
 });

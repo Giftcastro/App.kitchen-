@@ -1566,9 +1566,9 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   // column (client reference, Sep 2026) — the add button sits with the price
   // it applies to rather than sharing a row with the tags below.
   listCardPriceCol: { alignItems: 'flex-end' },
-  listCardSizePrice: { fontSize: 11, fontWeight: '600', color: theme.textSecondary, marginTop: 2 },
+  listCardSizePrice: { fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginTop: 2 },
   listCardAddBtn: { marginTop: 8 },
-  listCardDesc: { fontSize: 12, color: theme.textSecondary, lineHeight: 17, marginTop: 6 },
+  listCardDesc: { fontSize: 13, color: theme.textSecondary, lineHeight: 18, marginTop: 6 },
   listCardDescLabel: { fontWeight: '700', color: theme.text },
   listCardTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
   listCardTag: {

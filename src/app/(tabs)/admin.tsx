@@ -892,7 +892,15 @@ export default function AdminScreen() {
     }
   };
 
-  const handleDeleteDiscount = async (discount: Discount) => {
+  // Deleting a code or a user is permanent, so both ask first (menu items
+  // already did). One shared dialog, rendered next to discountDialog below.
+  const [pendingDelete, setPendingDelete] = useState<{ kind: 'discount' | 'user'; id: string; label: string } | null>(null);
+
+  const handleDeleteDiscount = (discount: Discount) => {
+    setPendingDelete({ kind: 'discount', id: discount.id, label: discount.code });
+  };
+
+  const performDeleteDiscount = async (discount: Discount) => {
     haptics.warning();
     try {
       await deleteDiscount(discount.id);
@@ -1671,7 +1679,7 @@ export default function AdminScreen() {
                   {user.role !== 'admin' && (
                     <TouchableOpacity
                       style={styles.deleteBtn}
-                      onPress={() => { haptics.warning(); deleteUser(user.id); }}
+                      onPress={() => setPendingDelete({ kind: 'user', id: user.id, label: user.name || user.email })}
                       accessibilityRole="button"
                       accessibilityLabel={`Delete user ${user.name || 'Unknown'}`}
                     >
@@ -1728,7 +1736,7 @@ export default function AdminScreen() {
             <View style={styles.pageHeader}>
               <View>
                 <Text style={styles.greeting}>Discount Codes</Text>
-                <Text style={styles.greetingSub}>{discounts.length} active codes</Text>
+                <Text style={styles.greetingSub}>{discounts.filter(d => d.active).length} active {discounts.filter(d => d.active).length === 1 ? 'code' : 'codes'}</Text>
               </View>
               <TouchableOpacity
                 style={styles.addBtn}
@@ -1782,6 +1790,7 @@ export default function AdminScreen() {
                       <Text style={styles.discountExpiry}>No expiry</Text>
                     )}
                     <TouchableOpacity
+                      style={{ minWidth: 44, minHeight: 44, alignItems: 'flex-end', justifyContent: 'center' }}
                       onPress={() => handleDeleteDiscount(discount)}
                       accessibilityRole="button"
                       accessibilityLabel={`Delete discount ${discount.code}`}
@@ -2344,6 +2353,42 @@ export default function AdminScreen() {
 
       {/* Discount toggle/delete result — only surfaces when a real database
           write failed (see handleToggleDiscountActive / handleDeleteDiscount). */}
+      <Modal visible={!!pendingDelete} animationType="fade" transparent onRequestClose={() => setPendingDelete(null)}>
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogCard}>
+            <Text style={styles.dialogIcon}>🗑️</Text>
+            <Text style={styles.dialogTitle}>{pendingDelete?.kind === 'user' ? 'Delete user' : 'Delete discount code'}</Text>
+            <Text style={styles.dialogText}>
+              Are you sure you want to delete "{pendingDelete?.label}"? This can't be undone.
+            </Text>
+            <View style={styles.dialogBtnRow}>
+              <TouchableOpacity style={styles.dialogCancelBtn} onPress={() => setPendingDelete(null)} accessibilityRole="button">
+                <Text style={styles.dialogCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.dialogDeleteBtn}
+                onPress={() => {
+                  const target = pendingDelete;
+                  setPendingDelete(null);
+                  if (!target) return;
+                  if (target.kind === 'user') {
+                    haptics.warning();
+                    deleteUser(target.id);
+                  } else {
+                    const discount = discounts.find(d => d.id === target.id);
+                    if (discount) performDeleteDiscount(discount);
+                  }
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Delete ${pendingDelete?.label ?? 'item'}`}
+              >
+                <Text style={styles.dialogDeleteText}>Delete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       <Modal visible={!!discountDialog} animationType="fade" transparent onRequestClose={() => setDiscountDialog(null)}>
         <View style={styles.dialogOverlay}>
           <View style={styles.dialogCard}>
@@ -2647,7 +2692,7 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
                   <View key={itemId} style={[styles.menuItemCard, !isLive && styles.menuItemCardOff]}>
                     <View style={styles.menuItemInfo}>
                       <View style={styles.menuItemNameRow}>
-                        <Text style={[styles.menuItemName, !isLive && styles.menuItemNameOff]} numberOfLines={1}>{item.name}</Text>
+                        <Text style={[styles.menuItemName, !isLive && styles.menuItemNameOff]} numberOfLines={2}>{item.name}</Text>
                         {!isLive && (
                           <View style={styles.menuOffBadge}>
                             <Text style={styles.menuOffBadgeText}>OFF MENU</Text>
@@ -2953,7 +2998,7 @@ function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders:
         return (
         <View key={group.name}>
           <TouchableOpacity
-            style={[styles.prodClientHeaderRow, { justifyContent: 'space-between' }, groupIdx === 0 && { marginTop: 0 }]}
+            style={[styles.prodClientHeaderRow, { justifyContent: 'space-between', minHeight: 44 }, groupIdx === 0 && { marginTop: 0 }]}
             onPress={() => toggleGroup(group.name)}
             activeOpacity={0.7}
             accessibilityRole="button"
@@ -3646,6 +3691,7 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
               </TouchableOpacity>
             )}
             <TouchableOpacity
+              style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
               onPress={() => handleDownloadSheet(PRODUCTION_SHEET_SENTINEL)}
               disabled={downloadingTarget === PRODUCTION_SHEET_SENTINEL}
               accessibilityRole="button"
@@ -3654,17 +3700,18 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
             >
               <Ionicons
                 name="download-outline"
-                size={16}
+                size={20}
                 color={downloadingTarget === PRODUCTION_SHEET_SENTINEL ? theme.textTertiary : theme.textSecondary}
               />
             </TouchableOpacity>
             <TouchableOpacity
+              style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
               onPress={() => openSendModal(PRODUCTION_SHEET_SENTINEL)}
               accessibilityRole="button"
               accessibilityLabel={activeScope ? `Send the ${activeScope} production sheet to the kitchen` : "Send the whole day's production sheet to the kitchen"}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons name="mail-outline" size={16} color={theme.textSecondary} />
+              <Ionicons name="mail-outline" size={20} color={theme.textSecondary} />
             </TouchableOpacity>
           </View>
         </View>
@@ -3734,6 +3781,7 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
             </Text>
             <TouchableOpacity
               onPress={toggleAllClients}
+              style={{ minHeight: 44, justifyContent: 'center' }}
               accessibilityRole="button"
               accessibilityLabel={allCollapsed ? 'Expand all clients' : 'Collapse all clients'}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -4631,6 +4679,7 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
   shellTitle: { fontFamily: legacyTypography.heading, fontSize: 20, fontWeight: '900', color: theme.text, letterSpacing: -0.3 },
   shellSubtitle: { fontSize: 12, color: theme.textSecondary, fontWeight: '600', marginTop: 2 },
   previewBtn: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -4657,6 +4706,7 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     gap: 8,
   },
   tabPill: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -4799,8 +4849,8 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     marginBottom: 8,
   },
   dateNavBtn: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     borderRadius: 16,
     backgroundColor: theme.surfaceSecondary,
     alignItems: 'center',
@@ -4874,6 +4924,7 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
   prodSubLabelRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
   prodSubLabelCount: { fontSize: 11, fontWeight: '800', color: theme.error },
   flagChip: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -5192,8 +5243,8 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     marginTop: 2,
   },
   deleteBtn: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: 12,
     backgroundColor: '#FF453A20',
     justifyContent: 'center',
@@ -5204,8 +5255,8 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     alignItems: 'center',
   },
   editBtn: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: 12,
     backgroundColor: theme.surfaceSecondary,
     justifyContent: 'center',
@@ -5498,8 +5549,8 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     borderColor: theme.border,
   },
   categoryTabActive: {
-    backgroundColor: '#22C55E',
-    borderColor: '#22C55E',
+    backgroundColor: theme.accent,
+    borderColor: theme.accent,
   },
   categoryTabText: {
     fontSize: 13,
@@ -5507,7 +5558,7 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     color: theme.textSecondary,
   },
   categoryTabTextActive: {
-    color: '#000000',
+    color: theme.onAccent,
   },
 
   // Discounts
@@ -5547,9 +5598,9 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     color: theme.text,
   },
   discountToggle: {
-    width: 48,
-    height: 28,
-    borderRadius: 14,
+    width: 52,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: theme.border,
     justifyContent: 'center',
     paddingHorizontal: 3,
@@ -5559,9 +5610,9 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     alignItems: 'flex-end',
   },
   discountToggleCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: theme.white,
   },
   discountToggleCircleOn: {
@@ -5779,19 +5830,20 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
   },
   menuItemActions: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    gap: 12,
   },
   menuEditBtn: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: 10,
     backgroundColor: theme.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
   menuDeleteBtn: {
-    width: 36,
-    height: 36,
+    width: 44,
+    height: 44,
     borderRadius: 10,
     backgroundColor: '#FF453A20',
     justifyContent: 'center',
@@ -5808,6 +5860,8 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     marginBottom: 16,
   },
   categoryPickerChip: {
+    minHeight: 44,
+    justifyContent: 'center',
     backgroundColor: theme.surfaceSecondary,
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -6060,6 +6114,7 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
   companyDetailLabel: { fontSize: 12.5, fontWeight: '700', color: theme.text },
   companyDetailSub: { fontSize: 11, color: theme.textSecondary, marginTop: 2 },
   companyDetailEditBtn: {
+    minHeight: 44,
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: theme.surface,
     borderWidth: 1, borderColor: theme.border,
@@ -6081,6 +6136,7 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
   },
   domainPillText: { fontSize: 11.5, fontWeight: '600', color: theme.text },
   addDomainPill: {
+    minHeight: 44,
     flexDirection: 'row', alignItems: 'center', gap: 4,
     borderWidth: 1, borderColor: theme.border, borderStyle: 'dashed',
     borderRadius: 8, paddingHorizontal: 9, paddingVertical: 6,

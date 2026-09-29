@@ -269,7 +269,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     gap: 6,
     marginTop: 4,
   },
-  cutoffText: { fontSize: 11.5, color: theme.textTertiary },
+  cutoffText: { fontSize: 13, color: theme.textSecondary },
   emptyState: { alignItems: 'center', paddingVertical: 36, gap: 8 },
   emptyTitle: { fontSize: 15, fontWeight: '700', color: theme.text, marginTop: 4 },
   emptySub: { fontSize: 12, color: theme.textSecondary, textAlign: 'center', lineHeight: 18 },

@@ -364,12 +364,14 @@ export default function CartScreen() {
           accessibilityRole="button"
           accessibilityLabel="Back to menu"
         >
-          <Text style={styles.backBtnText}>← Menu</Text>
+          <Ionicons name="chevron-back" size={22} color={theme.text} />
+          <Text style={styles.backBtnText}>Menu</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Cart</Text>
         {cart.length > 0 ? (
           <TouchableOpacity
             onPress={clearCart}
+            style={{ minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'flex-end' }}
             accessibilityRole="button"
             accessibilityLabel="Clear cart"
           >
@@ -429,8 +431,8 @@ const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create(
     borderBottomWidth: 1,
     borderBottomColor: theme.border,
   },
-  backBtn: { padding: 5 },
-  backBtnText: { color: theme.text, fontSize: 15, fontWeight: '700', textDecorationLine: 'underline' },
+  backBtn: { minHeight: 44, minWidth: 44, flexDirection: 'row', alignItems: 'center', marginLeft: -6 },
+  backBtnText: { color: theme.text, fontSize: 15, fontWeight: '700' },
   headerTitle: { fontFamily: legacyTypography.heading, fontSize: 18, fontWeight: '800', color: theme.text },
   clearText: { color: theme.error, fontSize: 14, fontWeight: '700' },
 
@@ -523,14 +525,14 @@ const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create(
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: theme.surfaceSecondary,
-    borderRadius: 20,
+    borderRadius: 28,
     padding: 4,
     borderWidth: 1,
     borderColor: theme.border,
   },
   qtyBtn: {
-    width: 32,
-    height: 32,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -625,7 +627,9 @@ const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create(
     marginTop: 2,
   },
   removeDiscountBtn: {
-    paddingHorizontal: 12,
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
     paddingVertical: 6,
     backgroundColor: '#FDECEA',
     borderRadius: 8,
@@ -688,8 +692,8 @@ const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create(
   },
   // cutoffNotice's background is a fixed light-amber tint in both themes
   // (see cutoffNotice above) — same reasoning, this text must stay literal.
-  cutoffNoticeText: { fontSize: 12, color: '#6B6B6B', lineHeight: 17 },
-  cutoffNoticeDate: { fontSize: 11, color: '#6B6B6B', marginTop: 4 },
+  cutoffNoticeText: { fontSize: 13, color: '#6B6B6B', lineHeight: 17 },
+  cutoffNoticeDate: { fontSize: 12, color: '#6B6B6B', marginTop: 4 },
 
   footer: {
     backgroundColor: theme.surface,
