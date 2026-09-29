@@ -4,6 +4,8 @@
   "private": true,
   "description": "Screenshot helper for verifying app rendering",
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
+    "pdfjs-dist": "^6.3.289",
     "puppeteer-core": "^25.8.0"
   }
 }

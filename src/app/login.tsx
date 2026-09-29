@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Animated, View, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, StatusBar,
@@ -6,24 +6,27 @@ import {
 } from 'react-native';
 import { Text, TextInput } from '../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
-  import { useKitchen, DeliveryAddress } from '../context/KitchenCoContext';
+  import { useKitchen } from '../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
 import KitchenLogo from '../components/KitchenLogo';
 import { Ionicons } from '@expo/vector-icons';
-import { findCompanyForEmail } from '../utils/companyMatch';
+import { previewCompanyForEmail, CompanyPreview } from '../lib/supabase/auth';
+import { listDeliveryLocations, DeliveryLocation } from '../lib/supabase/companies';
 import { ThemeColors } from '../utils/theme';
 import { haptics } from '../utils/haptics';
 
-// A real street address has a number and a name — catches the common slip
-// of typing just a suburb/city into the street field. Mirrors the same
-// check used for addresses added later from Profile.
-const isValidStreet = (value: string) => /\d/.test(value) && /[a-zA-Z]/.test(value) && value.trim().length >= 5;
-
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const ADMIN_EMAIL = 'admin@gmail.com';
+
+// Builds a low-alpha rgba from a theme hex colour, so the login glow's
+// brand-colour pop (see theme.brandPop) doesn't need its own light/dark hex
+// pair hardcoded here on top of the one already in theme.ts.
+const withAlpha = (hex: string, alpha: number) => {
+  const n = parseInt(hex.replace('#', ''), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+};
 
 export default function LoginScreen() {
-  const { login, addAddress, companies, theme, isDark } = useKitchen();
+  const { login, signInWithPassword, signUpWithPassword, theme, isDark } = useKitchen();
   const styles = useMemo(() => createStyles(theme), [theme]);
   const router = useRouter();
 
@@ -33,11 +36,31 @@ export default function LoginScreen() {
   const [name, setName] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+  // Mode states
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
+
   // Company is auto-detected from the email's domain (client's call) — no
-  // manual override. `matchedCompany` drives both sign-in's retroactive
-  // linking and signup's company assignment; only the delivery *location*
-  // (see companyAddressId below) is a real user choice.
-  const matchedCompany = useMemo(() => findCompanyForEmail(email, companies), [email, companies]);
+  // manual override. Looked up live against the real company_domains table
+  // (debounced, signup only) rather than any local list, so this preview
+  // always matches what actually happens on submit. Only the delivery
+  // *location* (see companyAddressId below) is a real user choice.
+  const [rawMatchedCompany, setMatchedCompany] = useState<CompanyPreview | null>(null);
+  useEffect(() => {
+    const trimmed = email.trim();
+    if (mode !== 'signup' || !EMAIL_REGEX.test(trimmed)) return;
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      previewCompanyForEmail(trimmed)
+        .then(result => { if (!cancelled) setMatchedCompany(result); })
+        .catch(() => { if (!cancelled) setMatchedCompany(null); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [email, mode]);
+  // Gates the fetched result so a stale match never survives an email edit
+  // or mode switch, without setting state synchronously from the effect
+  // body above (a plain derived value instead — React only ever gets a
+  // setState call from that effect's async callback).
+  const matchedCompany = mode === 'signup' && EMAIL_REGEX.test(email.trim()) ? rawMatchedCompany : null;
 
   // A company employee whose employer has more than one registered address
   // picks which one they deliver to (see companyAddressId); individuals set
@@ -55,19 +78,21 @@ export default function LoginScreen() {
   }, [matchedCompany, companyAddressId]);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
 
-  // Individuals (no matched company) put in their own delivery address
-  // during signup instead of afterwards from Profile — same fields/shape
-  // (DeliveryAddress) Profile's "+ Add" modal collects.
-  const [addressStreet, setAddressStreet] = useState('');
-  const [addressSuburb, setAddressSuburb] = useState('');
-  const [addressCity, setAddressCity] = useState('');
-  const [addressCode, setAddressCode] = useState('');
-
-  // Mode states
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  // Individuals (no matched company) pick their delivery/collection point
+  // from the businesses the client has registered, rather than typing their
+  // own address (client review, Sep 2026: "we don't have control to where
+  // deliveries will take place"). Fetched once, not per-keystroke like the
+  // company preview above, since this list doesn't depend on the email.
+  const [deliveryLocations, setDeliveryLocations] = useState<DeliveryLocation[]>([]);
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  useEffect(() => {
+    if (mode !== 'signup' || deliveryLocations.length > 0) return;
+    listDeliveryLocations().then(setDeliveryLocations).catch(() => setDeliveryLocations([]));
+  }, [mode, deliveryLocations.length]);
+  const selectedLocation = deliveryLocations.find(l => l.id === selectedLocationId) ?? null;
 
   // UI states
-  const [errors, setErrors] = useState<{ email?: string; password?: string; name?: string; confirmPassword?: string; addressStreet?: string; addressSuburb?: string; addressCity?: string }>({});
+  const [errors, setErrors] = useState<{ email?: string; password?: string; name?: string; confirmPassword?: string; deliveryLocation?: string }>({});
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [focusedField, setFocusedField] = useState<string | null>(null);
@@ -92,8 +117,6 @@ export default function LoginScreen() {
   // the header (the single biggest chunk of fixed space) and trim a couple
   // of section gaps so proportions hold up on small screens too.
   const isCompactHeight = windowHeight < 700;
-  const glowSize = isCompactHeight ? 100 : 130;
-  const glowInnerSize = isCompactHeight ? 60 : 78;
   const brandMarginBottom = isCompactHeight ? 32 : 48;
   const sectionMarginBottom = isCompactHeight ? 10 : 14;
 
@@ -103,7 +126,9 @@ export default function LoginScreen() {
   };
   const pressOut = () => Animated.spring(btnScale, { toValue: 1, useNativeDriver: true, speed: 20, bounciness: 6 }).start();
 
-  const isAdminEmail = email.trim().toLowerCase() === ADMIN_EMAIL;
+  // Whether this submit is in flight — disables the button and swaps its
+  // label so a slow connection can't be mistaken for the tap not registering.
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validateSignin = () => {
     const newErrors: { email?: string; password?: string } = {};
@@ -124,7 +149,7 @@ export default function LoginScreen() {
   };
 
   const validateSignup = () => {
-    const newErrors: { email?: string; password?: string; name?: string; confirmPassword?: string; addressStreet?: string; addressSuburb?: string; addressCity?: string } = {};
+    const newErrors: { email?: string; password?: string; name?: string; confirmPassword?: string; deliveryLocation?: string } = {};
     const trimmedEmail = email.trim();
 
     if (!name.trim()) {
@@ -149,66 +174,73 @@ export default function LoginScreen() {
       newErrors.confirmPassword = 'Passwords do not match';
     }
 
-    // Individuals put in their delivery address now instead of later from
-    // Profile; company staff deliver to a registered company address instead.
-    if (!matchedCompany) {
-      if (!addressStreet.trim() || !isValidStreet(addressStreet)) {
-        newErrors.addressStreet = 'Include the street number and name';
-      }
-      if (!addressSuburb.trim()) {
-        newErrors.addressSuburb = 'Please enter your suburb';
-      }
-      if (!addressCity.trim()) {
-        newErrors.addressCity = 'Please enter your city';
-      }
+    // Individuals pick their delivery/collection point now instead of
+    // setting it up later from Profile; company staff deliver to a
+    // registered company address instead.
+    if (!matchedCompany && !selectedLocationId) {
+      newErrors.deliveryLocation = 'Please select a delivery location';
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSignin = () => {
-    if (validateSignin()) {
-      const role = isAdminEmail ? 'admin' : 'customer';
-      // Re-check the domain on every sign-in too, so a company registered
-      // after someone's original signup still gets linked retroactively.
-      login(email.trim(), role, undefined, matchedCompany ? 'company' : undefined, matchedCompany?.name);
-      // Admins land on Kitchen Controls — the customer Menu tab isn't part of their account.
-      router.replace(role === 'admin' ? '/admin' : '/');
-    } else {
+  const handleSignin = async () => {
+    if (!validateSignin()) { haptics.warning(); return; }
+    setIsSubmitting(true);
+    try {
+      // Role/company are resolved server-side (real profiles.role, and a
+      // re-check of the email's domain) — _layout's own redirect takes over
+      // once the context's `user` is set, so there's nothing to do here on
+      // success.
+      await signInWithPassword(email.trim(), password);
+    } catch (err) {
       haptics.warning();
+      const message = String((err as { message?: string })?.message || '').toLowerCase();
+      setErrors({
+        password: message.includes('invalid login credentials')
+          ? 'Incorrect email or password'
+          : 'Sign-in failed — please try again',
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleSignup = () => {
-    if (validateSignup()) {
-      const role = isAdminEmail ? 'admin' : 'customer';
+  const handleSignup = async () => {
+    if (!validateSignup()) { haptics.warning(); return; }
+    setIsSubmitting(true);
+    try {
       // Whether this is a company account is driven entirely by the
-      // work-email domain match — no manual override.
-      const isCompanyAccount = !!matchedCompany;
-      login(
+      // work-email domain match — no manual override. Individuals' picked
+      // delivery location is saved for real here (as their own address, with
+      // its distance already known); company staff deliver to a registered
+      // company address instead (their pick, if their employer has more
+      // than one, is passed through as the preferred address).
+      await signUpWithPassword(
         email.trim(),
-        role,
+        password,
         name.trim(),
-        isCompanyAccount ? 'company' : 'individual',
-        matchedCompany?.name,
-        resolvedCompanyAddressId
+        matchedCompany || !selectedLocation ? undefined : {
+          label: selectedLocation.companyName,
+          street: selectedLocation.unit ? `${selectedLocation.unit}, ${selectedLocation.street}` : selectedLocation.street,
+          suburb: selectedLocation.suburb,
+          city: selectedLocation.city,
+          code: selectedLocation.code,
+          distanceKm: selectedLocation.distanceKm ?? undefined,
+        },
+        matchedCompany ? resolvedCompanyAddressId : undefined
       );
-      if (!isCompanyAccount) {
-        const newAddress: DeliveryAddress = {
-          id: `addr-${Date.now()}`,
-          label: 'Home',
-          street: addressStreet.trim(),
-          suburb: addressSuburb.trim(),
-          city: addressCity.trim(),
-          code: addressCode.trim(),
-          isDefault: true,
-        };
-        addAddress(newAddress);
-      }
-      router.replace(role === 'admin' ? '/admin' : '/');
-    } else {
+    } catch (err) {
       haptics.warning();
+      const message = String((err as { message?: string })?.message || '').toLowerCase();
+      setErrors({
+        email: message.includes('already registered') || message.includes('already exists')
+          ? 'An account with this email already exists'
+          : 'Sign-up failed — please try again',
+      });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -367,7 +399,7 @@ export default function LoginScreen() {
           <View style={styles.companyDetectedRow}>
             <Ionicons name="business" size={14} color={theme.success} />
             <Text style={styles.companyDetectedText}>
-              Joining as <Text style={styles.companyDetectedName}>{matchedCompany.name}</Text>
+              Joining as <Text style={styles.companyDetectedName}>{matchedCompany.company_name}</Text>
             </Text>
           </View>
         ) : email.includes('@') ? (
@@ -378,84 +410,28 @@ export default function LoginScreen() {
         ) : null}
       </View>
 
-      {/* Individuals deliver to their own address, collected here up front
-          instead of afterwards from Profile; company staff deliver to a
-          registered company address (picked below when there's more than
-          one), so this is skipped entirely once a company match is found. */}
+      {/* Individuals pick which registered business they'll collect/deliver
+          from, instead of typing their own address (client review, Sep
+          2026) — company staff deliver to a registered company address
+          (picked below when there's more than one) instead, so this is
+          skipped entirely once a company match is found. */}
       {!matchedCompany && (
-        <>
-          <View style={styles.inputGroup}>
-            <View style={[styles.inputWrapper, focusedField === 'addressStreet' && styles.inputWrapperFocused, errors.addressStreet ? styles.inputWrapperError : null]}>
-              <TextInput
-                style={styles.input}
-                placeholder="Street Address (e.g., 12 Oak Street)"
-                placeholderTextColor={theme.textTertiary}
-                value={addressStreet}
-                onChangeText={(val) => { setAddressStreet(val); if (errors.addressStreet) setErrors({ ...errors, addressStreet: undefined }); }}
-                onFocus={() => setFocusedField('addressStreet')}
-                onBlur={() => setFocusedField(null)}
-                autoCorrect={false}
-                autoComplete="street-address"
-                returnKeyType="next"
-                accessibilityLabel="Street address"
-              />
-            </View>
-            {errors.addressStreet && <Text style={styles.fieldError}>{errors.addressStreet}</Text>}
-          </View>
-
-          <View style={styles.inputGroup}>
-            <View style={[styles.inputWrapper, focusedField === 'addressSuburb' && styles.inputWrapperFocused, errors.addressSuburb ? styles.inputWrapperError : null]}>
-              <TextInput
-                style={styles.input}
-                placeholder="Suburb"
-                placeholderTextColor={theme.textTertiary}
-                value={addressSuburb}
-                onChangeText={(val) => { setAddressSuburb(val); if (errors.addressSuburb) setErrors({ ...errors, addressSuburb: undefined }); }}
-                onFocus={() => setFocusedField('addressSuburb')}
-                onBlur={() => setFocusedField(null)}
-                autoCorrect={false}
-                returnKeyType="next"
-                accessibilityLabel="Suburb"
-              />
-            </View>
-            {errors.addressSuburb && <Text style={styles.fieldError}>{errors.addressSuburb}</Text>}
-          </View>
-
-          <View style={styles.inputGroup}>
-            <View style={[styles.inputWrapper, focusedField === 'addressCity' && styles.inputWrapperFocused, errors.addressCity ? styles.inputWrapperError : null]}>
-              <TextInput
-                style={styles.input}
-                placeholder="City"
-                placeholderTextColor={theme.textTertiary}
-                value={addressCity}
-                onChangeText={(val) => { setAddressCity(val); if (errors.addressCity) setErrors({ ...errors, addressCity: undefined }); }}
-                onFocus={() => setFocusedField('addressCity')}
-                onBlur={() => setFocusedField(null)}
-                autoCorrect={false}
-                returnKeyType="next"
-                accessibilityLabel="City"
-              />
-            </View>
-            {errors.addressCity && <Text style={styles.fieldError}>{errors.addressCity}</Text>}
-          </View>
-
-          <View style={styles.inputGroup}>
-            <View style={[styles.inputWrapper, focusedField === 'addressCode' && styles.inputWrapperFocused]}>
-              <TextInput
-                style={styles.input}
-                placeholder="Postal Code (optional)"
-                placeholderTextColor={theme.textTertiary}
-                value={addressCode}
-                onChangeText={setAddressCode}
-                onFocus={() => setFocusedField('addressCode')}
-                onBlur={() => setFocusedField(null)}
-                keyboardType="numeric"
-                returnKeyType="next"
-                accessibilityLabel="Postal code"
-              />
-            </View>
-          </View>
-        </>
+        <View style={styles.inputGroup}>
+          <TouchableOpacity
+            style={[styles.inputWrapper, styles.selectWrapper, errors.deliveryLocation ? styles.inputWrapperError : null]}
+            onPress={() => { haptics.selection(); setShowLocationPicker(true); }}
+            accessibilityRole="button"
+            accessibilityLabel="Select your delivery location"
+          >
+            <Text style={[styles.selectValue, !selectedLocation && styles.selectPlaceholder]} numberOfLines={1}>
+              {selectedLocation
+                ? `${selectedLocation.companyName} — ${selectedLocation.street}, ${selectedLocation.suburb}`
+                : 'Select your delivery location'}
+            </Text>
+            <Ionicons name="chevron-down" size={16} color={theme.textTertiary} />
+          </TouchableOpacity>
+          {errors.deliveryLocation && <Text style={styles.fieldError}>{errors.deliveryLocation}</Text>}
+        </View>
       )}
 
       <View style={styles.inputGroup}>
@@ -598,6 +574,7 @@ export default function LoginScreen() {
   };
 
   const isButtonDisabled = () => {
+    if (isSubmitting) return true;
     switch (mode) {
       case 'signin': return !email.trim() || !password;
       case 'signup': return !name.trim() || !email.trim() || !password || !confirmPassword;
@@ -635,10 +612,6 @@ export default function LoginScreen() {
           >
             {/* Brand */}
             <View style={[styles.brandSection, { marginTop: brandTopOffset, marginBottom: brandMarginBottom }]}>
-              <View style={[styles.brandGlow, { width: glowSize, height: glowSize, top: -glowSize * 0.17 }]} pointerEvents="none">
-                <View style={[styles.glowRing, styles.glowRingOuter, { width: glowSize, height: glowSize }]} />
-                <View style={[styles.glowRing, styles.glowRingInner, { width: glowInnerSize, height: glowInnerSize }]} />
-              </View>
               <KitchenLogo compact variant={isDark ? 'onDark' : 'onLight'} />
             </View>
 
@@ -663,14 +636,6 @@ export default function LoginScreen() {
 
               {renderContent()}
 
-              {/* Admin hint */}
-              {isAdminEmail && mode !== 'forgot' && (
-                <View style={styles.adminHint}>
-                  <Text style={styles.adminHintIcon}>👑</Text>
-                  <Text style={styles.adminHintText}>Admin access detected</Text>
-                </View>
-              )}
-
               {!(mode === 'forgot' && forgotSubmitted) && (
                 <Animated.View style={{ transform: [{ scale: btnScale }] }}>
                   <TouchableOpacity
@@ -682,7 +647,7 @@ export default function LoginScreen() {
                     disabled={isButtonDisabled()}
                     accessibilityRole="button"
                     accessibilityLabel={
-                      mode === 'signin' ? (isAdminEmail ? 'Sign in as Admin' : 'Sign In')
+                      mode === 'signin' ? 'Sign In'
                         : mode === 'signup' ? 'Get Started'
                         : 'Send Reset Link'
                     }
@@ -695,8 +660,8 @@ export default function LoginScreen() {
                       <Ionicons name="rocket" size={16} color={theme.onAccent} style={styles.continueBtnLeadIcon} />
                     )}
                     <Text style={[styles.continueBtnText, isButtonDisabled() && styles.continueBtnTextDisabled]}>
-                      {mode === 'signin' && (isAdminEmail ? 'SIGN IN AS ADMIN' : 'SECURE LOGIN')}
-                      {mode === 'signup' && 'GET STARTED'}
+                      {mode === 'signin' && (isSubmitting ? 'SIGNING IN…' : 'SECURE LOGIN')}
+                      {mode === 'signup' && (isSubmitting ? 'CREATING ACCOUNT…' : 'GET STARTED')}
                       {mode === 'forgot' && 'Send Reset Link'}
                     </Text>
                     {mode === 'forgot' && !isButtonDisabled() && (
@@ -704,20 +669,6 @@ export default function LoginScreen() {
                     )}
                   </TouchableOpacity>
                 </Animated.View>
-              )}
-
-              {__DEV__ && (
-                <TouchableOpacity
-                  style={styles.devBypassBtn}
-                  onPress={() => {
-                    login('dev-bypass@example.com', 'customer', 'Dev Bypass', 'individual');
-                    router.replace('/');
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Developer: skip login"
-                >
-                  <Text style={styles.devBypassBtnText}>DEV: Skip Login</Text>
-                </TouchableOpacity>
               )}
             </View>
 
@@ -760,19 +711,23 @@ export default function LoginScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Delivery-site picker — only reachable when the auto-detected
-          company has more than one registered address (see
-          matchedCompany.addresses above). Every registered site, not just a
-          fixed primary/alternate pair (client request, Sep 2026: "one
-          company can have many addresses"). Company itself is not picked
-          here — it's auto-detected by email domain (client's later call). */}
+      {/* Delivery-site picker. Two independent uses, never both at once
+          (matchedCompany and the individual flow are mutually exclusive):
+          company staff pick among their own employer's registered addresses
+          (matchedCompany.addresses — client request, Sep 2026: "one company
+          can have many addresses"); individuals instead pick their
+          collection point from every business/delivery address the client
+          has registered (deliveryLocations, client review, Sep 2026: "we
+          don't have control to where deliveries will take place"), so each
+          row also shows which business it belongs to. Company itself is
+          never picked here either way — it's auto-detected by email domain. */}
       <Modal visible={showLocationPicker} animationType="slide" transparent onRequestClose={() => setShowLocationPicker(false)}>
         <TouchableOpacity style={styles.pickerOverlay} activeOpacity={1} onPress={() => setShowLocationPicker(false)}>
           <TouchableOpacity activeOpacity={1} style={styles.pickerSheet} onPress={() => {}}>
             <View style={styles.pickerHandle} />
             <Text style={styles.pickerTitle}>Select your delivery location</Text>
-            <View style={styles.pickerList}>
-              {matchedCompany?.addresses.map(addr => (
+            <ScrollView style={styles.pickerList}>
+              {matchedCompany ? matchedCompany.addresses.map(addr => (
                 <TouchableOpacity
                   key={addr.id}
                   style={styles.pickerRow}
@@ -796,8 +751,40 @@ export default function LoginScreen() {
                     </View>
                   )}
                 </TouchableOpacity>
+              )) : deliveryLocations.map(loc => (
+                <TouchableOpacity
+                  key={loc.id}
+                  style={styles.pickerRow}
+                  onPress={() => {
+                    haptics.selection();
+                    setSelectedLocationId(loc.id);
+                    if (errors.deliveryLocation) setErrors({ ...errors, deliveryLocation: undefined });
+                    setShowLocationPicker(false);
+                  }}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: selectedLocationId === loc.id }}
+                >
+                  <View style={styles.pickerRowIconWrap}>
+                    <Ionicons name="business" size={16} color={theme.textSecondary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pickerRowText} numberOfLines={1}>{loc.companyName}</Text>
+                    <Text style={styles.pickerRowSubtext} numberOfLines={1}>
+                      {loc.unit ? `${loc.unit}, ` : ''}{loc.street}, {loc.suburb}
+                    </Text>
+                  </View>
+                  {selectedLocationId === loc.id && (
+                    <View style={styles.pickerCheckBadge}>
+                      <Ionicons name="checkmark" size={13} color={theme.onAccent} />
+                    </View>
+                  )}
+                </TouchableOpacity>
               ))}
-            </View>
+              {!matchedCompany && deliveryLocations.length === 0 && (
+                <Text style={styles.pickerEmptyText}>No delivery locations are available yet — please check back soon.</Text>
+              )}
+            </ScrollView>
             <TouchableOpacity style={styles.pickerCancelBtn} onPress={() => setShowLocationPicker(false)} accessibilityRole="button">
               <Text style={styles.pickerCancelText}>Cancel</Text>
             </TouchableOpacity>
@@ -825,15 +812,18 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     justifyContent: 'center',
   },
   glowRing: { position: 'absolute', borderRadius: 999 },
+  // The client's CI-colour "pop" (client review, Sep 2026, repeated
+  // 2026-09-15) — this glow was plain black-tinted before; everything else
+  // on this screen, including the primary button, stays black/white.
   glowRingOuter: {
     width: 130,
     height: 130,
-    backgroundColor: '#0000000A',
+    backgroundColor: withAlpha(theme.brandPop, 0.05),
   },
   glowRingInner: {
     width: 78,
     height: 78,
-    backgroundColor: '#00000008',
+    backgroundColor: withAlpha(theme.brandPop, 0.09),
   },
 
   // Form
@@ -901,9 +891,11 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
     marginBottom: 14,
   },
   pickerTitle: { fontSize: 13, fontWeight: '700', color: theme.textSecondary, textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 4, paddingHorizontal: 4 },
-  // Capped so a long company list scrolls inside the sheet instead of the
-  // sheet itself growing past a comfortable height.
-  pickerList: { flexGrow: 0 },
+  // Fixed cap (not just the sheet's own maxHeight) so this actually scrolls
+  // once the individual-flow list (every registered business, not just one
+  // company's handful of sites) outgrows the sheet, instead of overflowing
+  // past it uncontained — a plain View has no intrinsic scroll bound here.
+  pickerList: { flexGrow: 0, maxHeight: 320 },
   pickerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -933,21 +925,7 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   },
   pickerCancelBtn: { paddingVertical: 14, alignItems: 'center', marginTop: 4 },
   pickerCancelText: { fontSize: 14, fontWeight: '700', color: theme.textSecondary },
-
-  // Admin hint
-  adminHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF8E1',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#F0DFA0',
-    marginTop: 4,
-  },
-  adminHintIcon: { fontSize: 18, marginRight: 10 },
-  adminHintText: { color: '#8A6D00', fontSize: 14, fontWeight: '700' },
+  pickerEmptyText: { fontSize: 13, color: theme.textSecondary, textAlign: 'center', paddingVertical: 20 },
 
   // Options
   optionsRow: {
@@ -1010,16 +988,6 @@ const createStyles = (theme: ThemeColors) => StyleSheet.create({
   continueBtnTextDisabled: { color: theme.textTertiary },
   continueBtnIcon: { marginLeft: 8 },
   continueBtnLeadIcon: { marginRight: 8 },
-  devBypassBtn: {
-    marginTop: 10,
-    paddingVertical: 10,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: theme.error,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-  },
-  devBypassBtnText: { color: theme.error, fontSize: 12, fontWeight: '700' },
 
   // Switch
   switchSection: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },

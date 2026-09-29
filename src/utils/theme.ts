@@ -12,6 +12,19 @@ export interface ThemeColors {
   accent: string;
   /** Foreground color for content placed on top of `accent` (e.g. primary button text) — flips with accent so it stays legible in both modes. */
   onAccent: string;
+  /**
+   * The CI colour "pop" the client asked for on top of the black-and-white
+   * look (client review, Sep 2026 — repeated 2026-09-15: "bring in a bit of
+   * colour... pops of colour to just liven it up but not too much").
+   * Deliberately separate from `accent`, which stays black/white and keeps
+   * driving every primary button/CTA — this is only for a handful of narrow,
+   * mostly-decorative spots (active tab bar icon, the login glow, the
+   * "Ordering for <day>" bar) so the app still *reads* as black and white
+   * everywhere else. Sourced from the client's own CI palette (the brand
+   * blue from their 29-page moodboard PDF, #3571B7/#B6DFF8 — see
+   * brand-and-clients memory), not a new guess.
+   */
+  brandPop: string;
   success: string;
   warning: string;
   error: string;
@@ -50,6 +63,7 @@ export const lightColors: ThemeColors = {
   textTertiary: '#9E9E9E',
   accent: '#000000',
   onAccent: '#FFFFFF',
+  brandPop: '#3571B7',
   success: '#1DA836',
   warning: '#E8A100',
   error: '#AF1718',
@@ -81,6 +95,7 @@ export const darkColors: ThemeColors = {
   textTertiary: '#6B6B6B',
   accent: '#FFFFFF',
   onAccent: '#000000',
+  brandPop: '#B6DFF8',
   success: '#22C55E',
   warning: '#F5A623',
   error: '#CB6869',

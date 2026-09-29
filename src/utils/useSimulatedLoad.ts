@@ -4,15 +4,13 @@ const INITIAL_LOAD_MS = 400;
 const REFRESH_MS = 500;
 
 /**
- * Stands in for a real network fetch. All menu/order data today is local and
- * synchronous, so there's no actual latency to show — but the screens that
- * use this (Menu, Activity, Tracker) are the ones that will eventually read
- * from a real backend, and their loading/refresh UI needs to exist and be
- * exercised now rather than bolted on later. `refresh()` is the single point
- * where a real fetch would go — swap its body for an awaited API call and
- * every screen using this hook keeps working unchanged.
+ * Stands in for a real network fetch. Menu data now comes from Supabase (see
+ * KitchenCoContext's own `menusLoading`) — `onRefresh`, when passed, is the
+ * real awaited API call this hook's own comment anticipated; the timeout
+ * here just keeps the shimmer up for a perceptible minimum duration on top
+ * of it so a fast response doesn't flash the skeleton for one frame.
  */
-export function useSimulatedLoad() {
+export function useSimulatedLoad(onRefresh?: () => Promise<void>) {
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const mounted = useRef(true);
@@ -30,9 +28,10 @@ export function useSimulatedLoad() {
 
   const refresh = () => {
     setRefreshing(true);
-    setTimeout(() => {
+    const minDuration = new Promise<void>(resolve => setTimeout(resolve, REFRESH_MS));
+    Promise.all([onRefresh?.() ?? Promise.resolve(), minDuration]).finally(() => {
       if (mounted.current) setRefreshing(false);
-    }, REFRESH_MS);
+    });
   };
 
   return { isLoading, refreshing, refresh };

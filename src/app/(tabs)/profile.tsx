@@ -23,6 +23,7 @@ import {
   DeliveryAddress,
 } from "../../context/KitchenCoContext";
 import { useRouter } from "expo-router";
+import { listDeliveryLocations, DeliveryLocation } from "../../lib/supabase/companies";
 import { calculateDeliveryFee } from "../../utils/deliveryHelpers";
 import { ThemeColors } from "../../utils/theme";
 import { haptics } from "../../utils/haptics";
@@ -79,10 +80,25 @@ export default function TabProfileScreen() {
 
   const [showAddressModal, setShowAddressModal] = useState(false);
   const [addressLabel, setAddressLabel] = useState("");
-  const [addressStreet, setAddressStreet] = useState("");
-  const [addressSuburb, setAddressSuburb] = useState("");
-  const [addressCity, setAddressCity] = useState("");
-  const [addressCode, setAddressCode] = useState("");
+  // Individuals pick their delivery/collection point from the businesses the
+  // client has registered, rather than typing their own address (client
+  // review, Sep 2026: "we don't have control to where deliveries will take
+  // place") — same dropdown source as signup (see login.tsx). Fetched lazily,
+  // the first time the modal opens, rather than on every profile visit.
+  const [deliveryLocations, setDeliveryLocations] = useState<DeliveryLocation[]>([]);
+  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const selectedLocation = deliveryLocations.find(l => l.id === selectedLocationId) ?? null;
+  const openAddressModal = () => {
+    setShowAddressModal(true);
+    if (deliveryLocations.length === 0 && !loadingLocations) {
+      setLoadingLocations(true);
+      listDeliveryLocations()
+        .then(setDeliveryLocations)
+        .catch(() => setDeliveryLocations([]))
+        .finally(() => setLoadingLocations(false));
+    }
+  };
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
   const [showDeleteCardConfirm, setShowDeleteCardConfirm] = useState<
     string | null
@@ -94,32 +110,23 @@ export default function TabProfileScreen() {
     router.replace("/login");
   };
 
-  // A real street address has a number and a name — catches the common slip
-  // of typing just a suburb/city into the street field. No delivery-fee
-  // distance is collected from customers here anymore; that's set later
-  // (admin-side) once the address is on file.
-  const isValidStreet = (value: string) => /\d/.test(value) && /[a-zA-Z]/.test(value) && value.trim().length >= 5;
-
   const handleAddAddress = () => {
-    if (!isValidStreet(addressStreet) || !addressSuburb.trim() || !addressCity.trim())
-      return;
+    if (!selectedLocation) return;
 
     const newAddress: DeliveryAddress = {
       id: `addr-${Date.now()}`,
-      label: addressLabel.trim() || "Home",
-      street: addressStreet.trim(),
-      suburb: addressSuburb.trim(),
-      city: addressCity.trim(),
-      code: addressCode.trim(),
+      label: addressLabel.trim() || selectedLocation.companyName,
+      street: selectedLocation.unit ? `${selectedLocation.unit}, ${selectedLocation.street}` : selectedLocation.street,
+      suburb: selectedLocation.suburb,
+      city: selectedLocation.city,
+      code: selectedLocation.code,
+      distanceKm: selectedLocation.distanceKm ?? undefined,
       isDefault: savedAddresses.length === 0,
     };
 
     addAddress(newAddress);
     setAddressLabel("");
-    setAddressStreet("");
-    setAddressSuburb("");
-    setAddressCity("");
-    setAddressCode("");
+    setSelectedLocationId(null);
     setShowAddressModal(false);
   };
 
@@ -165,7 +172,7 @@ export default function TabProfileScreen() {
       style={styles.container}
     >
       {/* Status bar */}
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={isDark ? theme.background : '#F7F2E8'} />
+      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={isDark ? theme.background : '#FDF9E9'} />
             <ScrollView contentContainerStyle={styles.scrollContent}>
                 {/* Profile Card — compact identity + stats */}
         <View style={styles.profileCard}>
@@ -333,7 +340,7 @@ export default function TabProfileScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Delivery Addresses</Text>
             <TouchableOpacity
-              onPress={() => setShowAddressModal(true)}
+              onPress={openAddressModal}
               style={styles.addAddressBtn}
             >
               <Text style={styles.addAddressBtnText}>+ Add</Text>
@@ -349,7 +356,7 @@ export default function TabProfileScreen() {
           {savedAddresses.length === 0 && !companyAddress ? (
             <TouchableOpacity
               style={styles.emptyAddressCard}
-              onPress={() => setShowAddressModal(true)}
+              onPress={openAddressModal}
             >
               <Text style={styles.emptyAddressIcon}>📍</Text>
               <Text style={styles.emptyAddressText}>No delivery address yet</Text>
@@ -621,7 +628,7 @@ export default function TabProfileScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Add Delivery Address</Text>
               <TouchableOpacity
-                onPress={() => setShowAddressModal(false)}
+                onPress={() => { setShowAddressModal(false); setSelectedLocationId(null); }}
                 accessibilityRole="button"
                 accessibilityLabel="Close"
               >
@@ -630,69 +637,56 @@ export default function TabProfileScreen() {
             </View>
 
             <View style={styles.addressForm}>
-              <Text style={styles.formLabel}>Label</Text>
+              <Text style={styles.formLabel}>Nickname (optional)</Text>
               <TextInput
                 style={styles.formInput}
-                placeholder="e.g. Home, Work, etc."
+                placeholder="e.g. Work pickup"
                 placeholderTextColor={theme.textTertiary}
                 value={addressLabel}
                 onChangeText={setAddressLabel}
               />
 
-              <Text style={styles.formLabel}>Street Address *</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="e.g. 12 Oak Street"
-                placeholderTextColor={theme.textTertiary}
-                value={addressStreet}
-                onChangeText={setAddressStreet}
-              />
-              {addressStreet.trim().length > 0 && !isValidStreet(addressStreet) && (
-                <Text style={styles.formError}>Include the street number and name</Text>
+              {/* Individuals pick their collection point from the businesses
+                  the client has registered, rather than typing their own
+                  address (client review, Sep 2026: "we don't have control to
+                  where deliveries will take place") — same source as signup. */}
+              <Text style={styles.formLabel}>Delivery Location *</Text>
+              {loadingLocations ? (
+                <Text style={styles.formHelperText}>Loading locations…</Text>
+              ) : deliveryLocations.length === 0 ? (
+                <Text style={styles.formHelperText}>No delivery locations are available yet — please check back soon.</Text>
+              ) : (
+                <ScrollView style={styles.locationList} nestedScrollEnabled>
+                  {deliveryLocations.map(loc => (
+                    <TouchableOpacity
+                      key={loc.id}
+                      style={styles.locationRow}
+                      onPress={() => setSelectedLocationId(loc.id)}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: selectedLocationId === loc.id }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.locationRowText}>{loc.companyName}</Text>
+                        <Text style={styles.locationRowSubtext}>
+                          {loc.unit ? `${loc.unit}, ` : ''}{loc.street}, {loc.suburb}
+                        </Text>
+                      </View>
+                      {selectedLocationId === loc.id && (
+                        <Text style={styles.locationCheckmark}>✓</Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
               )}
-
-              <Text style={styles.formLabel}>Suburb *</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="Suburb"
-                placeholderTextColor={theme.textTertiary}
-                value={addressSuburb}
-                onChangeText={setAddressSuburb}
-              />
-
-              <Text style={styles.formLabel}>City *</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="City"
-                placeholderTextColor={theme.textTertiary}
-                value={addressCity}
-                onChangeText={setAddressCity}
-              />
-
-              <Text style={styles.formLabel}>Postal Code</Text>
-              <TextInput
-                style={styles.formInput}
-                placeholder="e.g. 2128"
-                placeholderTextColor={theme.textTertiary}
-                value={addressCode}
-                onChangeText={setAddressCode}
-                keyboardType="numeric"
-              />
 
               <TouchableOpacity
                 style={[
                   styles.saveAddressBtn,
-                  (!isValidStreet(addressStreet) ||
-                    !addressSuburb.trim() ||
-                    !addressCity.trim()) &&
-                    styles.saveAddressBtnDisabled,
+                  !selectedLocation && styles.saveAddressBtnDisabled,
                 ]}
                 onPress={handleAddAddress}
-                disabled={
-                  !isValidStreet(addressStreet) ||
-                  !addressSuburb.trim() ||
-                  !addressCity.trim()
-                }
+                disabled={!selectedLocation}
               >
                 <Text style={styles.saveAddressBtnText}>Save Address</Text>
               </TouchableOpacity>
@@ -787,11 +781,12 @@ export default function TabProfileScreen() {
 
 // Theme-driven styles — see src/utils/theme.ts for the ThemeColors palette.
 const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create({
-  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
-  // stark white — light mode only, matching how that palette never carried
-  // the warmth into dark mode either. Scoped to this screen's own canvas;
-  // cards/surfaces stay on the current theme's colors untouched.
-  container: { flex: 1, backgroundColor: isDark ? theme.background : '#F7F2E8' },
+  // A warm cream backdrop instead of stark white — light mode only, matching
+  // how that palette never carried the warmth into dark mode either. Scoped
+  // to this screen's own canvas; cards/surfaces stay on the current theme's
+  // colors untouched. Sourced from the client's own CI palette: a 25% tint
+  // of the Mediterranean Pantry cream (#F5E8A6) blended into white.
+  container: { flex: 1, backgroundColor: isDark ? theme.background : '#FDF9E9' },
     scrollContent: {
     paddingBottom: 32,
     // Keep cards at a readable width on tablet-sized frames instead of
@@ -1142,6 +1137,21 @@ const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create(
   },
   saveAddressBtnDisabled: { opacity: 0.4 },
   saveAddressBtnText: { color: theme.onAccent, fontSize: 16, fontWeight: "800" },
+  formHelperText: { fontSize: 13, color: theme.textSecondary },
+  // Fixed cap so a long list of registered businesses scrolls inside the
+  // modal instead of pushing "Save Address" off the bottom.
+  locationList: { maxHeight: 220, borderWidth: 1, borderColor: theme.border, borderRadius: 14 },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.border,
+  },
+  locationRowText: { fontSize: 14, fontWeight: "700", color: theme.text },
+  locationRowSubtext: { fontSize: 12, color: theme.textSecondary, marginTop: 2 },
+  locationCheckmark: { color: theme.accent, fontSize: 16, fontWeight: "800", marginLeft: 8 },
 
   // Delete Confirm Modal
   deleteConfirmCard: {

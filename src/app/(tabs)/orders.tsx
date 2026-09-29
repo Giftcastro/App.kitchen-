@@ -104,12 +104,19 @@ const TIMELINE_STEPS: {
 ];
 
 export default function TabOrdersScreen() {
-  const { orders, addToCart, theme, isDark, user, submitOrderRating, reportOrderNonDelivery } = useKitchen();
-  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
-  // stark white — light mode only, matching how that palette never carried
-  // the warmth into dark mode either. Scoped to this screen's own canvas;
-  // cards/surfaces stay on the current theme's colors untouched.
-  const screenBackground = isDark ? theme.background : '#F7F2E8';
+  const { orders: allOrders, addToCart, theme, isDark, user, submitOrderRating, reportOrderNonDelivery } = useKitchen();
+  // `orders` in context holds everyone's orders (seeded demo personas plus
+  // every real customer's rows merged in on login) — admin genuinely needs
+  // that full list, but a customer must only ever see their own. Nothing
+  // filtered this before, so every customer saw every demo persona's and
+  // every other real customer's orders here.
+  const orders = useMemo(() => allOrders.filter(o => o.userEmail === user?.email), [allOrders, user?.email]);
+  // A warm cream backdrop instead of stark white — light mode only, matching
+  // how that palette never carried the warmth into dark mode either. Scoped
+  // to this screen's own canvas; cards/surfaces stay on the current theme's
+  // colors untouched. Sourced from the client's own CI palette: a 25% tint
+  // of the Mediterranean Pantry cream (#F5E8A6) blended into white.
+  const screenBackground = isDark ? theme.background : '#FDF9E9';
   const styles = useMemo(() => createStyles(theme), [theme]);
   const { isLoading, refreshing, refresh } = useSimulatedLoad();
   const router = useRouter();
@@ -178,13 +185,26 @@ export default function TabOrdersScreen() {
   const [disputeOrder, setDisputeOrder] = useState<Order | null>(null);
   const [draftRatings, setDraftRatings] = useState<Record<string, number>>({});
   const [draftFeedbacks, setDraftFeedbacks] = useState<Record<string, string>>({});
+  // A real order's rating now hits the database (submit_order_rating in
+  // 0003), which can genuinely fail (already rated, network) — tracked per
+  // order so only that card's button shows "Submitting…", and surfaced via
+  // the modal below rather than Alert.alert (a no-op on web).
+  const [submittingRatingFor, setSubmittingRatingFor] = useState<string | null>(null);
+  const [ratingError, setRatingError] = useState<string | null>(null);
 
-  const handleRatingSubmit = (orderId: string) => {
+  const handleRatingSubmit = async (orderId: string) => {
     const stars = draftRatings[orderId] || 0;
     if (stars === 0) return;
-    submitOrderRating(orderId, stars, draftFeedbacks[orderId]);
-    setDraftRatings(prev => { const next = { ...prev }; delete next[orderId]; return next; });
-    setDraftFeedbacks(prev => { const next = { ...prev }; delete next[orderId]; return next; });
+    setSubmittingRatingFor(orderId);
+    try {
+      await submitOrderRating(orderId, stars, draftFeedbacks[orderId]);
+      setDraftRatings(prev => { const next = { ...prev }; delete next[orderId]; return next; });
+      setDraftFeedbacks(prev => { const next = { ...prev }; delete next[orderId]; return next; });
+    } catch (e) {
+      setRatingError(e instanceof Error ? e.message : 'Could not submit your rating — check your connection and try again.');
+    } finally {
+      setSubmittingRatingFor(null);
+    }
   };
 
   /**
@@ -677,8 +697,11 @@ export default function TabOrdersScreen() {
                     style={styles.submitRatingBtn}
                     accessibilityRole="button"
                     accessibilityLabel="Submit rating"
+                    disabled={submittingRatingFor === item.id}
                   >
-                    <Text style={styles.submitRatingBtnText}>Submit Rating</Text>
+                    <Text style={styles.submitRatingBtnText}>
+                      {submittingRatingFor === item.id ? 'Submitting…' : 'Submit Rating'}
+                    </Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -860,6 +883,29 @@ export default function TabOrdersScreen() {
             <TouchableOpacity
               style={styles.explainBtn}
               onPress={() => setShowCantReorder(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Got it, dismiss"
+            >
+              <Text style={styles.explainBtnText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={Boolean(ratingError)}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setRatingError(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.explainCard}>
+            <Text style={styles.explainIcon}>⚠️</Text>
+            <Text style={styles.explainTitle}>Could not submit rating</Text>
+            <Text style={styles.explainText}>{ratingError}</Text>
+            <TouchableOpacity
+              style={styles.explainBtn}
+              onPress={() => setRatingError(null)}
               accessibilityRole="button"
               accessibilityLabel="Got it, dismiss"
             >

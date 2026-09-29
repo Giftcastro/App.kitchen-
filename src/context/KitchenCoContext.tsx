@@ -2,11 +2,17 @@ import React, { createContext, useContext, useState, Dispatch, SetStateAction, u
 import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeColors, ThemeMode, ResolvedScheme, getThemeColors } from '../utils/theme';
-import { buildMenuFromStaticData, NormalizedMenuItem, AddOnOption } from '../utils/menuNormalize';
+import { NormalizedMenuItem, AddOnOption } from '../utils/menuNormalize';
 import { syncOrderReminder, cancelOrderReminder, showAnnouncementNotification } from '../utils/orderReminders';
 import { calculateDeliveryFee, getItemDueDate, getCycleWeekForDate, getCycleOffsetForWeek } from '../utils/deliveryHelpers';
 import { haptics } from '../utils/haptics';
-import staticMenuData from '../data/staticMenu.json';
+import { signUpWithEmail, signInWithEmail, signOutUser, restoreSessionUser, SignupAddress } from '../lib/supabase/auth';
+import { fetchMenuCategories, adminCreateMenuItem, adminUpdateMenuItem, adminSetMenuItemActive, adminDeleteMenuItem } from '../lib/supabase/menu';
+import { fetchMyDeliveryAddress, ResolvedAddress } from '../lib/supabase/addresses';
+import { placeRealOrder, fetchMyOrders, isRealOrderId, adminUpdateOrderStatus, submitRealOrderRating, reportRealOrderDispute } from '../lib/supabase/orders';
+import { fetchUserDirectory } from '../lib/supabase/profiles';
+import { fetchCompanies, adminCreateCompany, adminUpdateCompany, adminDeleteCompany } from '../lib/supabase/companies';
+import { fetchDiscounts, adminCreateDiscount, adminUpdateDiscount, adminDeleteDiscount } from '../lib/supabase/discounts';
 
 export type { AddOnOption };
 
@@ -20,28 +26,13 @@ const KITCHEN_EMAIL_STORAGE_KEY = 'kitchenco_kitchen_email';
  * fixture at whatever the first run produced and make seed edits invisible.
  * Feedback is the one thing a customer would be rightly annoyed to lose, and
  * re-attaching it by order id keeps the seed resettable. Order ids are stable
- * (ORD-####, see nextOrderNumber), so a rating left on a seeded order survives.
+ * (ORD-#### for seeded demo orders; a real UUID from the database for
+ * anything placed for real), so a rating survives either way.
  */
 const ORDER_FEEDBACK_STORAGE_KEY = 'kitchenco_order_feedback_v1';
 
 /** What we keep per order between launches. */
 type PersistedOrderFeedback = { rating?: OrderRating; dispute?: DisputeInfo };
-
-/**
- * Sequential source for new order numbers.
- *
- * These used to be a random 4-digit number (Math.random) — a
- * 9,000-value space that the seeded demo orders already sit inside, giving a
- * ~50% chance of a duplicate within ~112 orders. A duplicate is not cosmetic:
- * updateOrderStatus maps over *every* order matching the id, so one customer's
- * status change would silently move a stranger's order too, and the id is also
- * the FlatList key on the History screen.
- *
- * Starts above the highest seeded id (ORD-1298). Orders are in-memory only
- * today, so this resets per session — when they move server-side, take the id
- * from the backend instead of this counter.
- */
-let nextOrderNumber = 1299;
 
 /**
  * Sequential source for new user ids, for the same reason as
@@ -64,6 +55,8 @@ export interface User {
   role: string;
   accountType?: AccountType;
   companyName?: string;
+  /** Real company_id FK — the source of truth for discount eligibility (see isItemEligibleForDiscount), unlike companyName which is display-only. */
+  companyId?: string;
   /** Which of the company's registered delivery addresses (see Company.addresses) this employee belongs to — only meaningful when accountType is 'company'. References CompanyAddress.id; falls back to the first registered address when unset or when it no longer matches one (an admin can delete an address after someone signed up against it). */
   companyAddressId?: string;
 }
@@ -91,6 +84,19 @@ export interface CartItem {
   deliveryDateLabel?: string;
   /** Extras selected for this specific item (e.g. "Extra Bacon") — already folded into `price`; kept here for display/receipt purposes only. */
   addOns?: AddOnOption[];
+  /**
+   * Structured references for the real place_order RPC (see
+   * src/lib/supabase/orders.ts) — separate from `id` above, which is a
+   * display/cart-merge key, not a database reference. `source: 'static'`
+   * items carry `menuItemId` (the real menu_items UUID); `source: 'cycle'`
+   * items carry the week/day/slot instead, since cycle items have no
+   * menu_items row at all.
+   */
+  source?: 'static' | 'cycle';
+  menuItemId?: string;
+  cycleWeekNumber?: number;
+  cycleDayOfWeek?: string;
+  cycleSlot?: string;
 }
 
 /** A customer's post-delivery rating of one order (ported from JoTsav/kicthenCoV1 main). */
@@ -209,6 +215,9 @@ export interface Discount {
   active: boolean;
   expires?: string;
   // Target specific company/category or item
+  /** Real company_id FK — always the source of truth for eligibility (see isItemEligibleForDiscount). Set on create/update from the admin form's company picker. */
+  companyId?: string;
+  /** Display-only company name (e.g. admin's "X only" badge) — NOT safe to use for eligibility. It's resolved via a join that's itself RLS-scoped to the viewer's own company, so a discount targeting a different company can come back with this unset even though companyId is correct; compare companyId instead. */
   company?: string;
   categoryId?: string;
   itemName?: string;
@@ -271,33 +280,48 @@ interface KitchenContextType {
    */
   orderingForDate: string | null;
   setOrderingForDate: (iso: string | null) => void;
+  /** Local-state-only session set — used solely by the __DEV__ "Dev Bypass" button, never touches Supabase. */
   login: (email: string, role: string, name?: string, accountType?: AccountType, companyName?: string, companyAddressId?: string) => void;
   logout: () => void;
+  /** Real Supabase Auth sign-in. Throws on bad credentials — the caller shows the error. */
+  signInWithPassword: (email: string, password: string) => Promise<void>;
+  /** Real Supabase Auth sign-up. Throws on failure (e.g. email already registered). */
+  signUpWithPassword: (email: string, password: string, name: string, address?: SignupAddress, preferredCompanyAddressId?: string) => Promise<void>;
+  /** True while the initial session-restore check (app cold start) is still running. */
+  authLoading: boolean;
   addToCart: (item: CartItem) => void;
   removeFromCart: (itemId: string) => void;
   clearCart: () => void;
-  placeOrder: (deliveryAddress?: DeliveryAddress, paymentReference?: string) => void;
+  placeOrder: (deliveryAddress?: DeliveryAddress, paymentReference?: string) => Promise<void>;
   allUsers: AppUser[];
   menus: MenuCategory[];
+  /** True until the first Supabase menu fetch resolves (or fails). */
+  menusLoading: boolean;
+  /** Re-fetches the catalog from Supabase — wired into the Menu screen's pull-to-refresh. */
+  refetchMenus: () => Promise<void>;
   discounts: Discount[];
-  addMenuItem: (categoryId: string, item: { name: string; price: number; description: string; image?: string }) => void;
-  updateMenuItem: (categoryId: string, itemId: string, item: { name: string; price: number; description: string; image?: string }) => void;
-  deleteMenuItem: (categoryId: string, itemId: string) => void;
+  discountsLoading: boolean;
+  addMenuItem: (categoryId: string, item: { name: string; price: number; description: string; image?: string }) => Promise<void>;
+  updateMenuItem: (categoryId: string, itemId: string, item: { name: string; price: number; description: string; image?: string }) => Promise<void>;
+  deleteMenuItem: (categoryId: string, itemId: string) => Promise<void>;
   /** Hides/shows a dish on the customer menu without deleting it. */
-  setMenuItemActive: (categoryId: string, itemId: string, active: boolean) => void;
-  addDiscount: (discount: Discount) => void;
-  updateDiscount: (discountId: string, discount: Partial<Discount>) => void;
-  deleteDiscount: (discountId: string) => void;
+  setMenuItemActive: (categoryId: string, itemId: string, active: boolean) => Promise<void>;
+  addDiscount: (discount: Discount) => Promise<void>;
+  updateDiscount: (discountId: string, discount: Partial<Discount>) => Promise<void>;
+  deleteDiscount: (discountId: string) => Promise<void>;
   addUser: (user: AppUser) => void;
   updateUser: (userId: string, updates: Partial<AppUser>) => void;
   deleteUser: (userId: string) => void;
   companies: Company[];
-  addCompany: (company: Omit<Company, 'id'>) => void;
-  updateCompany: (companyId: string, updates: Partial<Omit<Company, 'id'>>) => void;
-  deleteCompany: (companyId: string) => void;
-  updateOrderStatus: (orderId: string, status: string) => void;
+  companiesLoading: boolean;
+  addCompany: (company: Omit<Company, 'id'>) => Promise<void>;
+  /** Resolves with any addresses that couldn't be removed because an employee is still assigned to them (see adminUpdateCompany). */
+  updateCompany: (companyId: string, updates: Partial<Omit<Company, 'id'>>) => Promise<{ blockedAddressDeletes: CompanyAddress[] }>;
+  /** Throws a friendly error if employees are still linked to this company. */
+  deleteCompany: (companyId: string) => Promise<void>;
+  updateOrderStatus: (orderId: string, status: string) => Promise<void>;
   /** Records a delivered order's star rating and optional feedback. */
-  submitOrderRating: (orderId: string, rating: number, feedback?: string) => void;
+  submitOrderRating: (orderId: string, rating: number, feedback?: string) => Promise<void>;
   /**
    * Logs a non-delivery ticket against ONE order and returns its reference.
    *
@@ -308,7 +332,7 @@ interface KitchenContextType {
    * company's delivery unfulfilled. The Orders screen derives its
    * "Unfulfilled / Disputed" pill from `dispute` being set instead.
    */
-  reportOrderNonDelivery: (orderId: string, reason?: string) => string;
+  reportOrderNonDelivery: (orderId: string, reason?: string) => Promise<string>;
   savedAddresses: DeliveryAddress[];
   addAddress: (address: DeliveryAddress) => void;
   removeAddress: (addressId: string) => void;
@@ -316,7 +340,7 @@ interface KitchenContextType {
   /** Clears any personal default address so a corporate account's deliveryInfo falls back to their company's registered address. */
   useCompanyAddress: () => void;
   /** Auto-resolved delivery destination + distance-based fee for the current user — company address for corporate accounts, default saved address otherwise. */
-  deliveryInfo: { distanceKm: number | null; fee: number | null; address: DeliveryAddress | null; addressLabel: string | null };
+  deliveryInfo: { distanceKm: number | null; fee: number | null; address: DeliveryAddress | null; addressLabel: string | null; addressId: string | null };
   savedCards: SavedCard[];
   saveCard: (card: Omit<SavedCard, 'id' | 'createdAt'>) => void;
   removeCard: (cardId: string) => void;
@@ -351,17 +375,17 @@ interface KitchenContextType {
 interface DemoSeedData {
   users: AppUser[];
   orders: Order[];
-  discounts: Discount[];
 }
 
 /**
- * Builds the prototype seed data (demo users, orders and discounts).
+ * Builds the prototype seed data (demo users and orders — discounts moved to
+ * the real database, see fetchDiscounts).
  *
- * This used to be a mount-time useEffect calling setAllUsers/setOrders/
- * setDiscounts, so every launch rendered the entire app once against empty
- * state and then immediately re-rendered with the data. It is the initial
- * state now, so the first render already has it — one less full-app render
- * pass on startup, from the provider that re-renders everything.
+ * This used to be a mount-time useEffect calling setAllUsers/setOrders, so
+ * every launch rendered the entire app once against empty state and then
+ * immediately re-rendered with the data. It is the initial state now, so the
+ * first render already has it — one less full-app render pass on startup,
+ * from the provider that re-renders everything.
  */
 function buildDemoSeedData(): DemoSeedData {
   const demoUsers: AppUser[] = [
@@ -652,10 +676,6 @@ function buildDemoSeedData(): DemoSeedData {
   return {
     users: demoUsers,
     orders: demoOrders,
-    discounts: [
-      { id: '1', code: 'WELCOME10', percentage: 10, active: true, expires: '31 Dec 2026' },
-      { id: '2', code: 'SAVE20', percentage: 20, active: true, expires: '30 Aug 2026' },
-    ],
   };
 }
 
@@ -673,6 +693,35 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orders, setOrders] = useState<Order[]>(() => getDemoSeedData().orders);
+  const [allUsers, setAllUsers] = useState<AppUser[]>(() => getDemoSeedData().users);
+
+  // Merges the signed-in customer's real orders (from Supabase) in ahead of
+  // the seeded demo ones on login/session-restore, so a real placed order
+  // — and any earlier ones from a prior session — actually show up in
+  // Orders/Activity instead of only existing in the database.
+  useEffect(() => {
+    if (!user?.email) return;
+    fetchMyOrders()
+      .then(realOrders => {
+        // No rows = no real session (the DEV skip-login buttons) or an empty
+        // database: keep the local demo orders so there's still something to show.
+        if (realOrders.length === 0) return;
+        // The row's own customer wins — an admin's fetch returns everyone's
+        // orders, so stamping the signed-in email on them would attribute
+        // every order to the admin. Real data replaces the demo set outright
+        // rather than mixing fictional orders into real totals.
+        setOrders(realOrders.map(o => ({ ...o, userEmail: o.userEmail ?? user.email, userName: o.userName ?? user.name })));
+        if (user.role !== 'admin') return;
+        fetchUserDirectory()
+          .then(directory => {
+            const counts = new Map<string, number>();
+            realOrders.forEach(o => { if (o.userEmail) counts.set(o.userEmail, (counts.get(o.userEmail) ?? 0) + 1); });
+            setAllUsers(directory.map(u => ({ ...u, orderCount: counts.get(u.email) ?? 0 })));
+          })
+          .catch(() => {});
+      })
+      .catch(() => {});
+  }, [user?.email]);
 
   // Re-attach persisted feedback once, on mount. Anything for an order id that
   // no longer exists is simply not applied — it stays in storage harmlessly in
@@ -707,83 +756,41 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   // Per-device, not per-account: dismissing a banner is a UI preference, and
   // there is no server to record it against a user anyway.
   const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>([]);
-  const [allUsers, setAllUsers] = useState<AppUser[]>(() => getDemoSeedData().users);
-  // Seeded from the same normalized shape the Menu screen renders, so admin
-  // edits here are the actual data the customer-facing menu reads — not a
-  // parallel array nothing ever displays.
-  const [menus, setMenus] = useState<MenuCategory[]>(() => buildMenuFromStaticData(staticMenuData));
-  const [discounts, setDiscounts] = useState<Discount[]>(() => getDemoSeedData().discounts);
-  const [companies, setCompanies] = useState<Company[]>([
-    {
-      id: 'co-ecogra',
-      name: 'Ecogra',
-      domains: ['ecogra.org'],
-      // Two seeded sites — demo data proving the multi-address signup
-      // picker actually has something to pick between out of the box,
-      // rather than only working once an admin adds a second address by
-      // hand (which doesn't persist across a reload; this app has no
-      // backend yet).
-      addresses: [
-        {
-          id: 'addr-ecogra-1',
-          label: 'Head Office',
-          street: '160 Jan Smuts Ave',
-          suburb: 'Rosebank',
-          city: 'Johannesburg',
-          code: '',
-        },
-        {
-          id: 'addr-ecogra-2',
-          label: 'Sandton Branch',
-          street: '1 Sandton Drive',
-          suburb: 'Sandton',
-          city: 'Johannesburg',
-          code: '',
-        },
-      ],
-      mealSubsidy: 80.0,
-    },
-    {
-      id: 'co-tata',
-      name: 'TATA',
-      domains: ['tcs.com'],
-      // Two seeded sites, same reasoning as Ecogra above — gives the
-      // multi-address signup picker something to pick between for TATA too.
-      addresses: [
-        {
-          id: 'addr-tata-1',
-          label: 'Head Office',
-          street: '39 Ferguson Road',
-          suburb: 'Illovo',
-          city: 'Johannesburg',
-          code: '',
-        },
-        {
-          id: 'addr-tata-2',
-          label: 'Woodmead Office',
-          street: '6 Maxwell Drive',
-          suburb: 'Woodmead',
-          city: 'Johannesburg',
-          code: '',
-        },
-      ],
-      mealSubsidy: 85.0,
-    },
-    {
-      id: 'co-rcl',
-      name: 'RCL',
-      domains: ['rclfoods.com'],
-      addresses: [{
-        id: 'addr-rcl-1',
-        label: 'Head Office',
-        street: '15 Railey Road',
-        suburb: 'Bedfordview',
-        city: 'Johannesburg',
-        code: '',
-      }],
-      mealSubsidy: 40.0,
-    },
-  ]);
+  // Loaded from Supabase (menu_categories/menu_items/menu_item_sizes/
+  // menu_item_addons) — replaces the old local staticMenu.json build.
+  // Admin's add/edit/delete/setActive still mutate this array locally only
+  // (not yet written back to the database — a separate follow-up), so an
+  // admin edit persists for the session but a page reload reverts to the
+  // real catalog underneath it.
+  const [menus, setMenus] = useState<MenuCategory[]>([]);
+  const [menusLoading, setMenusLoading] = useState(true);
+  const refetchMenus = () => fetchMenuCategories().then(categories => setMenus(categories));
+  useEffect(() => {
+    refetchMenus().catch(() => {}).finally(() => setMenusLoading(false));
+  }, []);
+  // Loaded from Supabase (companies/company_domains/company_addresses) —
+  // replaces the old locally-seeded Ecogra/TATA/RCL companies. RLS scopes
+  // what comes back: an admin sees every real company, an employee sees
+  // only their own, matching how `menus` already works for the catalog.
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(true);
+  const refetchCompanies = () => fetchCompanies().then(setCompanies);
+  // Re-fetches on login/logout, not just on mount — companies_read_own_or_admin
+  // scopes the result to the signed-in account (an anon pre-login fetch just
+  // comes back empty), same reasoning as fetchMyOrders() below.
+  useEffect(() => {
+    refetchCompanies().catch(() => {}).finally(() => setCompaniesLoading(false));
+  }, [user?.email]);
+  // Loaded from Supabase (discounts) — replaces the old locally-seeded
+  // WELCOME10/SAVE20 codes. discounts_read_active_or_admin (0002) scopes
+  // this the other way from companies: an admin sees every discount
+  // (active or not, for management), everyone else sees only active ones.
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [discountsLoading, setDiscountsLoading] = useState(true);
+  const refetchDiscounts = () => fetchDiscounts().then(setDiscounts);
+  useEffect(() => {
+    refetchDiscounts().catch(() => {}).finally(() => setDiscountsLoading(false));
+  }, [user?.email]);
   // The discount in force is DERIVED (see appliedDiscount below), not stored.
   // These two hold only the part that is genuinely event-driven: whether the
   // user has overridden the automatic pick, and what they chose. Overriding
@@ -906,6 +913,31 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     // The next person to sign in must pick their own delivery day rather than
     // inheriting the previous session's — the picker is skipped once this is set.
     setOrderingForDate(null);
+    // Fire-and-forget: local state above already gives instant UI feedback,
+    // the actual Supabase session teardown doesn't need to block on it.
+    signOutUser().catch(() => {});
+  };
+
+  const [authLoading, setAuthLoading] = useState(true);
+
+  // Restores the logged-in user from an existing Supabase session on cold
+  // start — without this, closing and reopening the app would always land
+  // back on the login screen even though the session itself is still valid.
+  useEffect(() => {
+    restoreSessionUser()
+      .then(authedUser => { if (authedUser) setUser(authedUser); })
+      .catch(() => {})
+      .finally(() => setAuthLoading(false));
+  }, []);
+
+  const signInWithPassword = async (email: string, password: string) => {
+    const authedUser = await signInWithEmail(email, password);
+    setUser(authedUser);
+  };
+
+  const signUpWithPassword = async (email: string, password: string, name: string, address?: SignupAddress, preferredCompanyAddressId?: string) => {
+    const authedUser = await signUpWithEmail(email, password, name, address, preferredCompanyAddressId);
+    setUser(authedUser);
   };
 
   // The best discount currently available for this cart. Pure derivation of
@@ -928,7 +960,10 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
       const hasEligibleItem = cart.some(item => {
         if (d.itemName) return item.name.toLowerCase() === d.itemName.toLowerCase();
         if (d.categoryId) return item.category.toLowerCase() === d.categoryId.toLowerCase();
-        if (d.company) return user?.companyName?.toLowerCase() === d.company.toLowerCase();
+        // Compared by companyId, not by the display-only `company` name —
+        // see Discount.company's doc comment for why the name isn't safe
+        // to use here.
+        if (d.companyId) return user?.companyId === d.companyId;
         return true; // global
       });
       if (hasEligibleItem) {
@@ -991,87 +1026,57 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
   // corporate accounts fall back to their company's registered address, and
   // everyone else falls back to whatever saved address they have. Shared by
   // the cart/checkout previews and by placeOrder itself so all three agree.
-  const deliveryInfo = useMemo((): { distanceKm: number | null; fee: number | null; address: DeliveryAddress | null; addressLabel: string | null } => {
-    if (!user) return { distanceKm: null, fee: null, address: null, addressLabel: null };
+  // Real delivery address, fetched from Supabase (individuals' own default
+  // address, or their company's assigned site) — replaces the old
+  // derivation from local mock `savedAddresses`/`companies` state, which
+  // isn't tied to real signed-up accounts. Profile's "add address" screen
+  // still only writes to that local state, not here, so it won't affect
+  // checkout yet — a separate follow-up.
+  const [realAddress, setRealAddress] = useState<ResolvedAddress | null>(null);
+  useEffect(() => {
+    if (!user) return; // cleared in logout() directly, not here
+    fetchMyDeliveryAddress(user.accountType, user.companyAddressId)
+      .then(setRealAddress)
+      .catch(() => setRealAddress(null));
+  }, [user?.email, user?.accountType, user?.companyAddressId]);
 
-    const personalDefault = savedAddresses.find(a => a.isDefault) || (!user.companyName ? savedAddresses[0] : null) || null;
-    if (personalDefault) {
-      if (personalDefault.distanceKm != null) {
-        return {
-          distanceKm: personalDefault.distanceKm,
-          fee: calculateDeliveryFee(personalDefault.distanceKm),
-          address: personalDefault,
-          addressLabel: `${personalDefault.label} — ${personalDefault.street}`,
-        };
-      }
-      return { distanceKm: null, fee: null, address: null, addressLabel: `${personalDefault.label} (missing distance)` };
+  const deliveryInfo = useMemo((): { distanceKm: number | null; fee: number | null; address: DeliveryAddress | null; addressLabel: string | null; addressId: string | null } => {
+    if (!realAddress) return { distanceKm: null, fee: null, address: null, addressLabel: null, addressId: null };
+    if (realAddress.distanceKm == null) {
+      return { distanceKm: null, fee: null, address: null, addressLabel: `${realAddress.label} (missing distance)`, addressId: realAddress.id };
     }
-
-    if (user.companyName) {
-      const company = companies.find(c => c.name === user.companyName);
-      // A company with more than one registered site has each employee pick
-      // one at signup (User.companyAddressId) — fall back to the first
-      // registered address for anyone signed up before that choice existed,
-      // whose company only has the one site, or whose picked address an
-      // admin has since deleted.
-      const companyAddress = company?.addresses.find(a => a.id === user.companyAddressId) ?? company?.addresses[0];
-      if (companyAddress?.distanceKm != null) {
-        const resolvedAddress: DeliveryAddress = {
-          id: `company-${company!.id}-${companyAddress.id}`,
-          label: company!.name,
-          street: companyAddress.unit ? `${companyAddress.unit}, ${companyAddress.street}` : companyAddress.street,
-          suburb: companyAddress.suburb,
-          city: companyAddress.city,
-          code: companyAddress.code,
-          isDefault: true,
-          distanceKm: companyAddress.distanceKm,
-        };
-        return {
-          distanceKm: companyAddress.distanceKm,
-          fee: calculateDeliveryFee(companyAddress.distanceKm),
-          address: resolvedAddress,
-          addressLabel: `${company!.name} — ${companyAddress.street}`,
-        };
-      }
-      return { distanceKm: null, fee: null, address: null, addressLabel: company ? `${company.name} (no delivery address on file)` : null };
-    }
-
-    return { distanceKm: null, fee: null, address: null, addressLabel: null };
-  }, [user, companies, savedAddresses]);
-
-  const placeOrder = (deliveryAddress?: DeliveryAddress, paymentReference?: string) => {
-    if (cart.length === 0) return;
-    const totalAmount = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const discountAmount = calculateDiscountAmount(cart, appliedDiscount);
-    const subsidyAmount = calculateSubsidyAmount(cart);
-    const resolvedAddress = deliveryAddress ?? deliveryInfo.address ?? undefined;
-    const deliveryFee = deliveryAddress ? calculateDeliveryFee(deliveryAddress.distanceKm ?? -1) ?? 0 : (deliveryInfo.fee ?? 0);
-    // Floored in case a promo discount and the company subsidy overlap on the
-    // same cheap item and would otherwise combine past its price.
-    const finalTotal = Math.max(0, totalAmount - discountAmount - subsidyAmount) + deliveryFee;
-    const nowStr = new Date().toLocaleString();
-
-    const newOrder: Order = {
-      id: `ORD-${nextOrderNumber++}`,
-      items: [...cart],
-      total: finalTotal,
-      totalPrice: totalAmount,
-      status: 'pending',
-      date: nowStr,
-      timestamp: nowStr,
-      userEmail: user?.email,
-      userName: user?.name,
-      deliveryAddress: resolvedAddress,
-      deliveryFee: deliveryFee || undefined,
-      note: orderNote || undefined,
-      discount: appliedDiscount || undefined,
-      discountAmount: discountAmount || undefined,
-      subsidyAmount: subsidyAmount || undefined,
-      paymentReference,
+    return {
+      distanceKm: realAddress.distanceKm,
+      fee: calculateDeliveryFee(realAddress.distanceKm),
+      address: {
+        id: realAddress.id,
+        label: realAddress.label,
+        street: realAddress.street,
+        suburb: realAddress.suburb,
+        city: realAddress.city,
+        code: realAddress.code ?? '',
+        isDefault: true,
+        distanceKm: realAddress.distanceKm,
+      },
+      addressLabel: `${realAddress.label} — ${realAddress.street}`,
+      addressId: realAddress.id,
     };
-    setOrders(prev => [newOrder, ...prev]);
-    
-    // Increment user order count
+  }, [realAddress]);
+
+  // Calls the real place_order RPC — server re-validates cutoff, re-prices
+  // every line from the catalog, resolves discount/subsidy, and mints a
+  // real invoice number, so none of that math is recomputed here any more.
+  // Throws (CUTOFF_PASSED, UNDELIVERABLE_DISTANCE, ADDRESS_NOT_FOUND, etc.)
+  // on failure instead of silently no-op'ing — payfast.tsx is responsible
+  // for catching that and not showing a fake success screen.
+  const placeOrder = async (deliveryAddress?: DeliveryAddress, paymentReference?: string) => {
+    if (cart.length === 0) return;
+    const addressId = deliveryAddress?.id ?? deliveryInfo.addressId;
+    if (!addressId) throw new Error('NO_DELIVERY_ADDRESS');
+
+    const newOrder = await placeRealOrder(cart, addressId, orderingForDate, paymentReference);
+    setOrders(prev => [{ ...newOrder, userEmail: user?.email, userName: user?.name }, ...prev]);
+
     if (user?.email) {
       setAllUsers(prev =>
         prev.map(u =>
@@ -1079,42 +1084,23 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         )
       );
     }
-    
-    setOrderNote(''); // Clear note after order is placed
+
+    setOrderNote('');
     clearCart(); // also resets appliedDiscount + the auto-apply pause flag
   };
 
-  const addMenuItem = (categoryId: string, item: { name: string; price: number; description: string; image?: string }) => {
-    setMenus(prev => prev.map(cat =>
-      cat.id === categoryId
-        ? { ...cat, items: [...cat.items, {
-            id: `item-${Date.now()}`,
-            name: item.name,
-            description: item.description,
-            image: item.image,
-            sizes: [{ label: 'Regular', price: item.price }],
-            // A newly added dish goes live immediately — an admin who wants it
-            // held back can switch it off from the same list they added it in.
-            active: true,
-          }] }
-        : cat
-    ));
+  // Menu editing now hits the real database (menu_items/menu_item_sizes,
+  // admin-write-gated by 0002) and refetches, rather than patching local
+  // state directly — a reload used to revert every admin edit back to the
+  // real catalog underneath it; now the edit IS the real catalog.
+  const addMenuItem = async (categoryId: string, item: { name: string; price: number; description: string; image?: string }) => {
+    await adminCreateMenuItem(categoryId, item);
+    await refetchMenus();
   };
 
-  const updateMenuItem = (categoryId: string, itemId: string, item: { name: string; price: number; description: string; image?: string }) => {
-    setMenus(prev => prev.map(cat =>
-      cat.id === categoryId
-        ? { ...cat, items: cat.items.map(i => i.id === itemId ? {
-            ...i,
-            name: item.name,
-            description: item.description,
-            image: item.image,
-            // The admin edit form only ever collects a single price, so an
-            // edit collapses multi-size items (e.g. Small/Large) to one size.
-            sizes: [{ label: 'Regular', price: item.price }],
-          } : i) }
-        : cat
-    ));
+  const updateMenuItem = async (categoryId: string, itemId: string, item: { name: string; price: number; description: string; image?: string }) => {
+    await adminUpdateMenuItem(itemId, item);
+    await refetchMenus();
   };
 
   /**
@@ -1124,20 +1110,14 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
    * flag — and because switching a dish off is a one-tap action from the list,
    * not something that should require opening the editor.
    */
-  const setMenuItemActive = (categoryId: string, itemId: string, active: boolean) => {
-    setMenus(prev => prev.map(cat =>
-      cat.id === categoryId
-        ? { ...cat, items: cat.items.map(i => i.id === itemId ? { ...i, active } : i) }
-        : cat
-    ));
+  const setMenuItemActive = async (categoryId: string, itemId: string, active: boolean) => {
+    await adminSetMenuItemActive(itemId, active);
+    await refetchMenus();
   };
 
-  const deleteMenuItem = (categoryId: string, itemId: string) => {
-    setMenus(prev => prev.map(cat =>
-      cat.id === categoryId
-        ? { ...cat, items: cat.items.filter(i => i.id !== itemId) }
-        : cat
-    ));
+  const deleteMenuItem = async (categoryId: string, itemId: string) => {
+    await adminDeleteMenuItem(itemId);
+    await refetchMenus();
   };
 
   const sendAnnouncement = ({ title, body, companyName }: { title: string; body: string; companyName: string | null }) => {
@@ -1175,8 +1155,11 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     );
   }, [announcements, dismissedAnnouncements, user]);
 
-  const addDiscount = (discount: Discount) => {
-    setDiscounts(prev => [...prev, { ...discount, id: `disc-${Date.now()}` }]);
+  // Discount edits now hit the real database (discounts_write_admin in
+  // 0002) and refetch, same pattern as companies/menu items above.
+  const addDiscount = async (discount: Discount) => {
+    await adminCreateDiscount(discount);
+    await refetchDiscounts();
   };
 
   // Check if a cart item is eligible for a specific discount
@@ -1190,9 +1173,11 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     if (discount.categoryId) {
       return item.category.toLowerCase() === discount.categoryId.toLowerCase();
     }
-    // If discount targets a specific corporate client, only the matching user's items qualify
-    if (discount.company) {
-      return user?.companyName?.toLowerCase() === discount.company.toLowerCase();
+    // If discount targets a specific corporate client, only the matching user's items qualify.
+    // Compared by companyId, not the display-only `company` name — see
+    // Discount.company's doc comment for why the name isn't safe to use here.
+    if (discount.companyId) {
+      return user?.companyId === discount.companyId;
     }
     // No targeting specified - apply to all items (global discount)
     return true;
@@ -1219,12 +1204,14 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     return cartItems.reduce((sum, item) => sum + Math.min(subsidy, item.price) * item.quantity, 0);
   };
 
-  const updateDiscount = (discountId: string, discount: Partial<Discount>) => {
-    setDiscounts(prev => prev.map(d => d.id === discountId ? { ...d, ...discount } : d));
+  const updateDiscount = async (discountId: string, discount: Partial<Discount>) => {
+    await adminUpdateDiscount(discountId, discount);
+    await refetchDiscounts();
   };
 
-  const deleteDiscount = (discountId: string) => {
-    setDiscounts(prev => prev.filter(d => d.id !== discountId));
+  const deleteDiscount = async (discountId: string) => {
+    await adminDeleteDiscount(discountId);
+    await refetchDiscounts();
   };
 
   const addUser = (newUser: AppUser) => {
@@ -1239,17 +1226,34 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     setAllUsers(prev => prev.filter(u => u.id !== userId));
   };
 
-  // Corporate client management — companies are matched to users by work-email domain at login.
-  const addCompany = (company: Omit<Company, 'id'>) => {
-    setCompanies(prev => [...prev, { ...company, id: `co-${Date.now()}` }]);
+  // Corporate client management — companies are matched to users by work-email
+  // domain at login. Writes hit the real database (adminCreateCompany etc.,
+  // security-checked by companies_write_admin & co. in 0002) and then
+  // refetch, rather than optimistically patching local state — the
+  // company_addresses diff in adminUpdateCompany can partially fail (an
+  // address still assigned to an employee can't be deleted) and the caller
+  // needs the server's actual resulting shape, not a guess.
+  const addCompany = async (company: Omit<Company, 'id'>) => {
+    await adminCreateCompany(company);
+    await refetchCompanies();
   };
 
-  const updateCompany = (companyId: string, updates: Partial<Omit<Company, 'id'>>) => {
-    setCompanies(prev => prev.map(c => c.id === companyId ? { ...c, ...updates } : c));
+  const updateCompany = async (companyId: string, updates: Partial<Omit<Company, 'id'>>) => {
+    const current = companies.find(c => c.id === companyId);
+    const merged = { ...current, ...updates } as Company;
+    const result = await adminUpdateCompany(companyId, {
+      name: merged.name,
+      domains: merged.domains,
+      addresses: merged.addresses,
+      mealSubsidy: merged.mealSubsidy,
+    });
+    await refetchCompanies();
+    return result;
   };
 
-  const deleteCompany = (companyId: string) => {
-    setCompanies(prev => prev.filter(c => c.id !== companyId));
+  const deleteCompany = async (companyId: string) => {
+    await adminDeleteCompany(companyId);
+    await refetchCompanies();
   };
 
   // Corporate clients get one physical delivery per batch — every employee
@@ -1270,7 +1274,21 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     return `${companyName}::${dueDates.sort()[0]}`;
   };
 
-  const updateOrderStatus = (orderId: string, status: string) => {
+  // A real order's batch membership is decided server-side, from the
+  // customer's real company_id (see update_order_status in 0003) — the
+  // client can't safely re-derive it (getOrderBatchKey depends on
+  // `allUsers`, which never contains a real signed-up customer, only the
+  // seeded demo roster). So a real order's status update goes through the
+  // RPC and patches local state by the id's it actually returns; a demo
+  // order (no database row to update) keeps the old local-only simulation
+  // so existing seeded scenarios still behave.
+  const updateOrderStatus = async (orderId: string, status: string) => {
+    if (isRealOrderId(orderId)) {
+      const updatedIds = await adminUpdateOrderStatus(orderId, status);
+      const idSet = new Set(updatedIds);
+      setOrders(prev => prev.map(o => idSet.has(o.id) ? { ...o, status } : o));
+      return;
+    }
     setOrders(prev => {
       const target = prev.find(o => o.id === orderId);
       if (!target) return prev;
@@ -1285,28 +1303,42 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const submitOrderRating = (orderId: string, rating: number, feedback?: string) => {
+  const submitOrderRating = async (orderId: string, rating: number, feedback?: string) => {
+    const trimmedFeedback = feedback?.trim() || undefined;
     const entry: OrderRating = {
       rating,
-      feedback: feedback?.trim() || undefined,
+      feedback: trimmedFeedback,
       submittedAt: new Date().toISOString(),
     };
+    if (isRealOrderId(orderId)) {
+      await submitRealOrderRating(orderId, rating, trimmedFeedback);
+    } else {
+      persistOrderFeedback(orderId, { rating: entry });
+    }
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, rating: entry } : o));
-    persistOrderFeedback(orderId, { rating: entry });
   };
 
-  const reportOrderNonDelivery = (orderId: string, reason?: string) => {
-    const supportTicketRef = `TCK-${Math.floor(10000 + Math.random() * 90000)}`;
+  const reportOrderNonDelivery = async (orderId: string, reason?: string) => {
+    const trimmedReason = reason?.trim() || 'Meal not present in designated floor pantry cooler at 12:00 PM';
+    // Real orders get the ticket reference the database actually minted
+    // (order_disputes.ticket_ref, a real sequence) rather than a locally
+    // guessed one, so the reference shown to the customer and quoted in the
+    // escalation email is the one support can actually look up.
+    const supportTicketRef = isRealOrderId(orderId)
+      ? await reportRealOrderDispute(orderId, trimmedReason)
+      : `TCK-${Math.floor(10000 + Math.random() * 90000)}`;
     const entry: DisputeInfo = {
       reportedAt: new Date().toISOString(),
-      reason: reason?.trim() || 'Meal not present in designated floor pantry cooler at 12:00 PM',
+      reason: trimmedReason,
       supportTicketRef,
       status: 'investigating',
     };
+    if (!isRealOrderId(orderId)) {
+      persistOrderFeedback(orderId, { dispute: entry });
+    }
     // Per-order only — see the note on the context type: a batch's shared
     // status must not flip because one person's meal went missing.
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, dispute: entry } : o));
-    persistOrderFeedback(orderId, { dispute: entry });
     return supportTicketRef;
   };
 
@@ -1376,13 +1408,19 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         setOrderingForDate,
         login,
         logout,
+        signInWithPassword,
+        signUpWithPassword,
+        authLoading,
         addToCart,
         removeFromCart,
         clearCart,
         placeOrder,
         allUsers,
         menus,
+        menusLoading,
+        refetchMenus,
         discounts,
+        discountsLoading,
         addMenuItem,
         updateMenuItem,
         deleteMenuItem,
@@ -1394,6 +1432,7 @@ export function KitchenProvider({ children }: { children: React.ReactNode }) {
         updateUser,
         deleteUser,
         companies,
+        companiesLoading,
         addCompany,
         updateCompany,
         deleteCompany,

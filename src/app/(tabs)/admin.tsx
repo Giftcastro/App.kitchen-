@@ -1,9 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, TouchableOpacity, StatusBar, ScrollView, Modal, useWindowDimensions, RefreshControl, Linking, Platform, TextProps, TextInputProps } from 'react-native';
 import { Text as BrandText, TextInput as BrandTextInput } from '../../components/AppText';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useKitchen, createUserId, createCompanyAddressId, Order, AppUser, Company, CompanyAddress, AddOnOption } from '../../context/KitchenCoContext';
+import { useKitchen, createUserId, createCompanyAddressId, Order, AppUser, Company, CompanyAddress, AddOnOption, Discount } from '../../context/KitchenCoContext';
 import { Ionicons } from '@expo/vector-icons';
 import { calculateDeliveryFee, getItemDueDate, isSameDay } from '../../utils/deliveryHelpers';
 import { ThemeColors } from '../../utils/theme';
@@ -13,6 +13,7 @@ import { legacyTypography } from '../../utils/legacyTypography';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as MailComposer from 'expo-mail-composer';
+import { fetchAllAddressesForAdmin, adminSetAddressDistance, AdminAddress } from '../../lib/supabase/addresses';
 
 // Same pre-KitchenCo RobotoCondensed body / GotchaGothic headline pairing as
 // the customer-facing screens (see legacyTypography.ts) — one override here
@@ -137,22 +138,52 @@ interface ManifestRow {
   notes?: string;
 }
 
-/** Branded, color-coded HTML table for Print.printToFileAsync — mirrors the printed delivery/special-request sheets the kitchen already hands out (client name + date header, "your kitchen co." brand mark, one row per person/item with a colored category tag and a Notes column). */
-function buildDeliveryNoteHtml(clientName: string, dateLabel: string, addressLine: string | undefined, rows: ManifestRow[]): string {
-  const rowsHtml = rows.map(row => {
-    const [firstName, ...rest] = row.customerName.trim().split(/\s+/);
-    const lastName = rest.join(' ') || '—';
-    const colors = getCategoryColor(row.category);
-    return `<tr>
-      <td>${escapeHtml(firstName || '—')}</td>
-      <td>${escapeHtml(lastName)}</td>
-      <td>${escapeHtml(addressLine || '—')}</td>
-      <td><span class="cat" style="background:${colors.bg};color:${colors.text}">${escapeHtml(row.category)}</span></td>
-      <td>${escapeHtml(row.itemName)}</td>
-      <td class="qty">${row.qty}</td>
-      <td>${row.notes ? escapeHtml(row.notes) : '—'}</td>
-    </tr>`;
+/** One category's aggregated items within a per-client Delivery Note — the same shape the Production Sheet already builds per client (`productionSheet.clients[].categories`), reused here rather than re-aggregated. */
+interface DeliveryNoteCategory {
+  category: string;
+  items: { name: string; qty: number }[];
+  subtotal: number;
+}
+
+/**
+ * Branded HTML for Print.printToFileAsync — matches the client's own printed
+ * Delivery Note (CLIENT/LOCATION/DATE/TOTAL ITEMS header bar, then a
+ * category-grouped item/qty table with a blank "Notes / Hand Annotations"
+ * column for the kitchen to physically tick against the paper copy). This is
+ * the *aggregate* cooking/packing quantities for one client — the same
+ * numbers the Production Sheet shows for that client — not a per-person
+ * list; anyone with a special request (allergy, swap, removal) instead gets
+ * a named row in the separate Special Requests table appended below, since
+ * that's the only place a person's name matters to what gets packed.
+ */
+function buildDeliveryNoteHtml(
+  clientName: string,
+  dateLabel: string,
+  addressLine: string | undefined,
+  totalItems: number,
+  categories: DeliveryNoteCategory[],
+  specialRequests: ManifestRow[]
+): string {
+  const catRowsHtml = categories.map(cat => {
+    const colors = getCategoryColor(cat.category);
+    const itemRows = cat.items.map(item => `<tr>
+      <td>${escapeHtml(item.name)}</td>
+      <td class="qty">${item.qty}</td>
+      <td></td>
+    </tr>`).join('');
+    return `<tr class="cat-row">
+      <td colspan="2"><span class="cat" style="background:${colors.bg};color:${colors.text}">${escapeHtml(cat.category)}</span></td>
+      <td class="qty">${cat.subtotal}</td>
+    </tr>${itemRows}`;
   }).join('');
+
+  const specialRowsHtml = specialRequests.map(row => `<tr>
+    <td>${escapeHtml(row.customerName)}</td>
+    <td>${escapeHtml(row.category)}</td>
+    <td>${escapeHtml(row.itemName)}</td>
+    <td class="qty">${row.qty}</td>
+    <td class="note">${escapeHtml(row.notes || '')}</td>
+  </tr>`).join('');
 
   return `<!DOCTYPE html>
 <html>
@@ -161,33 +192,44 @@ function buildDeliveryNoteHtml(clientName: string, dateLabel: string, addressLin
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, Helvetica, Arial, sans-serif; padding: 28px; color: #111111; margin: 0; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #111111; padding-bottom: 12px; margin-bottom: 18px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #111111; padding-bottom: 12px; margin-bottom: 14px; }
   h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: -0.3px; }
-  .meta { font-size: 12px; color: #444444; }
   .brand { font-weight: 800; font-size: 14px; text-align: right; }
-  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .metabar { display: flex; flex-wrap: wrap; gap: 20px; background: #f5f5f5; border-radius: 6px; padding: 10px 14px; margin-bottom: 20px; font-size: 12px; }
+  .metabar div b { display: block; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; color: #777777; margin-bottom: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 24px; }
   th { text-align: left; background: #111111; color: #ffffff; padding: 7px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
   td { padding: 6px 8px; border-bottom: 1px solid #e2e2e2; vertical-align: top; }
   td.qty { font-weight: 800; text-align: center; }
+  td.note { color: #B71C1C; font-weight: 600; }
   .cat { display: inline-block; padding: 2px 7px; border-radius: 4px; font-weight: 700; font-size: 9px; text-transform: uppercase; letter-spacing: 0.2px; white-space: nowrap; }
+  tr.cat-row td { background: #f0f0f0; padding-top: 9px; }
+  h2 { font-size: 13px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.3px; }
 </style>
 </head>
 <body>
   <div class="header">
     <div>
       <h1>${escapeHtml(clientName.toUpperCase())} DELIVERY NOTE</h1>
-      <div class="meta">${escapeHtml(dateLabel)}${addressLine ? ' · ' + escapeHtml(addressLine) : ''}</div>
     </div>
-    <div>
-      <div class="brand">your kitchen co.</div>
-    </div>
+    <div class="brand">your kitchen co.</div>
+  </div>
+  <div class="metabar">
+    <div><b>Client</b>${escapeHtml(clientName)}</div>
+    ${addressLine ? `<div><b>Location</b>${escapeHtml(addressLine)}</div>` : ''}
+    <div><b>Date</b>${escapeHtml(dateLabel)}</div>
+    <div><b>Total Items</b>${totalItems}</div>
   </div>
   <table>
-    <thead>
-      <tr><th>First Name</th><th>Last Name</th><th>Delivery Address</th><th>Category</th><th>Item</th><th>Qty</th><th>Notes</th></tr>
-    </thead>
-    <tbody>${rowsHtml}</tbody>
+    <thead><tr><th>Item Description</th><th>Qty</th><th>Notes / Hand Annotations</th></tr></thead>
+    <tbody>${catRowsHtml}</tbody>
   </table>
+  ${specialRequests.length > 0 ? `
+  <h2>${escapeHtml(clientName)} Special Requests — ${escapeHtml(dateLabel)}</h2>
+  <table>
+    <thead><tr><th>Customer</th><th>Category</th><th>Item Description</th><th>Qty</th><th>Special Request Notes</th></tr></thead>
+    <tbody>${specialRowsHtml}</tbody>
+  </table>` : ''}
 </body>
 </html>`;
 }
@@ -276,7 +318,7 @@ const DATE_FILTER_PRESETS: { key: DateFilterKey; label: string; days?: number }[
   { key: 'custom', label: 'Custom' },
 ];
 
-type TabType = 'dashboard' | 'analytics' | 'users' | 'orders' | 'chef' | 'weeks' | 'meals' | 'discounts' | 'companies' | 'notify';
+type TabType = 'dashboard' | 'analytics' | 'users' | 'orders' | 'chef' | 'weeks' | 'meals' | 'discounts' | 'companies' | 'addresses' | 'notify';
 
 const TAB_ICONS: Record<TabType, string> = {
   dashboard: 'speedometer',
@@ -288,16 +330,18 @@ const TAB_ICONS: Record<TabType, string> = {
   meals: 'restaurant',
   discounts: 'pricetag',
   companies: 'business',
+  addresses: 'location',
   notify: 'notifications',
 };
 
 export default function AdminScreen() {
-    const { orders, activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRotation, allUsers, discounts, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, addCompany, updateCompany, deleteCompany, updateOrderStatus, theme, isDark, kitchenEmail, setKitchenEmail } = useKitchen();
+    const { orders, activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRotation, allUsers, discounts, discountsLoading, addDiscount, updateDiscount, deleteDiscount, deleteUser, addUser, menus, companies, companiesLoading, addCompany, updateCompany, deleteCompany, updateOrderStatus, theme, isDark, kitchenEmail, setKitchenEmail } = useKitchen();
   const { width: screenWidth } = useWindowDimensions();
   const styles = useMemo(() => createStyles(theme, screenWidth, isDark), [theme, screenWidth, isDark]);
-  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
-  // stark white — light mode only, matching the customer-facing screens.
-  const screenBackground = isDark ? theme.background : '#F7F2E8';
+  // A warm cream backdrop instead of stark white — light mode only, matching
+  // the customer-facing screens. Sourced from the client's own CI palette: a
+  // 25% tint of the Mediterranean Pantry cream (#F5E8A6) blended into white.
+  const screenBackground = isDark ? theme.background : '#FDF9E9';
   const STATUS_COLORS = useMemo(() => getStatusColors(theme), [theme]);
   const { refreshing, refresh } = useSimulatedLoad();
   const router = useRouter();
@@ -310,6 +354,12 @@ export default function AdminScreen() {
   const [discountCompany, setDiscountCompany] = useState('');
   const [discountCategory, setDiscountCategory] = useState<string | null>(null);
   const [discountItem, setDiscountItem] = useState<string | null>(null);
+  // Discount save now hits the real database (see KitchenCoContext's
+  // addDiscount/updateDiscount/deleteDiscount), so it can genuinely fail
+  // (network, or a duplicate code).
+  const [discountSaving, setDiscountSaving] = useState(false);
+  const [discountFormError, setDiscountFormError] = useState('');
+  const [discountDialog, setDiscountDialog] = useState<{ title: string; message: string } | null>(null);
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserName, setNewUserName] = useState('');
   const [newUserEmail, setNewUserEmail] = useState('');
@@ -330,6 +380,13 @@ export default function AdminScreen() {
   const [addressDrafts, setAddressDrafts] = useState<AddressDraft[]>([makeEmptyAddressDraft()]);
   const addAddressDraft = () => { haptics.selection(); setAddressDrafts(prev => [...prev, makeEmptyAddressDraft()]); };
   const removeAddressDraft = (key: string) => { haptics.selection(); setAddressDrafts(prev => prev.filter(d => d.key !== key)); };
+  // Company save now hits the real database (see KitchenCoContext's
+  // addCompany/updateCompany), so — unlike the old local-only version —
+  // it can genuinely fail (network, or an address still assigned to an
+  // employee that can't be removed).
+  const [companySaving, setCompanySaving] = useState(false);
+  const [companyFormError, setCompanyFormError] = useState('');
+  const [companyDialog, setCompanyDialog] = useState<{ title: string; message: string } | null>(null);
   const updateAddressDraft = (key: string, patch: Partial<AddressDraft>) => {
     setAddressDrafts(prev => prev.map(d => d.key === key ? { ...d, ...patch } : d));
   };
@@ -780,38 +837,70 @@ export default function AdminScreen() {
       .sort((a, b) => b.revenue - a.revenue);
   }, [companies, orderStatsByCompany]);
 
-    const tabs: TabType[] = ['dashboard', 'analytics', 'users', 'orders', 'chef', 'weeks', 'meals', 'discounts', 'companies', 'notify'];
+    const tabs: TabType[] = ['dashboard', 'analytics', 'users', 'orders', 'chef', 'weeks', 'meals', 'discounts', 'companies', 'addresses', 'notify'];
 
   // Menu categories for discount targeting — sourced from the same live
   // `menus` data admin's Meals tab edits, so a newly-added item can be
   // targeted immediately.
   const categories = menus;
 
-  const handleAddDiscount = () => {
+  const handleAddDiscount = async () => {
     if (!discountCode || !discountPercent) return;
     if (discountExpiry.trim() && isNaN(new Date(discountExpiry.trim()).getTime())) {
       setDiscountExpiryError('Enter a valid date, e.g. 31 Dec 2026');
       return;
     }
-    addDiscount({
-      id: '',
-      code: discountCode,
-      percentage: parseInt(discountPercent),
-      active: true,
-      expires: discountExpiry.trim() || undefined,
-      company: discountCompany || undefined,
-      categoryId: discountCategory || undefined,
-      itemName: discountItem || undefined,
-    });
-    haptics.success();
-    setDiscountCode('');
-    setDiscountPercent('');
-    setDiscountExpiry('');
-    setDiscountExpiryError('');
-    setDiscountCompany('');
-    setDiscountCategory(null);
-    setDiscountItem(null);
-    setShowAddDiscount(false);
+    setDiscountFormError('');
+    setDiscountSaving(true);
+    try {
+      await addDiscount({
+        id: '',
+        code: discountCode,
+        percentage: parseInt(discountPercent),
+        active: true,
+        expires: discountExpiry.trim() || undefined,
+        company: discountCompany || undefined,
+        categoryId: discountCategory || undefined,
+        itemName: discountItem || undefined,
+      });
+      haptics.success();
+      setDiscountCode('');
+      setDiscountPercent('');
+      setDiscountExpiry('');
+      setDiscountExpiryError('');
+      setDiscountCompany('');
+      setDiscountCategory(null);
+      setDiscountItem(null);
+      setShowAddDiscount(false);
+    } catch (e) {
+      setDiscountFormError(e instanceof Error ? e.message : 'Could not save — check your connection and try again');
+    } finally {
+      setDiscountSaving(false);
+    }
+  };
+
+  const handleToggleDiscountActive = async (discount: Discount) => {
+    haptics.selection();
+    try {
+      await updateDiscount(discount.id, { active: !discount.active });
+    } catch (e) {
+      setDiscountDialog({
+        title: 'Could not update discount',
+        message: e instanceof Error ? e.message : `"${discount.code}" could not be updated — check your connection and try again.`,
+      });
+    }
+  };
+
+  const handleDeleteDiscount = async (discount: Discount) => {
+    haptics.warning();
+    try {
+      await deleteDiscount(discount.id);
+    } catch (e) {
+      setDiscountDialog({
+        title: 'Could not delete discount',
+        message: e instanceof Error ? e.message : `"${discount.code}" could not be deleted — check your connection and try again.`,
+      });
+    }
   };
 
   // Clears the shared add/edit company form and closes the modal. Called on
@@ -822,10 +911,12 @@ export default function AdminScreen() {
     setNewCompanyDomains('');
     setNewCompanySubsidy('');
     setAddressDrafts([makeEmptyAddressDraft()]);
+    setCompanyFormError('');
     setShowAddCompany(false);
   };
 
   const openEditCompany = (company: Company) => {
+    setCompanyFormError('');
     setEditingCompanyId(company.id);
     setNewCompanyName(company.name);
     setNewCompanyDomains(company.domains.join(', '));
@@ -849,7 +940,7 @@ export default function AdminScreen() {
     setShowAddCompany(true);
   };
 
-  const handleSaveCompany = () => {
+  const handleSaveCompany = async () => {
     if (!newCompanyName.trim() || !newCompanyDomains.trim()) return;
     const domains = newCompanyDomains
       .split(',')
@@ -879,13 +970,41 @@ export default function AdminScreen() {
       addresses,
       mealSubsidy: Number.isFinite(parsedSubsidy) && parsedSubsidy > 0 ? parsedSubsidy : undefined,
     };
-    if (editingCompanyId) {
-      updateCompany(editingCompanyId, payload);
-    } else {
-      addCompany(payload);
+    setCompanyFormError('');
+    setCompanySaving(true);
+    try {
+      if (editingCompanyId) {
+        const { blockedAddressDeletes } = await updateCompany(editingCompanyId, payload);
+        haptics.success();
+        closeCompanyModal();
+        if (blockedAddressDeletes.length > 0) {
+          setCompanyDialog({
+            title: 'Saved, with one exception',
+            message: `Everything else saved. These addresses couldn't be removed because an employee is already assigned to them: ${blockedAddressDeletes.map(a => a.label || a.street).join(', ')}.`,
+          });
+        }
+      } else {
+        await addCompany(payload);
+        haptics.success();
+        closeCompanyModal();
+      }
+    } catch (e) {
+      setCompanyFormError(e instanceof Error ? e.message : 'Could not save — check your connection and try again');
+    } finally {
+      setCompanySaving(false);
     }
-    haptics.success();
-    closeCompanyModal();
+  };
+
+  const handleDeleteCompany = async (company: Company) => {
+    haptics.warning();
+    try {
+      await deleteCompany(company.id);
+    } catch (e) {
+      setCompanyDialog({
+        title: 'Could not delete company',
+        message: e instanceof Error ? e.message : `${company.name} could not be deleted — check your connection and try again.`,
+      });
+    }
   };
 
   const handleAddUser = () => {
@@ -1581,6 +1700,10 @@ export default function AdminScreen() {
           />
         )}
 
+        {selectedTab === 'addresses' && (
+          <AddressesSection theme={theme} />
+        )}
+
         {selectedTab === 'notify' && (
           <NotifySection theme={theme} companies={companies} />
         )}
@@ -1608,7 +1731,7 @@ export default function AdminScreen() {
               </View>
               <TouchableOpacity
                 style={styles.addBtn}
-                onPress={() => setShowAddDiscount(true)}
+                onPress={() => { setDiscountFormError(''); setShowAddDiscount(true); }}
                 testID="add-discount-button"
                 accessibilityRole="button"
                 accessibilityLabel="Add discount"
@@ -1622,8 +1745,8 @@ export default function AdminScreen() {
                 <View style={styles.emptyIconWrap}>
                   <Ionicons name="pricetag-outline" size={40} color={theme.textSecondary} />
                 </View>
-                <Text style={styles.emptyTitle}>No discounts yet</Text>
-                <Text style={styles.emptySub}>Create discount codes to promote your meals</Text>
+                <Text style={styles.emptyTitle}>{discountsLoading ? 'Loading discounts…' : 'No discounts yet'}</Text>
+                {!discountsLoading && <Text style={styles.emptySub}>Create discount codes to promote your meals</Text>}
               </View>
             ) : (
               discounts.map((discount, idx) => (
@@ -1637,7 +1760,7 @@ export default function AdminScreen() {
                     </View>
                     <TouchableOpacity
                       style={[styles.discountToggle, discount.active && styles.discountToggleOn]}
-                      onPress={() => { haptics.selection(); updateDiscount(discount.id, { active: !discount.active }); }}
+                      onPress={() => handleToggleDiscountActive(discount)}
                       accessibilityRole="switch"
                       accessibilityState={{ checked: discount.active }}
                       accessibilityLabel={`${discount.code} active`}
@@ -1658,7 +1781,7 @@ export default function AdminScreen() {
                       <Text style={styles.discountExpiry}>No expiry</Text>
                     )}
                     <TouchableOpacity
-                      onPress={() => { haptics.warning(); deleteDiscount(discount.id); }}
+                      onPress={() => handleDeleteDiscount(discount)}
                       accessibilityRole="button"
                       accessibilityLabel={`Delete discount ${discount.code}`}
                     >
@@ -1707,8 +1830,8 @@ export default function AdminScreen() {
                 <View style={styles.emptyIconWrap}>
                   <Ionicons name="business-outline" size={40} color={theme.textSecondary} />
                 </View>
-                <Text style={styles.emptyTitle}>No companies yet</Text>
-                <Text style={styles.emptySub}>Add a corporate client to get started</Text>
+                <Text style={styles.emptyTitle}>{companiesLoading ? 'Loading companies…' : 'No companies yet'}</Text>
+                {!companiesLoading && <Text style={styles.emptySub}>Add a corporate client to get started</Text>}
               </View>
             ) : (
               companies.map((company, idx) => {
@@ -1796,6 +1919,7 @@ export default function AdminScreen() {
                             setSelectedTab('discounts');
                           } else {
                             setDiscountCompany(company.name);
+                            setDiscountFormError('');
                             setShowAddDiscount(true);
                           }
                         }}
@@ -1856,7 +1980,7 @@ export default function AdminScreen() {
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.companyFooterBtn}
-                        onPress={() => { haptics.warning(); deleteCompany(company.id); }}
+                        onPress={() => handleDeleteCompany(company)}
                         accessibilityRole="button"
                         accessibilityLabel={`Delete company ${company.name}`}
                       >
@@ -1990,12 +2114,13 @@ export default function AdminScreen() {
                 </ScrollView>
               </>
             )}
+            {discountFormError ? <Text style={styles.modalFieldError}>{discountFormError}</Text> : null}
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddDiscount(false)} accessibilityRole="button">
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddDiscount(false)} accessibilityRole="button" disabled={discountSaving}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddDiscount} accessibilityRole="button">
-                <Text style={styles.modalSaveText}>Add Discount</Text>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddDiscount} accessibilityRole="button" disabled={discountSaving}>
+                <Text style={styles.modalSaveText}>{discountSaving ? 'Saving…' : 'Add Discount'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2185,15 +2310,48 @@ export default function AdminScreen() {
             <Text style={styles.modalHint}>
               Deducted automatically from every eligible employee's order — capped so a single meal is never subsidized past its own price.
             </Text>
+            {companyFormError ? <Text style={styles.modalFieldError}>{companyFormError}</Text> : null}
             </ScrollView>
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={closeCompanyModal} accessibilityRole="button">
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={closeCompanyModal} accessibilityRole="button" disabled={companySaving}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveCompany} accessibilityRole="button" testID="save-company-button">
-                <Text style={styles.modalSaveText}>{editingCompanyId ? 'Save Changes' : 'Add Company'}</Text>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveCompany} accessibilityRole="button" testID="save-company-button" disabled={companySaving}>
+                <Text style={styles.modalSaveText}>
+                  {companySaving ? 'Saving…' : editingCompanyId ? 'Save Changes' : 'Add Company'}
+                </Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Company save/delete result — only surfaces when a real database write
+          partially or fully failed (see handleSaveCompany / handleDeleteCompany). */}
+      <Modal visible={!!companyDialog} animationType="fade" transparent onRequestClose={() => setCompanyDialog(null)}>
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogCard}>
+            <Text style={styles.dialogIcon}>⚠️</Text>
+            <Text style={styles.dialogTitle}>{companyDialog?.title}</Text>
+            <Text style={styles.dialogText}>{companyDialog?.message}</Text>
+            <TouchableOpacity style={styles.dialogOkBtn} onPress={() => setCompanyDialog(null)} accessibilityRole="button">
+              <Text style={styles.dialogOkText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Discount toggle/delete result — only surfaces when a real database
+          write failed (see handleToggleDiscountActive / handleDeleteDiscount). */}
+      <Modal visible={!!discountDialog} animationType="fade" transparent onRequestClose={() => setDiscountDialog(null)}>
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogCard}>
+            <Text style={styles.dialogIcon}>⚠️</Text>
+            <Text style={styles.dialogTitle}>{discountDialog?.title}</Text>
+            <Text style={styles.dialogText}>{discountDialog?.message}</Text>
+            <TouchableOpacity style={styles.dialogOkBtn} onPress={() => setDiscountDialog(null)} accessibilityRole="button">
+              <Text style={styles.dialogOkText}>Got it</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -2294,6 +2452,10 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
   // React Native Web with no polyfill in this project, so it renders nothing there.
   const [infoDialog, setInfoDialog] = useState<{ title: string; message: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ categoryId: string; itemId: string; itemName: string } | null>(null);
+  // Menu edits now hit the real database, so — unlike the old local-only
+  // version — a save can genuinely fail (network, or a duplicate name in
+  // the same category).
+  const [savingItem, setSavingItem] = useState(false);
 
   // Same live menu data the customer-facing Menu screen renders — edits here
   // actually show up, unlike the old `menus` state that nothing ever read.
@@ -2303,7 +2465,7 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
     ? categories.find(c => c.id === selectedCategory) 
     : null;
 
-  const handleAddItem = () => {
+  const handleAddItem = async () => {
     if (!newItemName.trim() || !newItemPrice.trim() || !newItemCategory.trim()) {
       setInfoDialog({ title: 'Missing Fields', message: 'Please fill in name, price, and category' });
       return;
@@ -2313,20 +2475,27 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
       setInfoDialog({ title: 'Invalid Price', message: 'Please enter a valid price' });
       return;
     }
-    addMenuItem(newItemCategory, {
-      name: newItemName.trim(),
-      price: priceNum,
-      description: newItemDesc.trim() || `${newItemName.trim()} - Freshly prepared`,
-    });
-    haptics.success();
-    setNewItemName('');
-    setNewItemPrice('');
-    setNewItemDesc('');
-    setNewItemCategory('');
-    setShowAddModal(false);
+    setSavingItem(true);
+    try {
+      await addMenuItem(newItemCategory, {
+        name: newItemName.trim(),
+        price: priceNum,
+        description: newItemDesc.trim() || `${newItemName.trim()} - Freshly prepared`,
+      });
+      haptics.success();
+      setNewItemName('');
+      setNewItemPrice('');
+      setNewItemDesc('');
+      setNewItemCategory('');
+      setShowAddModal(false);
+    } catch (e) {
+      setInfoDialog({ title: 'Could not add item', message: e instanceof Error ? e.message : 'Check your connection and try again' });
+    } finally {
+      setSavingItem(false);
+    }
   };
 
-  const handleEditItem = () => {
+  const handleEditItem = async () => {
     if (!editingItem) return;
     if (!editingItem.name.trim() || !editingItem.price.trim()) {
       setInfoDialog({ title: 'Missing Fields', message: 'Please fill in name and price' });
@@ -2337,18 +2506,33 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
       setInfoDialog({ title: 'Invalid Price', message: 'Please enter a valid price' });
       return;
     }
-    updateMenuItem(editingItem.categoryId, editingItem.itemId, {
-      name: editingItem.name.trim(),
-      price: priceNum,
-      description: editingItem.description.trim(),
-    });
-    haptics.success();
-    setEditingItem(null);
-    setShowEditModal(false);
+    setSavingItem(true);
+    try {
+      await updateMenuItem(editingItem.categoryId, editingItem.itemId, {
+        name: editingItem.name.trim(),
+        price: priceNum,
+        description: editingItem.description.trim(),
+      });
+      haptics.success();
+      setEditingItem(null);
+      setShowEditModal(false);
+    } catch (e) {
+      setInfoDialog({ title: 'Could not save changes', message: e instanceof Error ? e.message : 'Check your connection and try again' });
+    } finally {
+      setSavingItem(false);
+    }
   };
 
   const handleDeleteItem = (categoryId: string, itemId: string, itemName: string) => {
     setDeleteConfirm({ categoryId, itemId, itemName });
+  };
+
+  const handleToggleActive = async (categoryId: string, itemId: string, active: boolean, itemName: string) => {
+    try {
+      await setMenuItemActive(categoryId, itemId, active);
+    } catch (e) {
+      setInfoDialog({ title: 'Could not update availability', message: e instanceof Error ? e.message : `${itemName} could not be updated — check your connection and try again.` });
+    }
   };
 
   const openEditModal = (categoryId: string, item: any) => {
@@ -2451,8 +2635,11 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
               cat.items.map((item: any, idx: number) => {
                 const itemId = item.id || `menu-item-${cat.id}-${idx}`;
                 const sizes = item.sizes || [];
-                const displayPrice = sizes.length > 1
-                  ? `R${sizes[0].price.toFixed(0)} - R${sizes[sizes.length - 1].price.toFixed(0)}`
+                const sizePrices: number[] = sizes.map((s: any) => s.price);
+                const minPrice = Math.min(...sizePrices);
+                const maxPrice = Math.max(...sizePrices);
+                const displayPrice = sizes.length > 1 && minPrice !== maxPrice
+                  ? `R${minPrice.toFixed(0)} - R${maxPrice.toFixed(0)}`
                   : `R${(sizes[0]?.price || 0).toFixed(2)}`;
                 const isLive = item.active !== false;
                 return (
@@ -2476,7 +2663,7 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
                           deleting it — for the ingredient that ran out today. */}
                       <TouchableOpacity
                         style={[styles.discountToggle, isLive && styles.discountToggleOn]}
-                        onPress={() => { haptics.selection(); setMenuItemActive(cat.id, itemId, !isLive); }}
+                        onPress={() => { haptics.selection(); handleToggleActive(cat.id, itemId, !isLive, item.name); }}
                         accessibilityRole="switch"
                         accessibilityState={{ checked: isLive }}
                         aria-checked={isLive}
@@ -2559,11 +2746,11 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
               ))}
             </ScrollView>
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddModal(false)} accessibilityRole="button">
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddModal(false)} accessibilityRole="button" disabled={savingItem}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddItem} accessibilityRole="button">
-                <Text style={styles.modalSaveText}>Add Item</Text>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAddItem} accessibilityRole="button" disabled={savingItem}>
+                <Text style={styles.modalSaveText}>{savingItem ? 'Adding…' : 'Add Item'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -2608,11 +2795,11 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
                   textAlignVertical="top"
                 />
                 <View style={styles.modalBtnRow}>
-                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setShowEditModal(false); setEditingItem(null); }} accessibilityRole="button">
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => { setShowEditModal(false); setEditingItem(null); }} accessibilityRole="button" disabled={savingItem}>
                     <Text style={styles.modalCancelText}>Cancel</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.modalSaveBtn} onPress={handleEditItem} accessibilityRole="button">
-                    <Text style={styles.modalSaveText}>Save Changes</Text>
+                  <TouchableOpacity style={styles.modalSaveBtn} onPress={handleEditItem} accessibilityRole="button" disabled={savingItem}>
+                    <Text style={styles.modalSaveText}>{savingItem ? 'Saving…' : 'Save Changes'}</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -2650,10 +2837,16 @@ function MealsSection({ theme }: { theme: ThemeColors }) {
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.dialogDeleteBtn}
-                onPress={() => {
+                onPress={async () => {
                   haptics.warning();
-                  if (deleteConfirm) deleteMenuItem(deleteConfirm.categoryId, deleteConfirm.itemId);
+                  const target = deleteConfirm;
                   setDeleteConfirm(null);
+                  if (!target) return;
+                  try {
+                    await deleteMenuItem(target.categoryId, target.itemId);
+                  } catch (e) {
+                    setInfoDialog({ title: 'Could not delete item', message: e instanceof Error ? e.message : `${target.itemName} could not be deleted — check your connection and try again.` });
+                  }
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={`Delete ${deleteConfirm?.itemName ?? 'item'}`}
@@ -2680,11 +2873,22 @@ function dateKeyOf(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors; allUsers: AppUser[] }) {
+function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => Promise<void>; theme: ThemeColors; allUsers: AppUser[] }) {
   const { width: screenWidth } = useWindowDimensions();
   const styles = useMemo(() => createStyles(theme, screenWidth), [theme, screenWidth]);
   const STATUS_COLORS = useMemo(() => getStatusColors(theme), [theme]);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  // A real order's status now hits the database (update_order_status in
+  // 0003), which can genuinely fail (network, or the order was deleted) —
+  // surfaced here since this section has no other error dialog.
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const handleStatusChange = async (orderId: string, status: string) => {
+    try {
+      await updateOrderStatus(orderId, status);
+    } catch (e) {
+      setStatusError(e instanceof Error ? e.message : 'Could not update this order — check your connection and try again.');
+    }
+  };
   // Company groups start collapsed — a client with hundreds of employees
   // ordering shouldn't dump hundreds of order cards onto the screen the
   // moment this tab opens. Tap a company to reveal its individual orders.
@@ -2836,7 +3040,7 @@ function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders:
                               isCurrent && { backgroundColor: STATUS_COLORS[status], borderColor: STATUS_COLORS[status] },
                               isPast && styles.statusFlowChipPast,
                             ]}
-                            onPress={() => { haptics.selection(); updateOrderStatus(order.id, status); }}
+                            onPress={() => { haptics.selection(); handleStatusChange(order.id, status); }}
                             disabled={isCurrent}
                             accessibilityRole="button"
                             accessibilityState={{ selected: isCurrent, disabled: isCurrent }}
@@ -2855,7 +3059,7 @@ function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders:
                     </View>
                     <TouchableOpacity
                       style={styles.cancelOrderBtn}
-                      onPress={() => { haptics.warning(); updateOrderStatus(order.id, 'cancelled'); }}
+                      onPress={() => { haptics.warning(); handleStatusChange(order.id, 'cancelled'); }}
                       accessibilityRole="button"
                       accessibilityLabel={`Cancel order ${order.id}`}
                     >
@@ -2871,6 +3075,19 @@ function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders:
         </View>
         );
       })}
+
+      <Modal visible={!!statusError} animationType="fade" transparent onRequestClose={() => setStatusError(null)}>
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogCard}>
+            <Text style={styles.dialogIcon}>⚠️</Text>
+            <Text style={styles.dialogTitle}>Could not update order</Text>
+            <Text style={styles.dialogText}>{statusError}</Text>
+            <TouchableOpacity style={styles.dialogOkBtn} onPress={() => setStatusError(null)} accessibilityRole="button">
+              <Text style={styles.dialogOkText}>Got it</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -2882,10 +3099,23 @@ function OrdersSection({ orders, updateOrderStatus, theme, allUsers }: { orders:
  * order queue with status controls, stripped of everything a chef doesn't
  * need (revenue, discounts, company/user management).
  */
-function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, kitchenEmail, onEditKitchenEmail, scrollToTop }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => void; theme: ThemeColors; allUsers: AppUser[]; companies: Company[]; kitchenEmail: string; onEditKitchenEmail: () => void; scrollToTop: () => void }) {
+function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, kitchenEmail, onEditKitchenEmail, scrollToTop }: { orders: Order[]; updateOrderStatus: (orderId: string, status: string) => Promise<void>; theme: ThemeColors; allUsers: AppUser[]; companies: Company[]; kitchenEmail: string; onEditKitchenEmail: () => void; scrollToTop: () => void }) {
   const { width: screenWidth } = useWindowDimensions();
   const styles = useMemo(() => createStyles(theme, screenWidth), [theme, screenWidth]);
   const STATUS_COLORS = useMemo(() => getStatusColors(theme), [theme]);
+  // A real order's status now hits the database (update_order_status in
+  // 0003), which can genuinely fail (network, or the order was deleted) —
+  // surfaced here since this section has no other error dialog. Used both
+  // for single-order taps and the bulk multi-select action below; each
+  // failure in a bulk batch is reported, not just the first.
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const handleStatusChange = async (orderId: string, status: string) => {
+    try {
+      await updateOrderStatus(orderId, status);
+    } catch (e) {
+      setStatusError(e instanceof Error ? e.message : 'Could not update this order — check your connection and try again.');
+    }
+  };
   const activeOrders = useMemo(
     () => orders.filter(o => o.status !== 'delivered' && o.status !== 'cancelled'),
     [orders]
@@ -3141,21 +3371,22 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
         ? [company.addresses[0].unit, company.addresses[0].street, company.addresses[0].suburb, company.addresses[0].city].filter(Boolean).join(', ')
         : client.address;
 
+      const specialRequests = client.rows.filter(row => row.notes);
+
       subject = `Delivery Note — ${client.name} — ${dateLabel}`;
       const lines: string[] = [`${client.name.toUpperCase()} DELIVERY NOTE`];
       if (addressLine) lines.push(addressLine);
-      lines.push(dateLabel, '');
-      let currentCategory = '';
-      client.rows.forEach(row => {
-        if (row.category !== currentCategory) {
-          currentCategory = row.category;
-          lines.push(currentCategory);
-        }
-        lines.push(`  ${row.qty}x  ${row.itemName} — ${row.customerName}${row.notes ? ` | ${row.notes}` : ''}`);
+      lines.push(dateLabel, `Total items: ${client.total}`, '');
+      client.categories.forEach(cat => {
+        lines.push(`${cat.category} (${cat.subtotal})`);
+        cat.items.forEach(item => lines.push(`  ${item.qty}x  ${item.name}`));
       });
-      lines.push('', `Total items: ${client.total}`);
+      if (specialRequests.length > 0) {
+        lines.push('', 'SPECIAL REQUESTS');
+        specialRequests.forEach(row => lines.push(`  ${row.customerName} — ${row.itemName} — ${row.notes}`));
+      }
       body = lines.join('\n');
-      buildHtml = () => buildDeliveryNoteHtml(client.name, dateLabel, addressLine, client.rows);
+      buildHtml = () => buildDeliveryNoteHtml(client.name, dateLabel, addressLine, client.total, client.categories, specialRequests);
     }
 
     return { subject, body, buildHtml };
@@ -3367,11 +3598,21 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
    * corporate entry is one physical delivery batch and that function is what
    * carries the change across every sibling order in it.
    */
-  const applyBulkStatus = (status: string) => {
+  const applyBulkStatus = async (status: string) => {
     if (liveSelection.length === 0) return;
     haptics.success();
-    liveSelection.forEach(entry => updateOrderStatus(entry.updateTargetId, status));
+    const targets = liveSelection;
     setSelectedQueueKeys(new Set());
+    const results = await Promise.allSettled(targets.map(entry => updateOrderStatus(entry.updateTargetId, status)));
+    const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (failures.length > 0) {
+      const messages = [...new Set(failures.map(f => (f.reason instanceof Error ? f.reason.message : String(f.reason))))];
+      setStatusError(
+        failures.length === targets.length
+          ? messages.join(' ')
+          : `${targets.length - failures.length} of ${targets.length} updated. ${messages.join(' ')}`
+      );
+    }
   };
 
   // Jump from a queue card to that client's section of the Production Sheet.
@@ -3656,7 +3897,11 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
                       ))}
 
                       <View style={styles.prodSubLabelRow}>
-                        <Text style={styles.prodSubLabel}>Special Requests</Text>
+                        {/* Only actually "Special Requests" once flaggedOnly narrows
+                            it down — otherwise this list is every person's row,
+                            flagged or not, so the label said something the screen
+                            wasn't showing. */}
+                        <Text style={styles.prodSubLabel}>{flaggedOnly ? 'Special Requests' : 'Manifest'}</Text>
                         {client.flagged > 0 && <Text style={styles.prodSubLabelCount}>{client.flagged} flagged</Text>}
                       </View>
                       {visibleRows.length === 0 ? (
@@ -3817,7 +4062,7 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
                             isCurrent && { backgroundColor: STATUS_COLORS[status], borderColor: STATUS_COLORS[status] },
                             isPast && styles.statusFlowChipPast,
                           ]}
-                          onPress={() => { haptics.selection(); updateOrderStatus(entry.updateTargetId, status); }}
+                          onPress={() => { haptics.selection(); handleStatusChange(entry.updateTargetId, status); }}
                           disabled={isCurrent}
                           accessibilityRole="button"
                           accessibilityState={{ selected: isCurrent, disabled: isCurrent }}
@@ -3881,6 +4126,19 @@ function ChefSection({ orders, updateOrderStatus, theme, allUsers, companies, ki
                 <Text style={styles.modalSaveText}>{sending ? 'Preparing…' : 'Send'}</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!statusError} animationType="fade" transparent onRequestClose={() => setStatusError(null)}>
+        <View style={styles.dialogOverlay}>
+          <View style={styles.dialogCard}>
+            <Text style={styles.dialogIcon}>⚠️</Text>
+            <Text style={styles.dialogTitle}>Could not update order</Text>
+            <Text style={styles.dialogText}>{statusError}</Text>
+            <TouchableOpacity style={styles.dialogOkBtn} onPress={() => setStatusError(null)} accessibilityRole="button">
+              <Text style={styles.dialogOkText}>Got it</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -4148,13 +4406,217 @@ function WeeksSection({ activeWeek, setActiveWeek, cycleWeekOffset, resetCycleRo
   );
 }
 
+/**
+ * Individual customers' real delivery addresses (Supabase `addresses`
+ * table) — talks to the database directly rather than through
+ * KitchenCoContext, since this data has no local-mock equivalent the way
+ * companies/menus/discounts still do. place_order rejects any address
+ * whose distance_km is null (see 0006's migration comment), and nothing
+ * else in the app ever sets it, so this is the only place a fresh
+ * individual signup can ever become orderable.
+ */
+function AddressesSection({ theme }: { theme: ThemeColors }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const styles = useMemo(() => createStyles(theme, screenWidth), [theme, screenWidth]);
+  const [addresses, setAddresses] = useState<AdminAddress[] | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [editingAddress, setEditingAddress] = useState<AdminAddress | null>(null);
+  const [distanceDraft, setDistanceDraft] = useState('');
+  const [distanceError, setDistanceError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchAllAddressesForAdmin()
+      .then(rows => { if (!cancelled) { setAddresses(rows); setLoadError(false); } })
+      .catch(() => { if (!cancelled) setLoadError(true); });
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
+  const missingCount = useMemo(
+    () => (addresses ?? []).filter(a => a.distanceKm == null).length,
+    [addresses]
+  );
+
+  // Addresses still missing a distance surface first — those are the ones
+  // blocking an order right now.
+  const sortedAddresses = useMemo(
+    () => [...(addresses ?? [])].sort((a, b) => Number(a.distanceKm != null) - Number(b.distanceKm != null)),
+    [addresses]
+  );
+
+  const openEdit = (address: AdminAddress) => {
+    setEditingAddress(address);
+    setDistanceDraft(address.distanceKm != null ? String(address.distanceKm) : '');
+    setDistanceError('');
+  };
+
+  const handleSaveDistance = async () => {
+    if (!editingAddress) return;
+    const parsed = parseFloat(distanceDraft);
+    if (!distanceDraft.trim() || isNaN(parsed) || parsed < 0) {
+      setDistanceError('Enter a distance in km, e.g. 12.5');
+      return;
+    }
+    setSaving(true);
+    try {
+      await adminSetAddressDistance(editingAddress.id, parsed);
+      haptics.success();
+      const savedId = editingAddress.id;
+      setAddresses(prev => (prev ?? []).map(a => (a.id === savedId ? { ...a, distanceKm: parsed } : a)));
+      setEditingAddress(null);
+    } catch {
+      setDistanceError('Could not save — check your connection and try again');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <View style={styles.pageHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.greeting}>Customer Addresses</Text>
+          <Text style={styles.greetingSub}>
+            {addresses == null
+              ? 'Loading…'
+              : `${addresses.length} registered address${addresses.length === 1 ? '' : 'es'}${missingCount > 0 ? ` • ${missingCount} missing distance` : ''}`}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => setRefreshKey(k => k + 1)}
+          accessibilityRole="button"
+          accessibilityLabel="Refresh addresses"
+        >
+          <Ionicons name="refresh" size={20} color={theme.onAccent} />
+        </TouchableOpacity>
+      </View>
+
+      {missingCount > 0 && (
+        <View style={styles.addressWarningBanner}>
+          <Ionicons name="alert-circle" size={16} color={theme.warning} />
+          <Text style={styles.addressWarningBannerText}>
+            {missingCount} address{missingCount === 1 ? '' : 'es'} still {missingCount === 1 ? 'has' : 'have'} no
+            delivery distance set. Orders to {missingCount === 1 ? 'it' : 'them'} will fail at checkout until you set one.
+          </Text>
+        </View>
+      )}
+
+      {addresses == null ? (
+        loadError ? (
+          <View style={styles.emptyState}>
+            <View style={styles.emptyIconWrap}>
+              <Ionicons name="cloud-offline-outline" size={40} color={theme.textSecondary} />
+            </View>
+            <Text style={styles.emptyTitle}>Could not load addresses</Text>
+            <Text style={styles.emptySub}>Check your connection and try again</Text>
+          </View>
+        ) : (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptySub}>Loading addresses…</Text>
+          </View>
+        )
+      ) : addresses.length === 0 ? (
+        <View style={styles.emptyState}>
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="location-outline" size={40} color={theme.textSecondary} />
+          </View>
+          <Text style={styles.emptyTitle}>No customer addresses yet</Text>
+          {/* Individuals no longer type a "home address" -- they pick a
+              delivery/collection point from a registered business (client
+              review, Sep 2026). */}
+          <Text style={styles.emptySub}>An individual's selected delivery location appears here once they sign up</Text>
+        </View>
+      ) : (
+        sortedAddresses.map(address => (
+          <View key={address.id} style={styles.userCard}>
+            <View style={styles.userAvatar}>
+              <Ionicons
+                name="location"
+                size={20}
+                color={address.distanceKm == null ? theme.warning : theme.textSecondary}
+              />
+            </View>
+            <View style={styles.userInfo}>
+              <View style={styles.userNameRow}>
+                <Text style={styles.userName}>{address.userName || address.userEmail}</Text>
+                {address.distanceKm == null && (
+                  <View style={[styles.adminBadge, { backgroundColor: theme.warning + '30' }]}>
+                    <Text style={[styles.adminBadgeText, { color: theme.warning }]}>No distance</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.userEmail}>{address.userEmail}</Text>
+              <Text style={styles.userMeta} numberOfLines={2}>
+                {[address.label, address.street, address.suburb, address.city].filter(Boolean).join(', ')}
+              </Text>
+              {address.distanceKm != null && (
+                <Text style={styles.userMeta}>{address.distanceKm} km from Central Kitchen</Text>
+              )}
+            </View>
+            <TouchableOpacity
+              style={styles.editBtn}
+              onPress={() => openEdit(address)}
+              accessibilityRole="button"
+              accessibilityLabel={`Set delivery distance for ${address.userEmail}`}
+            >
+              <Ionicons name="create-outline" size={18} color={theme.text} />
+            </TouchableOpacity>
+          </View>
+        ))
+      )}
+
+      <Modal visible={Boolean(editingAddress)} animationType="slide" transparent onRequestClose={() => setEditingAddress(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Delivery Distance</Text>
+              <TouchableOpacity onPress={() => setEditingAddress(null)} accessibilityRole="button" accessibilityLabel="Close">
+                <Ionicons name="close" size={24} color={theme.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {editingAddress && (
+              <Text style={styles.modalHint}>
+                {editingAddress.userEmail} — {[editingAddress.label, editingAddress.street, editingAddress.suburb, editingAddress.city].filter(Boolean).join(', ')}
+              </Text>
+            )}
+            <TextInput
+              style={[styles.modalInput, distanceError ? styles.modalInputError : null]}
+              placeholder="Distance in km, e.g. 12.5"
+              placeholderTextColor={theme.textTertiary}
+              value={distanceDraft}
+              onChangeText={(val) => { setDistanceDraft(val); setDistanceError(''); }}
+              keyboardType="decimal-pad"
+            />
+            {distanceError ? <Text style={styles.modalFieldError}>{distanceError}</Text> : null}
+            <Text style={styles.modalHint}>
+              Straight-line distance from Central Kitchen, surveyed manually — this is what the delivery fee band
+              and order placement both depend on.
+            </Text>
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setEditingAddress(null)} accessibilityRole="button">
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveDistance} accessibilityRole="button" disabled={saving}>
+                <Text style={styles.modalSaveText}>{saving ? 'Saving…' : 'Save'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
 // isDark defaults to false since every section but AdminScreen itself calls
 // this with just `theme` — none of them render the root container/StatusBar
 // that isDark actually affects.
 const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean = false) => StyleSheet.create({
-  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
-  // stark white — light mode only, matching the customer-facing screens.
-  container: { flex: 1, backgroundColor: isDark ? theme.background : '#F7F2E8' },
+  // Warm cream backdrop, light mode only — see screenBackground above for
+  // where this tint comes from.
+  container: { flex: 1, backgroundColor: isDark ? theme.background : '#FDF9E9' },
 
   // Shell header
   shellHeader: {
@@ -4747,6 +5209,24 @@ const createStyles = (theme: ThemeColors, screenWidth: number, isDark: boolean =
     backgroundColor: theme.surfaceSecondary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  addressWarningBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: theme.warning,
+    backgroundColor: theme.warning + '1F',
+    marginBottom: 14,
+  },
+  addressWarningBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.text,
+    lineHeight: 17,
   },
 
   // Orders

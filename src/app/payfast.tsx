@@ -38,9 +38,11 @@ Notifications.setNotificationHandler({
 export default function PayFastSandboxScreen() {
   const { cart, placeOrder, user, savedCards, saveCard, orderNote, appliedDiscount, calculateDiscountAmount, deliveryInfo, theme, isDark } = useKitchen();
   const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
-  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
-  // stark white — light mode only, matching the rest of the ordering flow.
-  const screenBackground = isDark ? theme.background : '#F7F2E8';
+  // A warm cream backdrop instead of stark white — light mode only, matching
+  // the rest of the ordering flow. Sourced from the client's own CI palette:
+  // a 25% tint of the Mediterranean Pantry cream (#F5E8A6) blended into
+  // white, subtle enough to read as a neutral backdrop, not an accent colour.
+  const screenBackground = isDark ? theme.background : '#FDF9E9';
   const router = useRouter();
   const webViewRef = useRef<WebView>(null);
   // Focused from the expiry month field once two digits are in, so MM/YY is
@@ -51,6 +53,12 @@ export default function PayFastSandboxScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [showCardForm, setShowCardForm] = useState(true);
   const [showSuccess, setShowSuccess] = useState(false);
+  // Payment can succeed at PayFast while placeOrder() still fails server-side
+  // (cutoff passed between checkout and payment, address became undeliverable,
+  // etc.) — this surfaces that honestly instead of showing a fake success
+  // screen. Cart is left intact in this case (placeOrder only clears it on
+  // its own success path), so nothing already paid for is lost from the cart.
+  const [orderError, setOrderError] = useState<string | null>(null);
   const [emailSent, setEmailSent] = useState(false);
   const [saveCardEnabled, setSaveCardEnabled] = useState(false);
   // A saved card only ever exposes a masked number, so re-selecting one skips
@@ -320,20 +328,60 @@ export default function PayFastSandboxScreen() {
       // 2. Send email notification to the user's email
       await sendEmailNotification();
       
-      // 3. Clear state and record order details — snapshot the total first,
-      // since placeOrder() empties the cart that finalTotal is derived from.
-      setPaidAmount(finalTotal);
-      // Hand the order the same m_payment_id PayFast was posted, so the Tax
+      // 3. Record the order server-side — snapshot the total first, since a
+      // successful placeOrder() empties the cart that finalTotal is derived
+      // from. Hand it the same m_payment_id PayFast was posted, so the Tax
       // Invoice and any dispute ticket quote the real reference.
-      placeOrder(undefined, paymentReference);
-
-      // 4. Show success screen
-      haptics.success();
-      setShowSuccess(true);
+      setPaidAmount(finalTotal);
+      try {
+        await placeOrder(undefined, paymentReference);
+        haptics.success();
+        setShowSuccess(true);
+      } catch (err) {
+        haptics.warning();
+        setOrderError(String((err as { message?: string })?.message || 'ORDER_FAILED'));
+        // Allow a retry attempt (e.g. after fixing the address) rather than
+        // permanently locking this screen via the duplicate-order guard.
+        hasPlacedOrderRef.current = false;
+      }
     } else if (url.startsWith(CANCEL_URL)) {
       router.replace('/cart');
     }
   };
+
+  // Payment succeeded at PayFast but the order itself failed to save — shown
+  // instead of a fake success screen (see handleNavigationStateChange).
+  if (orderError) {
+    const friendlyMessage: Record<string, string> = {
+      CUTOFF_PASSED: "The order cutoff passed while you were paying — nothing in your cart is orderable for today's date any more. Your cart is unchanged; pick a new delivery day and try again.",
+      UNDELIVERABLE_DISTANCE: 'Your delivery address is outside our delivery range. Your cart is unchanged — update your address and try again.',
+      NO_DELIVERY_ADDRESS: 'No delivery address is on file for your account yet. Your cart is unchanged — add an address and try again.',
+      ADDRESS_NOT_FOUND: 'Your delivery address could not be found. Your cart is unchanged — try again from the cart.',
+    };
+    return (
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
+        <View style={styles.successContainer}>
+          <View style={styles.successIconWrap}>
+            <Text style={styles.successIcon}>⚠️</Text>
+          </View>
+          <Text style={styles.successTitle}>Payment received, order not placed</Text>
+          <Text style={styles.successSubtext}>
+            {friendlyMessage[orderError] || 'Something went wrong saving your order. Your cart is unchanged — try again from the cart, or contact support with your payment reference.'}
+          </Text>
+          <Text style={styles.successSubtext}>Payment reference: {paymentReference}</Text>
+          <TouchableOpacity
+            style={styles.continueShoppingBtn}
+            onPress={() => router.replace('/cart')}
+            accessibilityRole="button"
+            accessibilityLabel="Back to cart"
+          >
+            <Text style={styles.continueShoppingBtnText}>Back to Cart</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   // Success screen after payment + email
   if (showSuccess) {
@@ -799,9 +847,9 @@ export default function PayFastSandboxScreen() {
 }
 
 const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create({
-  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
-  // stark white — light mode only, matching the rest of the ordering flow.
-  container: { flex: 1, backgroundColor: isDark ? theme.background : '#F7F2E8' },
+  // Warm cream backdrop, light mode only — see screenBackground above for
+  // where this tint comes from.
+  container: { flex: 1, backgroundColor: isDark ? theme.background : '#FDF9E9' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -949,7 +997,7 @@ const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create(
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: isDark ? theme.background : '#F7F2E8',
+    backgroundColor: isDark ? theme.background : '#FDF9E9',
   },
   successIconWrap: {
     width: 80,

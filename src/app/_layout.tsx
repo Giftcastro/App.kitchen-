@@ -34,7 +34,7 @@ LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 // router.replace() in a useEffect — the latter can fire before the root
 // navigator has finished mounting and throws.
 function RootLayoutNavigation() {
-  const { user, orderingForDate, theme } = useKitchen();
+  const { user, orderingForDate, theme, authLoading } = useKitchen();
   const segments = useSegments();
 
   // Determine if the user is currently looking at the login page
@@ -60,8 +60,11 @@ function RootLayoutNavigation() {
         {/* <Redirect> renders alongside <Slot>, never instead of it — Slot is
             what keeps the file-based route tree (including the (tabs) group)
             mounted and registered; swapping it out for Redirect would tear
-            down the very navigator the redirect target lives in. */}
-        {!user && !inAuthGroup && <Redirect href="/login" />}
+            down the very navigator the redirect target lives in.
+            The !user->/login redirect is held off until the initial Supabase
+            session-restore check finishes — otherwise a returning logged-in
+            user flashes the login screen for a moment on every cold start. */}
+        {!authLoading && !user && !inAuthGroup && <Redirect href="/login" />}
         {needsDeliveryDay && <Redirect href="/select-date" />}
         {user && inAuthGroup && (
           // Logged in but still sitting on the login page — send them to

@@ -28,8 +28,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   await page.evaluate(() => Promise.all(
     Array.from(document.images).filter((i) => !i.complete).map((i) => new Promise((r) => { i.onload = i.onerror = r; }))
   ));
+  // `complete` only means the bytes are in — it does NOT mean the bitmap is
+  // decoded and paintable. A phone frame whose image is still decoding prints
+  // as a solid black rectangle (the .frame background), which is how a screen
+  // silently went blank in the v5 build. decode() is the barrier that
+  // actually waits for paintable.
+  await page.evaluate(() => Promise.all(
+    Array.from(document.images).map((i) => (i.decode ? i.decode().catch(() => {}) : null))
+  ));
   await page.evaluateHandle('document.fonts.ready');
-  await sleep(1500);
+  await sleep(4000);
 
   await page.pdf({
     path: OUT,

@@ -14,8 +14,7 @@ import { useResponsive } from '../../utils/responsive';
 import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
 import { APP_MAX_WIDTH, ThemeColors } from '../../utils/theme';
 import { legacyTypography } from '../../utils/legacyTypography';
-
-import cycleMenuData from '../../data/cycleMenu.json';
+import { fetchAllCycleMenus, fetchCycleItemPriceRands, dayNameToDbDay, mealTypeKeyToDbSlot } from '../../lib/supabase/menu';
 
 // This screen keeps the pre-KitchenCo prototype's RobotoCondensed body type
 // instead of the app-wide Montserrat (see legacyTypography.ts) — every
@@ -39,7 +38,6 @@ interface UIReadyItem {
   tags?: string[];
 }
 
-const CYCLE_ITEM_PRICE = 80;
 const PAGE_PADDING = 16;
 const CARD_GAP = 20; // minimum horizontal gutter (actual gap grows via space-between)
 
@@ -103,14 +101,30 @@ function formatCategoryLabel(name: string): string {
 }
 
 export default function MenuScreen() {
-  const { addToCart, cart, cycleWeekOffset, theme, isDark, discounts, menus, user, triggerCartFly, orderingForDate, visibleAnnouncements, dismissAnnouncement } = useKitchen();
-  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
-  // stark white — light mode only, matching how that palette never carried
-  // the warmth into dark mode either. Scoped to this screen's own canvas;
-  // cards/surfaces stay on the current theme's colors untouched.
-  const screenBackground = isDark ? theme.background : '#F7F2E8';
+  const { addToCart, cart, cycleWeekOffset, theme, isDark, discounts, menus, menusLoading, refetchMenus, user, triggerCartFly, orderingForDate, visibleAnnouncements, dismissAnnouncement } = useKitchen();
+  // A warm cream backdrop instead of stark white — light mode only, matching
+  // how that palette never carried the warmth into dark mode either. Scoped
+  // to this screen's own canvas; cards/surfaces stay on the current theme's
+  // colors untouched. Sourced from the client's own CI palette: a 25% tint
+  // of the Mediterranean Pantry cream (#F5E8A6) blended into white.
+  const screenBackground = isDark ? theme.background : '#FDF9E9';
   const styles = useMemo(() => createStyles(theme), [theme]);
-  const { isLoading, refreshing, refresh } = useSimulatedLoad();
+
+  // Today's Menu (cycle) content and its flat price — loaded once from
+  // Supabase (see fetchAllCycleMenus's own comment for why all 8 weeks load
+  // at once rather than per-viewed-week).
+  const [cycleMenus, setCycleMenus] = useState<Record<string, Record<string, string>[]>>({});
+  const [cycleItemPrice, setCycleItemPrice] = useState(80);
+  const refetchCycleMenu = () =>
+    Promise.all([fetchAllCycleMenus(), fetchCycleItemPriceRands()]).then(([menusResult, priceResult]) => {
+      setCycleMenus(menusResult);
+      setCycleItemPrice(priceResult);
+    });
+  useEffect(() => { refetchCycleMenu().catch(() => {}); }, []);
+
+  const { isLoading, refreshing, refresh } = useSimulatedLoad(async () => {
+    await Promise.all([refetchMenus(), refetchCycleMenu()]);
+  });
   const addToCartBtnRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
   const router = useRouter();
   // Which toggle (Standard Classics / Today's Menu) was showing before a
@@ -391,6 +405,15 @@ export default function MenuScreen() {
           deliveryDate: iso,
           deliveryDateLabel: dateMeta?.label,
           addOns: chosenAddOns.length > 0 ? chosenAddOns : undefined,
+          // Structured source reference for place_order (see CartItem) —
+          // static items carry their real menu_items UUID directly as
+          // selectedItem.id; cycle items carry week/day/slot instead since
+          // they have no menu_items row at all.
+          source: isCycleItem ? 'cycle' : 'static',
+          menuItemId: isCycleItem ? undefined : selectedItem.id,
+          cycleWeekNumber: isCycleItem ? selectedItem.cycleWeekNumber : undefined,
+          cycleDayOfWeek: isCycleItem ? selectedItem.cycleDayOfWeek : undefined,
+          cycleSlot: isCycleItem ? selectedItem.cycleSlot : undefined,
         });
       }
     });
@@ -417,10 +440,15 @@ export default function MenuScreen() {
       name: mealName,
       description: mealType.replace(/_/g, ' '),
       category: `${weekName} • ${day.dayName}`,
-      sizes: [{ label: 'Regular', price: CYCLE_ITEM_PRICE }],
+      sizes: [{ label: 'Regular', price: cycleItemPrice }],
       mealType,
       day: day.dayName,
       weekName,
+      // Structured DB references for place_order — the cart id string above
+      // is for display/merge-key purposes only, this is what the RPC needs.
+      cycleWeekNumber: parseInt(weekName.replace(/\D/g, ''), 10),
+      cycleDayOfWeek: dayNameToDbDay(day.dayName),
+      cycleSlot: mealTypeKeyToDbSlot(mealType),
       // Carries the customer's chosen delivery date through to the cart —
       // picked up front on /select-date (see orderingDay), not
       // in this add-to-cart modal like the Main Menu's multi-date picker.
@@ -666,7 +694,7 @@ export default function MenuScreen() {
   // getCycleWeekKeyForDate above) — a given day's meals can genuinely differ
   // from another day's even within the same page.
   const renderCycleMenu = () => {
-    if (!cycleMenuData) {
+    if (Object.keys(cycleMenus).length === 0) {
       return (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyEmoji}>📅</Text>
@@ -691,7 +719,7 @@ export default function MenuScreen() {
     // different rotation week.
     const getMealsForDay = (day: UpcomingWeekday) => {
       const weekKey = getCycleWeekKeyForDate(day);
-      const weekData = (cycleMenuData as any)[weekKey];
+      const weekData = (cycleMenus as any)[weekKey];
       if (!weekData || !Array.isArray(weekData)) return { weekKey, meals: null as null | { mealType: string; mealDescription: string }[] };
       const dayData = weekData.find((dayObj: any) => dayObj.DAY === day.dayName);
       const meals = dayData
@@ -738,7 +766,7 @@ export default function MenuScreen() {
           style={styles.listCard}
           activeOpacity={0.9}
           onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr)}
-          accessibilityLabel={`${mealName}, R${CYCLE_ITEM_PRICE}`}
+          accessibilityLabel={`${mealName}, R${cycleItemPrice}`}
         >
           <View style={styles.listCardTopRow}>
             <View style={styles.listCardNameCol}>
@@ -746,7 +774,7 @@ export default function MenuScreen() {
             </View>
             <View style={styles.listCardPriceCol}>
               <View style={styles.uberPriceRow}>
-                <Text style={styles.uberPrice}>R{CYCLE_ITEM_PRICE}</Text>
+                <Text style={styles.uberPrice}>R{cycleItemPrice}</Text>
               </View>
               <View style={styles.listCardAddBtn}>
                 <QuickAddButton
@@ -922,7 +950,11 @@ export default function MenuScreen() {
             accessibilityRole="button"
             accessibilityLabel={`Ordering for ${orderingDay.label}. Change delivery day`}
           >
-            <Ionicons name="calendar-outline" size={18} color={theme.text} />
+            {/* The CI-colour "pop" the client asked to liven the app up with
+                (client review, Sep 2026, repeated 2026-09-15) — this is the
+                app's stand-in for the old visible "Ordering for <day>" bar,
+                so it's a natural place for the one touch of colour. */}
+            <Ionicons name="calendar-outline" size={18} color={theme.brandPop} />
           </TouchableOpacity>
         )}
       </View>
@@ -948,7 +980,7 @@ export default function MenuScreen() {
 
       {menuView === 'main' ? renderCategoryFilter() : null}
 
-      {isLoading ? renderMenuSkeleton() : (menuView === 'main' ? renderStaticMenuGrid() : renderCycleMenu())}
+      {(isLoading || menusLoading) ? renderMenuSkeleton() : (menuView === 'main' ? renderStaticMenuGrid() : renderCycleMenu())}
 
       {/* Add to Cart Modal with Notes */}
       <Modal

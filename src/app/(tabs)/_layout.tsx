@@ -16,7 +16,9 @@ export default function TabsLayout() {
   // otherwise read as a jarring white seam above it. Admin hides this header
   // entirely (headerShown: false) and renders its own, so this only ever
   // touches the three screens that already carry the warm background.
-  const headerBackground = isDark ? theme.headerBg : '#F7F2E8';
+  // Sourced from the client's own CI palette: a 25% tint of the Mediterranean
+  // Pantry cream (#F5E8A6) blended into white.
+  const headerBackground = isDark ? theme.headerBg : '#FDF9E9';
   // Android gesture/back-button nav bar sits below the tab bar's fixed
   // content height — without adding this inset, tab icons/labels render
   // partially behind that system UI on devices with gesture navigation.
@@ -63,7 +65,10 @@ export default function TabsLayout() {
       <FlyToCartOverlay ref={flyOverlayRef} theme={theme} />
       <Tabs
         screenOptions={{
-          tabBarActiveTintColor: theme.accent,
+          // The one CI-colour "pop" the client asked to liven the app up with
+          // (client review, Sep 2026, repeated 2026-09-15) — everywhere else,
+          // including every button, stays the black/white `accent`.
+          tabBarActiveTintColor: theme.brandPop,
           tabBarInactiveTintColor: theme.textTertiary,
           // react-navigation's bottom-tabs/header render their own internal
           // Text, not one of ours — AppText's wrapper can't reach them, so

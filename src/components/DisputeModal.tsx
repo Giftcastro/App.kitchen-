@@ -27,7 +27,7 @@ interface DisputeModalProps {
   userName: string;
   onClose: () => void;
   /** Records the dispute and returns the support ticket reference it logged. */
-  onConfirmDispute: (orderId: string, reason: string) => string;
+  onConfirmDispute: (orderId: string, reason: string) => Promise<string>;
 }
 
 export const DisputeModal: React.FC<DisputeModalProps> = ({
@@ -40,18 +40,43 @@ export const DisputeModal: React.FC<DisputeModalProps> = ({
 }) => {
   const { theme } = useKitchen();
   const [reason, setReason] = useState<string>('');
+  // Reporting a real order's dispute now hits the database (report_order_dispute
+  // in 0003), which can genuinely fail (already disputed, network) — Alert.alert
+  // is a documented no-op on React Native Web, so a real error needs an in-app
+  // dialog rather than that fallback (still used below, unchanged, for the
+  // pre-existing "mail client didn't open" case).
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   if (!visible || !order) return null;
 
   const view = presentOrder(order);
   const styles = createStyles(theme);
 
-  const handleEscalate = () => {
+  // Clears any stale error from a previous attempt before actually closing —
+  // wraps the parent's onClose rather than a useEffect, so it only resets on
+  // an explicit dismissal, not on every re-render while still open.
+  const handleClose = () => {
+    setError('');
+    onClose();
+  };
+
+  const handleEscalate = async () => {
     const detail = reason.trim() || 'Meal not present in designated floor pantry cooler at 12:00 PM';
-    // Log first, then quote the reference the store actually recorded — minting
-    // a second one here would put a different ticket number in the email than
-    // the one shown on the order card.
-    const ticketId = onConfirmDispute(order.id, detail);
+    setError('');
+    setSubmitting(true);
+    let ticketId: string;
+    try {
+      // Log first, then quote the reference the store actually recorded —
+      // minting a second one here would put a different ticket number in
+      // the email than the one shown on the order card.
+      ticketId = await onConfirmDispute(order.id, detail);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not log this ticket — check your connection and try again.');
+      setSubmitting(false);
+      return;
+    }
+    setSubmitting(false);
 
     const subject = encodeURIComponent(`[URGENT] Non-Delivery Escalation: ${view.orderNumber} (${ticketId})`);
     const body = encodeURIComponent(
@@ -91,7 +116,7 @@ export const DisputeModal: React.FC<DisputeModalProps> = ({
               <Text style={styles.title}>Report Meal Issue / Non-Delivery</Text>
             </View>
             <TouchableOpacity
-              onPress={onClose}
+              onPress={handleClose}
               style={styles.closeBtn}
               accessibilityRole="button"
               accessibilityLabel="Close report issue"
@@ -142,12 +167,15 @@ export const DisputeModal: React.FC<DisputeModalProps> = ({
             accessibilityLabel="Issue details"
           />
 
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
           <View style={styles.actionsRow}>
             <TouchableOpacity
-              onPress={onClose}
+              onPress={handleClose}
               style={styles.cancelBtn}
               accessibilityRole="button"
               accessibilityLabel="Cancel report"
+              disabled={submitting}
             >
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
@@ -155,12 +183,13 @@ export const DisputeModal: React.FC<DisputeModalProps> = ({
             <TouchableOpacity
               activeOpacity={0.85}
               onPress={handleEscalate}
-              style={styles.escalateBtn}
+              style={[styles.escalateBtn, submitting && styles.escalateBtnDisabled]}
               accessibilityRole="button"
               accessibilityLabel="Confirm and dispatch ticket"
+              disabled={submitting}
             >
               <Ionicons name="mail" size={16} color={theme.white} />
-              <Text style={styles.escalateBtnText}>Confirm &amp; Dispatch Ticket</Text>
+              <Text style={styles.escalateBtnText}>{submitting ? 'Logging ticket…' : 'Confirm & Dispatch Ticket'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -205,6 +234,7 @@ const createStyles = (theme: ReturnType<typeof useKitchen>['theme']) => StyleShe
     borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 13, minHeight: 68, marginBottom: 16,
     backgroundColor: theme.inputBg, borderColor: theme.border, color: theme.text,
   },
+  errorText: { fontSize: 12, fontWeight: '600', color: theme.error, marginBottom: 10 },
   actionsRow: { flexDirection: 'row', gap: 10 },
   cancelBtn: {
     flex: 1, paddingVertical: 14, borderRadius: 12, borderWidth: 1, alignItems: 'center', justifyContent: 'center',
@@ -215,6 +245,7 @@ const createStyles = (theme: ReturnType<typeof useKitchen>['theme']) => StyleShe
     flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: 14, borderRadius: 12, backgroundColor: theme.error,
   },
+  escalateBtnDisabled: { opacity: 0.6 },
   escalateBtnText: { fontSize: 14, fontWeight: '800', color: theme.white },
 });
 

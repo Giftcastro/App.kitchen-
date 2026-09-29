@@ -21,6 +21,7 @@ import { Text as BrandText, TextInput as BrandTextInput } from '../components/Ap
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useKitchen } from '../context/KitchenCoContext';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { getOrderCutoffInfo } from '../utils/deliveryHelpers';
 import { ThemeColors } from '../utils/theme';
 import { legacyTypography } from '../utils/legacyTypography';
@@ -40,9 +41,11 @@ export default function CartScreen() {
   const { cart, removeFromCart, clearCart, addToCart, discounts, appliedDiscount, setAppliedDiscount, isItemEligibleForDiscount, calculateDiscountAmount, calculateSubsidyAmount, deliveryInfo, theme, isDark } = useKitchen();
   const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
   const router = useRouter();
-  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
-  // stark white — light mode only, matching the customer-facing screens.
-  const screenBackground = isDark ? theme.background : '#F7F2E8';
+  // A warm cream backdrop instead of stark white — light mode only, matching
+  // the customer-facing screens. Sourced from the client's own CI palette: a
+  // 25% tint of the Mediterranean Pantry cream (#F5E8A6) blended into white,
+  // subtle enough to read as a neutral backdrop rather than an accent colour.
+  const screenBackground = isDark ? theme.background : '#FDF9E9';
 
   const [discountCode, setDiscountCode] = useState('');
   const [discountError, setDiscountError] = useState('');
@@ -182,21 +185,29 @@ export default function CartScreen() {
     </View>
   );
 
+  // Same full-screen empty-state pattern as Orders (card + circled outline
+  // icon + one action), so the two screens a customer is most likely to hit
+  // with nothing in them don't look like they came from different apps.
   const renderEmptyCart = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyIcon}>🛒</Text>
-      <Text style={styles.emptyText}>Your cart is empty</Text>
-      <Text style={styles.emptySubtext}>
-        Add some delicious meals to get started
-      </Text>
-      <TouchableOpacity
-        style={styles.shopBtn}
-        onPress={() => router.push('/')}
-        accessibilityRole="button"
-        accessibilityLabel="Browse menu"
-      >
-        <Text style={styles.shopBtnText}>Browse Menu</Text>
-      </TouchableOpacity>
+    <View style={styles.emptyOuter}>
+      <View style={styles.emptyCard}>
+        <View style={styles.emptyIconCircle}>
+          <Ionicons name="cart-outline" size={48} color={theme.textTertiary} />
+        </View>
+        <Text style={styles.emptyTitle}>Your Cart Is Empty</Text>
+        <Text style={styles.emptySubtitle}>
+          Add some delicious meals to get started.
+        </Text>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={styles.browseBtn}
+          onPress={() => router.push('/')}
+          accessibilityRole="button"
+          accessibilityLabel="Browse Menu"
+        >
+          <Text style={styles.browseBtnText}>Browse the Menu →</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
@@ -407,7 +418,7 @@ export default function CartScreen() {
 const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create({
   // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
   // stark white — light mode only, matching the customer-facing screens.
-  container: { flex: 1, backgroundColor: isDark ? theme.background : '#F7F2E8' },
+  container: { flex: 1, backgroundColor: isDark ? theme.background : '#FDF9E9' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -421,33 +432,26 @@ const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create(
   headerTitle: { fontFamily: legacyTypography.heading, fontSize: 18, fontWeight: '800', color: theme.text },
   clearText: { color: theme.error, fontSize: 14, fontWeight: '700' },
 
-  // Empty state styles
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
+  // Empty state — kept identical to the Orders tab's (orders.tsx) so the
+  // pattern reads as one design rather than two.
+  emptyOuter: { flex: 1, justifyContent: 'center', paddingHorizontal: 16 },
+  emptyCard: {
+    borderRadius: 20, padding: 32, borderWidth: 1,
+    alignItems: 'center', justifyContent: 'center', gap: 10,
+    borderColor: theme.border, backgroundColor: theme.surface,
   },
-  emptyIcon: { fontSize: 48, marginBottom: 16 },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: theme.text,
-    marginBottom: 6,
+  emptyIconCircle: {
+    width: 72, height: 72, borderRadius: 36,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 6,
+    backgroundColor: theme.surfaceSecondary,
   },
-  emptySubtext: {
-    fontSize: 14,
-    color: theme.textSecondary,
-    marginBottom: 20,
-    textAlign: 'center',
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: theme.text, marginBottom: 8 },
+  emptySubtitle: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  browseBtn: {
+    paddingHorizontal: 20, minHeight: 44, borderRadius: 12, marginTop: 10,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: theme.accent,
   },
-  shopBtn: {
-    backgroundColor: theme.accent,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 25,
-  },
-  shopBtnText: { color: theme.onAccent, fontWeight: '800', fontSize: 15 },
+  browseBtnText: { fontSize: 14, fontWeight: '800', color: theme.onAccent },
 
   // Scroll area holds everything except the sticky footer, so the checkout
   // button is always fully visible instead of being pushed off-screen on
