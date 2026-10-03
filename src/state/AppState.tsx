@@ -13,12 +13,14 @@ import * as auth from '../services/auth';
 
 const NOTIFICATIONS_PREF_KEY = 'settings.notifications_enabled';
 const DARK_MODE_PREF_KEY = 'settings.dark_mode_enabled';
+/** Set when "Remember me" was ticked at login — the only case a saved session is resumed on launch. */
+const REMEMBER_ME_KEY = 'session.remember_me';
 
 interface AppStateValue {
   // Session
   user: UserAccount | null;
   authLoading: boolean;
-  signIn: (email: string, password: string) => Promise<UserAccount>;
+  signIn: (email: string, password: string, rememberMe: boolean) => Promise<UserAccount>;
   register: (fullName: string, email: string, password: string, company: Company, location: CompanyLocation) => Promise<UserAccount>;
   signOut: () => Promise<void>;
   setUser: (user: UserAccount) => void;
@@ -58,10 +60,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [notificationsEnabled, setNotificationsState] = useState(true);
 
   useEffect(() => {
-    auth
-      .restoreSession()
-      .then(restored => setUserState(restored))
-      .finally(() => setAuthLoading(false));
+    // MAUI always opens on the Login page; a saved session is only resumed
+    // when the person ticked "Remember me" the last time they signed in.
+    (async () => {
+      try {
+        const remember = await AsyncStorage.getItem(REMEMBER_ME_KEY).catch(() => null);
+        if (remember === 'true') {
+          setUserState(await auth.restoreSession());
+        } else {
+          await auth.signOut().catch(() => {});
+        }
+      } finally {
+        setAuthLoading(false);
+      }
+    })();
     (async () => {
       try {
         const [dark, notifications] = await Promise.all([
@@ -83,8 +95,9 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setSelectedOrderingDate(null);
   };
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: string, password: string, rememberMe: boolean) => {
     const signedIn = await auth.signIn(email, password);
+    AsyncStorage.setItem(REMEMBER_ME_KEY, String(rememberMe)).catch(() => {});
     startSession(signedIn);
     return signedIn;
   };
@@ -97,6 +110,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await auth.signOut();
+    AsyncStorage.removeItem(REMEMBER_ME_KEY).catch(() => {});
     setUserState(null);
     setSelectedOrderingDate(null);
     setCartItems([]);

@@ -26,7 +26,7 @@ export default function LoginScreen() {
     try {
       // Routing to AdminShell / the delivery-day picker happens in the root
       // layout as soon as the signed-in user lands in state.
-      await signIn(email, password);
+      await signIn(email, password, rememberMe);
     } catch (err) {
       if (err instanceof SuspendedAccountError) {
         await alerts.show('Account Suspended', 'This account has been suspended. Please contact your admin.', 'OK');
