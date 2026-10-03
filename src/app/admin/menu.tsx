@@ -295,7 +295,7 @@ export default function AdminMenuScreen() {
                   </View>
                 </View>
                 <View style={styles.productActions}>
-                  <Btn title="Edit" onPress={() => editProduct(product)} bg="rgba(255,255,255,0.2)" color={productText} fontSize={11} height={32} paddingH={12} borderColor={isDark ? '#333333' : '#E0E0E0'} />
+                  <Btn title="Edit" onPress={() => editProduct(product)} bg="rgba(255,255,255,0.2)" color={productText} fontSize={11} height={32} paddingH={12} />
                   <Btn title="Delete" onPress={() => deleteProduct(product)} variant="danger" fontSize={11} height={32} paddingH={12} />
                 </View>
               </Card>

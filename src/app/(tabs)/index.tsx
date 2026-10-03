@@ -1,6 +1,6 @@
 /** UserDashboardPage.xaml + UserDashboardViewModel. */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, ImageBackground, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, ImageBackground, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../../components/AppText';
@@ -34,15 +34,12 @@ export default function UserDashboardScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchText, setSearchText] = useState('');
   const [activeCategory, setActiveCategory] = useState('');
-  const [isBusy, setIsBusy] = useState(false);
-  const [loadedOnce, setLoadedOnce] = useState(false);
   const busyRef = useRef(false);
 
   const loadData = useCallback(
     async (menu: MenuKind) => {
       if (busyRef.current) return;
       busyRef.current = true;
-      setIsBusy(true);
       try {
         const items = await getProducts(menu, selectedOrderingDate);
         // Pulled dishes (Admin > Menu Catalog > Available off) stay off the customer menu.
@@ -51,8 +48,6 @@ export default function UserDashboardScreen() {
         setProducts([]);
       } finally {
         busyRef.current = false;
-        setIsBusy(false);
-        setLoadedOnce(true);
       }
     },
     [selectedOrderingDate]
@@ -124,10 +119,7 @@ export default function UserDashboardScreen() {
 
   return (
     <Page bg={colors.cream}>
-      <ScrollView
-        contentContainerStyle={{ paddingTop: insets.top, paddingBottom: cartCount > 0 ? 96 : 16 }}
-        refreshControl={<RefreshControl refreshing={isBusy && loadedOnce} onRefresh={() => loadData(currentMenu)} tintColor={colors.primary} />}
-      >
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top }}>
         {/* 1. Logo + cart */}
         <View style={styles.header}>
           <Image
@@ -184,8 +176,6 @@ export default function UserDashboardScreen() {
         <View style={[styles.notice, { borderColor: colors.surfaceBorder, backgroundColor: colors.tan }]}>
           <Text style={[styles.noticeText, { color: colors.text }]}>Orders close at 9:00 AM, two business days before your delivery date.</Text>
         </View>
-
-        {!loadedOnce && isBusy && <ActivityIndicator color={colors.primary} style={styles.loader} />}
 
         {/* 8. Category sections */}
         {grouped.map(section => (
@@ -301,7 +291,6 @@ const styles = StyleSheet.create({
   chipUnderline: { height: 2.5, width: 20, borderRadius: 1.5 },
   notice: { marginHorizontal: 16, marginBottom: 14, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
   noticeText: { fontSize: 12 },
-  loader: { marginVertical: 24 },
   section: { marginBottom: 20 },
   hero: { height: 110, marginHorizontal: 16, marginBottom: 10, borderRadius: 16, overflow: 'hidden', justifyContent: 'flex-end' },
   heroImage: { borderRadius: 16 },

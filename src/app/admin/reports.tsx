@@ -167,6 +167,7 @@ export default function AdminReportsScreen() {
       ...grouped.slice(0, 10).map(s => `  ${s.itemName} — ${s.unitsSold} sold — R${s.totalRevenue.toFixed(2)}`),
     ];
     await Share.share({ message: out.join('\n'), title: 'Sales Report' });
+    await alerts.show('Report Exported', `Sales report for '${timeframe}' (${companyFilter}) has been compiled and saved.`, 'OK');
   };
 
   const cardBg = isDark ? '#1E1E1E' : '#FFFFFF';

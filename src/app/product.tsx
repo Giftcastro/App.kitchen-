@@ -250,7 +250,8 @@ const styles = StyleSheet.create({
   line: { height: 1, backgroundColor: 'lightgray' },
   heading: { fontSize: 16, fontWeight: '700' },
   dateRow: { gap: 10 },
-  dateOption: { width: 130, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, justifyContent: 'center', minHeight: 44 },
+  // The horizontal CollectionView is 88pt tall and stretches each item to it; content sits at the top.
+  dateOption: { width: 130, height: 88, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
   dateText: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
   optionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 5 },
   optionText: { fontSize: 14 },
