@@ -1,737 +1,202 @@
-/**
- * Cart Screen Component
- *
- * Displays the user's shopping cart with order items.
- * Notes are captured at the item level when adding from the menu,
- * eliminating duplicate note entry.
- */
-import React, { useState, useMemo } from 'react';
-import {
-  View,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  StatusBar,
-  Platform,
-  Modal,
-  TextProps,
-  TextInputProps,
-} from 'react-native';
-import { Text as BrandText, TextInput as BrandTextInput } from '../components/AppText';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useKitchen } from '../context/KitchenCoContext';
-import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { getOrderCutoffInfo } from '../utils/deliveryHelpers';
-import { ThemeColors } from '../utils/theme';
-import { legacyTypography } from '../utils/legacyTypography';
-
-// Same pre-KitchenCo RobotoCondensed body / GotchaGothic headline pairing as
-// Menu/Activity/Profile (see legacyTypography.ts) — Cart is the next stop
-// after those, so it keeps the same look rather than snapping back to
-// Montserrat mid-flow.
-const Text: React.FC<TextProps> = ({ style, ...rest }) => (
-  <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
-);
-const TextInput: React.FC<TextInputProps> = ({ style, ...rest }) => (
-  <BrandTextInput style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
-);
+/** CartPage.xaml + CartPageViewModel. */
+import React, { useCallback, useMemo, useState } from 'react';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { Text } from '../components/AppText';
+import { alerts } from '../components/Alerts';
+import { Btn, Page } from '../components/ui';
+import { useApp } from '../state/AppState';
+import { setNavParam } from '../state/navParams';
+import { CYCLE_WINDOW, fmtDayLabel, isValidDeliveryDate, STATIC_WINDOW } from '../services/scheduling';
+import { getCompany, getDeliveryLocation } from '../services/directory';
+import { getDiscounts } from '../services/promos';
+import { quoteCart } from '../services/pricing';
+import { fixed } from '../utils/theme';
+import { lineTotal } from '../models';
+import type { Company, CompanyLocation, Discount } from '../models';
 
 export default function CartScreen() {
-  const { cart, removeFromCart, clearCart, addToCart, discounts, appliedDiscount, setAppliedDiscount, isItemEligibleForDiscount, calculateDiscountAmount, calculateSubsidyAmount, deliveryInfo, theme, isDark } = useKitchen();
-  const styles = useMemo(() => createStyles(theme, isDark), [theme, isDark]);
+  const { colors, isDark, user, cartItems, removeCartItem, setCartQuantity } = useApp();
   const router = useRouter();
-  // A warm cream backdrop instead of stark white — light mode only, matching
-  // the customer-facing screens. Sourced from the client's own CI palette: a
-  // 25% tint of the Mediterranean Pantry cream (#F5E8A6) blended into white,
-  // subtle enough to read as a neutral backdrop rather than an accent colour.
-  const screenBackground = isDark ? theme.background : '#FDF9E9';
+  const [company, setCompany] = useState<Company | null>(null);
+  const [location, setLocation] = useState<CompanyLocation | null>(null);
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
 
-  const [discountCode, setDiscountCode] = useState('');
-  const [discountError, setDiscountError] = useState('');
-  // In-app modal instead of Alert.alert — Alert is a documented no-op on
-  // React Native Web with no polyfill in this project, so it renders nothing there.
-  const [appliedDiscountNotice, setAppliedDiscountNotice] = useState<{ code: string; percentage: number } | null>(null);
-
-  const totalPrice = cart.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      getCompany(user.accountType === 'company' ? user.companyId : '').then(setCompany).catch(() => setCompany(null));
+      getDeliveryLocation(user).then(setLocation).catch(() => setLocation(null));
+      getDiscounts().then(setDiscounts).catch(() => setDiscounts([]));
+    }, [user])
   );
 
-  // Calculate discount only on eligible items
-  const discountAmount = calculateDiscountAmount(cart, appliedDiscount);
-  // Company meal subsidy — automatic, no code needed; zero unless the user
-  // is attached to a subsidizing company.
-  // Capped at what is left after the discount, exactly as place_order does on the server.
-  const subsidyAmount = Math.min(calculateSubsidyAmount(cart), Math.max(0, totalPrice - discountAmount));
-  // Distance-based delivery fee — resolved automatically from the user's
-  // company address (corporate accounts) or default saved address.
-  const deliveryFee = deliveryInfo.fee ?? 0;
-  const finalTotal = Math.max(0, totalPrice - discountAmount - subsidyAmount) + deliveryFee;
+  const quote = useMemo(() => quoteCart(cartItems, user, company, location, discounts), [cartItems, user, company, location, discounts]);
+  const hasItems = cartItems.length > 0;
 
-  // Business hours + 48-hour advance ordering cutoff info
-  const cutoffInfo = getOrderCutoffInfo();
+  const decrease = (key: string, quantity: number) => (quantity > 1 ? setCartQuantity(key, quantity - 1) : removeCartItem(key));
 
-  // Track which items get the discount for display purposes
-  const getItemSavings = (itemId: string): number => {
-    if (!appliedDiscount) return 0;
-    const item = cart.find(i => i.id === itemId);
-    if (!item || !isItemEligibleForDiscount(item, appliedDiscount)) return 0;
-    return (item.price * item.quantity) * appliedDiscount.percentage / 100;
-  };
-
-  const handleApplyDiscount = () => {
-    if (!discountCode.trim()) {
-      setDiscountError('Please enter a discount code');
+  const checkout = async () => {
+    if (!hasItems) return;
+    const invalid = cartItems.filter(i => !isValidDeliveryDate(i.deliveryDate, i.menuType === 'cycle' ? CYCLE_WINDOW : STATIC_WINDOW));
+    if (invalid.length > 0) {
+      await alerts.show(
+        'Some items need a new date',
+        `These items are past their order cutoff and need a new delivery date: ${invalid.map(i => i.product.name).join(', ')}`,
+        'OK'
+      );
       return;
     }
-
-    const foundDiscount = discounts.find(
-      d => d.code.toUpperCase() === discountCode.trim().toUpperCase() && d.active
-    );
-
-    if (!foundDiscount) {
-      setDiscountError('Invalid or inactive discount code');
+    if (!user) {
+      await alerts.show('Please log in', 'You need to be logged in to place an order.', 'OK');
       return;
     }
-
-    if (foundDiscount.expires) {
-      const expiryDate = new Date(foundDiscount.expires);
-      const today = new Date();
-      if (expiryDate < today) {
-        setDiscountError('This discount code has expired');
-        return;
-      }
+    if (quote.isOutsideDeliveryRange) {
+      await alerts.show(
+        'Outside Delivery Range',
+        'Your delivery location is beyond our 50km delivery range. Please contact us directly to arrange this order.',
+        'OK'
+      );
+      return;
     }
-
-    setAppliedDiscount(foundDiscount);
-    setDiscountCode('');
-    setDiscountError('');
-    setAppliedDiscountNotice({ code: foundDiscount.code, percentage: foundDiscount.percentage });
+    if (!location) {
+      await alerts.show('No Delivery Location', "Your account doesn't have a delivery location yet. Please contact support to have one assigned.", 'OK');
+      return;
+    }
+    setNavParam('Payment', { amountDue: quote.amountDue, deliveryFee: quote.deliveryFee, addressId: location.id });
+    router.push('/payment');
   };
-
-  const handleRemoveDiscount = () => {
-    setAppliedDiscount(null);
-  };
-
-  const renderCartItem = ({ item }: { item: any }) => (
-    <View style={styles.cartItem}>
-      {/* Item details: name, size, notes, price */}
-      <View style={styles.itemMeta}>
-        <Text style={styles.itemName}>{item.name}</Text>
-        {(item.selectedSize || item.category) && (
-          <Text style={styles.itemSize}>
-            {item.selectedSize || item.category}
-          </Text>
-        )}
-        {item.deliveryDateLabel && (
-          <Text style={styles.itemDeliveryDate}>📅 {item.deliveryDateLabel}</Text>
-        )}
-        {item.addOns && item.addOns.length > 0 && (
-          <Text style={styles.itemAddOns}>+ {item.addOns.map((a: any) => a.name).join(', ')}</Text>
-        )}
-        {/* Display notes captured from menu (no duplicate input needed) */}
-        {!!item.notes && (
-          <Text style={styles.itemNotes}>📝 {item.notes}</Text>
-        )}
-        {appliedDiscount && isItemEligibleForDiscount(item, appliedDiscount) && (
-          <Text style={styles.itemDiscountBadge}>
-            🔥 {appliedDiscount.percentage}% OFF (save R{getItemSavings(item.id).toFixed(2)})
-          </Text>
-        )}
-        <Text style={styles.itemPrice}>
-          {appliedDiscount && isItemEligibleForDiscount(item, appliedDiscount) ? (
-            <Text>
-              <Text style={styles.originalPrice}>R{(item.price * item.quantity).toFixed(2)}</Text>
-              {' '}R{((item.price * item.quantity) - (item.price * item.quantity) * appliedDiscount.percentage / 100).toFixed(2)}
-            </Text>
-          ) : (
-            'R' + (item.price * item.quantity).toFixed(2)
-          )}
-        </Text>
-      </View>
-
-      {/* Quantity controls: +/- buttons */}
-      <View style={styles.quantityControls}>
-        <TouchableOpacity
-          onPress={() => removeFromCart(item.id)}
-          style={styles.qtyBtn}
-          accessibilityRole="button"
-          accessibilityLabel={item.quantity === 1 ? `Remove ${item.name} from cart` : `Decrease quantity of ${item.name}`}
-        >
-          <Text style={styles.qtyBtnText}>−</Text>
-        </TouchableOpacity>
-        <Text style={styles.qtyVal}>{item.quantity}</Text>
-        <TouchableOpacity
-          onPress={() =>
-            addToCart({
-              id: item.id,
-              name: item.name,
-              price: item.price,
-              category: item.category,
-              quantity: 1,
-              image: item.image,
-              selectedSize: item.selectedSize,
-              // Preserve notes when adding more of the same item
-              notes: item.notes,
-            })
-          }
-          style={styles.qtyBtn}
-          accessibilityRole="button"
-          accessibilityLabel={`Increase quantity of ${item.name}`}
-        >
-          <Text style={styles.qtyBtnText}>+</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  // Same full-screen empty-state pattern as Orders (card + circled outline
-  // icon + one action), so the two screens a customer is most likely to hit
-  // with nothing in them don't look like they came from different apps.
-  const renderEmptyCart = () => (
-    <View style={styles.emptyOuter}>
-      <View style={styles.emptyCard}>
-        <View style={styles.emptyIconCircle}>
-          <Ionicons name="cart-outline" size={48} color={theme.textTertiary} />
-        </View>
-        <Text style={styles.emptyTitle}>Your Cart Is Empty</Text>
-        <Text style={styles.emptySubtitle}>
-          Add some delicious meals to get started.
-        </Text>
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.browseBtn}
-          onPress={() => router.push('/')}
-          accessibilityRole="button"
-          accessibilityLabel="Browse Menu"
-        >
-          <Text style={styles.browseBtnText}>Browse the Menu →</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-
-  const renderCartContent = () => (
-    <>
-      <ScrollView style={styles.scrollArea} contentContainerStyle={styles.scrollContent}>
-      <View style={styles.list}>
-        {cart.map(item => (
-          <React.Fragment key={item.id}>{renderCartItem({ item })}</React.Fragment>
-        ))}
-      </View>
-
-      <View style={styles.discountSection}>
-        <Text style={styles.discountSectionTitle}>Discount Code</Text>
-        
-        {appliedDiscount ? (
-          <View style={styles.appliedDiscountCard}>
-            <View style={styles.appliedDiscountInfo}>
-              <Text style={styles.appliedDiscountCode}>{appliedDiscount.code}</Text>
-              <Text style={styles.appliedDiscountPercent}>-{appliedDiscount.percentage}% OFF</Text>
-            </View>
-            <TouchableOpacity
-              onPress={handleRemoveDiscount}
-              style={styles.removeDiscountBtn}
-              accessibilityRole="button"
-              accessibilityLabel={`Remove discount code ${appliedDiscount.code}`}
-            >
-              <Text style={styles.removeDiscountText}>Remove</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <React.Fragment>
-            <View style={styles.discountInputRow}>
-              <TextInput
-                style={[styles.discountInput, discountError ? styles.discountInputError : null]}
-                placeholder="Enter discount code"
-                placeholderTextColor={theme.textTertiary}
-                value={discountCode}
-                onChangeText={text => {
-                  setDiscountCode(text);
-                  setDiscountError('');
-                }}
-                autoCapitalize="characters"
-                accessibilityLabel="Discount code"
-              />
-              <TouchableOpacity
-                style={styles.applyDiscountBtn}
-                onPress={handleApplyDiscount}
-                accessibilityRole="button"
-                accessibilityLabel="Apply discount code"
-              >
-                <Text style={styles.applyDiscountBtnText}>Apply</Text>
-              </TouchableOpacity>
-            </View>
-            {discountError ? (
-              <Text style={styles.discountErrorText}>{discountError}</Text>
-            ) : null}
-          </React.Fragment>
-        )}
-      </View>
-
-      <View style={styles.priceBreakdown}>
-        <View style={styles.priceRow}>
-          <Text style={styles.priceLabel}>Subtotal</Text>
-          <Text style={styles.priceValue}>R {totalPrice.toFixed(2)}</Text>
-        </View>
-
-        {deliveryInfo.fee != null ? (
-          <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Delivery Fee ({deliveryInfo.distanceKm}km)</Text>
-            <Text style={styles.priceValue}>R {deliveryFee.toFixed(2)}</Text>
-          </View>
-        ) : (
-          <View style={styles.priceRow}>
-            <Text style={styles.priceLabelWarning}>
-              {deliveryInfo.addressLabel
-                ? 'Delivery fee unavailable — address missing a distance'
-                : 'Add a delivery address to see your delivery fee'}
-            </Text>
-            <TouchableOpacity
-              onPress={() => router.push('/profile')}
-              accessibilityRole="button"
-              accessibilityLabel="Add delivery address"
-            >
-              <Text style={styles.addAddressLink}>Add</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {appliedDiscount && (
-          <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Discount ({appliedDiscount.percentage}%)</Text>
-            <Text style={styles.discountValue}>- R {discountAmount.toFixed(2)}</Text>
-          </View>
-        )}
-
-        {subsidyAmount > 0 && (
-          <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Company Meal Subsidy</Text>
-            <Text style={styles.discountValue}>- R {subsidyAmount.toFixed(2)}</Text>
-          </View>
-        )}
-
-        <View style={[styles.priceRow, styles.totalRow]}>
-          <Text style={styles.totalLabel}>Total</Text>
-          <Text style={styles.totalValue}>R {finalTotal.toFixed(2)}</Text>
-        </View>
-      </View>
-
-      {/* Business hours / 48h advance ordering cutoff notice */}
-      <View style={styles.cutoffNotice}>
-        <Text style={styles.cutoffNoticeIcon}>🕒</Text>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.cutoffNoticeTitle}>
-            {cutoffInfo.cutoffPassed
-              ? "Today's 9:00 AM cutoff has passed"
-              : 'Ordering open · cutoff 9:00 AM'}
-          </Text>
-          {/* When the cutoff has passed the title and the date below already say it all; the long message just repeated them. */}
-          {!cutoffInfo.cutoffPassed && <Text style={styles.cutoffNoticeText}>{cutoffInfo.message}</Text>}
-          <Text style={styles.cutoffNoticeDate}>
-            Earliest delivery: {cutoffInfo.formattedEarliest}
-          </Text>
-        </View>
-      </View>
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.checkoutBtn}
-          onPress={() => router.push('/payfast')}
-          activeOpacity={0.85}
-          accessibilityRole="button"
-          accessibilityLabel={`Checkout, total R${finalTotal.toFixed(2)}`}
-        >
-          <Text style={styles.checkoutBtnText}>Checkout</Text>
-          <Text style={styles.checkoutBtnTotal}>R {finalTotal.toFixed(2)}</Text>
-        </TouchableOpacity>
-      </View>
-    </>
-  );
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Status bar */}
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
+    <Page bg={colors.cream}>
+      <View style={styles.fill}>
+        <FlatList
+          data={cartItems}
+          keyExtractor={item => item.key}
+          contentContainerStyle={[styles.list, !hasItems && styles.listEmpty]}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Text style={{ fontSize: 48 }}>🛒</Text>
+              <Text style={styles.emptyText}>Your basket is empty</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <View style={[styles.item, { backgroundColor: isDark ? colors.cardBg : '#FFFFFF' }]}>
+              <View style={styles.itemTop}>
+                <View style={styles.itemInfo}>
+                  <Text style={[styles.itemName, { color: colors.text }]}>{item.product.name}</Text>
+                  <Text style={[styles.itemPrice, { color: colors.primary }]}>R{lineTotal(item).toFixed(2)}</Text>
+                  <Text style={[styles.itemDate, { color: colors.primary }]}>For {fmtDayLabel(item.deliveryDate)}</Text>
+                </View>
+                <Pressable onPress={() => removeCartItem(item.key)} style={styles.remove} accessibilityLabel={`Remove ${item.product.name}`}>
+                  <Text style={styles.removeText}>✕</Text>
+                </Pressable>
+              </View>
 
-      {/* Header with back button and clear cart action */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={styles.backBtn}
-          accessibilityRole="button"
-          accessibilityLabel="Back to menu"
-        >
-          <Ionicons name="chevron-back" size={22} color={theme.text} />
-          <Text style={styles.backBtnText}>Menu</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Cart</Text>
-        {cart.length > 0 ? (
-          <TouchableOpacity
-            onPress={clearCart}
-            style={{ minHeight: 44, minWidth: 44, justifyContent: 'center', alignItems: 'flex-end' }}
-            accessibilityRole="button"
-            accessibilityLabel="Clear cart"
-          >
-            <Text style={styles.clearText}>Clear</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={{ width: 40 }} />
+              <View style={styles.itemMiddle}>
+                <View style={styles.options}>
+                  {item.selectedOptions.map(o => (
+                    <View key={o.name} style={styles.optionChip}>
+                      <Text style={styles.optionText}>{o.name}</Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.stepper}>
+                  <Pressable
+                    onPress={() => decrease(item.key, item.quantity)}
+                    style={[styles.stepBtn, { backgroundColor: isDark ? '#333333' : '#E0E0E0' }]}
+                    accessibilityLabel="Decrease quantity"
+                  >
+                    <Text style={[styles.stepText, { color: isDark ? '#FFFFFF' : '#000000' }]}>-</Text>
+                  </Pressable>
+                  <Text style={[styles.qty, { color: colors.text }]}>{item.quantity}</Text>
+                  <Pressable
+                    onPress={() => setCartQuantity(item.key, item.quantity + 1)}
+                    style={[styles.stepBtn, { backgroundColor: colors.primary }]}
+                    accessibilityLabel="Increase quantity"
+                  >
+                    <Text style={[styles.stepText, { color: colors.onPrimary }]}>+</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {!!item.specialRequests.trim() && <Text style={styles.note}>Note: {item.specialRequests}</Text>}
+              {!!item.allergyNotes.trim() && <Text style={styles.allergy}>⚠️ Allergy alert: {item.allergyNotes}</Text>}
+            </View>
+          )}
+        />
+
+        {hasItems && (
+          <View style={[styles.board, { backgroundColor: isDark ? colors.cardBg : '#FFFFFF' }]}>
+            <View style={styles.row}>
+              <Text style={styles.mealLabel}>Meal Total:</Text>
+              <Text style={styles.mealValue}>R{quote.cartTotal.toFixed(2)}</Text>
+            </View>
+            {!!quote.subsidyLabel && (
+              <View style={styles.row}>
+                <Text style={[styles.subsidyLabel, { color: colors.primary }]}>{quote.subsidyLabel}</Text>
+                <Text style={[styles.subsidyValue, { color: colors.primary }]}>-R{quote.subsidyTotal.toFixed(2)}</Text>
+              </View>
+            )}
+            {quote.discountAmount > 0 && (
+              <View style={styles.row}>
+                <Text style={[styles.subsidyLabel, { color: colors.primary }]}>{quote.discountLabel}</Text>
+                <Text style={[styles.subsidyValue, { color: colors.primary }]}>-R{quote.discountAmount.toFixed(2)}</Text>
+              </View>
+            )}
+            {!!quote.deliveryFeeLabel && (
+              <View style={styles.row}>
+                <Text style={[styles.feeLabel, quote.isOutsideDeliveryRange && styles.feeLabelBad]}>{quote.deliveryFeeLabel}</Text>
+                {!quote.isOutsideDeliveryRange && <Text style={[styles.feeValue, { color: colors.text }]}>R{quote.deliveryFee.toFixed(2)}</Text>}
+              </View>
+            )}
+            {!!quote.subsidyLabel && <View style={[styles.divider, { backgroundColor: isDark ? '#333333' : '#E0E0E0' }]} />}
+            <View style={styles.row}>
+              <Text style={[styles.payLabel, { color: colors.text }]}>You Pay:</Text>
+              <Text style={[styles.payValue, { color: colors.primary }]}>R{quote.amountDue.toFixed(2)}</Text>
+            </View>
+            <Btn testID="proceed-to-payment" title="Proceed to Payment" onPress={checkout} height={50} radius={10} />
+          </View>
         )}
       </View>
-
-      {/* Content: either empty state or cart items */}
-      {cart.length === 0 ? renderEmptyCart() : renderCartContent()}
-
-      <Modal
-        visible={!!appliedDiscountNotice}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setAppliedDiscountNotice(null)}
-      >
-        <View style={styles.noticeOverlay}>
-          <View style={styles.noticeCard}>
-            <Text style={styles.noticeIcon}>🎉</Text>
-            <Text style={styles.noticeTitle}>Discount applied!</Text>
-            <Text style={styles.noticeText}>
-              {appliedDiscountNotice?.code} — {appliedDiscountNotice?.percentage}% off eligible items
-            </Text>
-            <TouchableOpacity
-              style={styles.noticeBtn}
-              onPress={() => setAppliedDiscountNotice(null)}
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss"
-            >
-              <Text style={styles.noticeBtnText}>Nice!</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+    </Page>
   );
 }
 
-// Theme-driven styles — colors come from the active theme so the screen
-// responds to light/dark mode. A few decorative "badge"/"notice card" color
-// sets (discount badge, applied-discount coupon card, cutoff notice) are
-// intentionally kept as literal hex rather than theme tokens, matching how
-// the Menu screen keeps its own discount badges and dietary tag chips literal
-// — these are content/status colors, not grayscale UI chrome.
-const createStyles = (theme: ThemeColors, isDark: boolean) => StyleSheet.create({
-  // A touch of the pre-KitchenCo prototype's warm cream backdrop instead of
-  // stark white — light mode only, matching the customer-facing screens.
-  container: { flex: 1, backgroundColor: isDark ? theme.background : '#FDF9E9' },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-  },
-  backBtn: { minHeight: 44, minWidth: 44, flexDirection: 'row', alignItems: 'center', marginLeft: -6 },
-  backBtnText: { color: theme.text, fontSize: 15, fontWeight: '700' },
-  headerTitle: { fontFamily: legacyTypography.heading, fontSize: 18, fontWeight: '800', color: theme.text },
-  clearText: { color: theme.error, fontSize: 14, fontWeight: '700' },
-
-  // Empty state — kept identical to the Orders tab's (orders.tsx) so the
-  // pattern reads as one design rather than two.
-  emptyOuter: { flex: 1, justifyContent: 'center', paddingHorizontal: 16 },
-  emptyCard: {
-    borderRadius: 20, padding: 32, borderWidth: 1,
-    alignItems: 'center', justifyContent: 'center', gap: 10,
-    borderColor: theme.border, backgroundColor: theme.surface,
-  },
-  emptyIconCircle: {
-    width: 72, height: 72, borderRadius: 36,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 6,
-    backgroundColor: theme.surfaceSecondary,
-  },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: theme.text, marginBottom: 8 },
-  emptySubtitle: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
-  browseBtn: {
-    paddingHorizontal: 20, minHeight: 44, borderRadius: 12, marginTop: 10,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: theme.accent,
-  },
-  browseBtnText: { fontSize: 14, fontWeight: '800', color: theme.onAccent },
-
-  // Scroll area holds everything except the sticky footer, so the checkout
-  // button is always fully visible instead of being pushed off-screen on
-  // shorter phones once the cart grows (items + discount + cutoff notice).
-  scrollArea: { flex: 1 },
-  scrollContent: { paddingBottom: 20 },
-
-  // Cart item styles
-  list: { padding: 20, gap: 10 },
-  cartItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 16,
-    padding: 14,
-    // Matches the Menu screen's uberCard elevation, scaled down slightly
-    // since these rows are denser/smaller than a grid card.
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  itemMeta: { flex: 1, paddingRight: 12 },
-  itemName: { fontSize: 16, fontWeight: '700', color: theme.text },
-  itemSize: { fontSize: 12, color: theme.textSecondary, marginTop: 2 },
-  itemNotes: {
-    fontSize: 12,
-    color: theme.success,
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  itemDeliveryDate: {
-    fontSize: 12,
-    color: theme.text,
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  itemAddOns: {
-    fontSize: 12,
-    color: theme.textSecondary,
-    marginTop: 2,
-  },
-  // Decorative discount hint — kept literal, like the Menu screen's
-  // menuDiscountHint, so it reads the same "orange savings tag" in both themes.
-  itemDiscountBadge: {
-    fontSize: 11,
-    color: '#E8A100',
-    marginTop: 4,
-    fontWeight: '700',
-  },
-  originalPrice: {
-    textDecorationLine: 'line-through',
-    color: theme.textTertiary,
-    fontSize: 13,
-  },
-  itemPrice: {
-    fontSize: 14,
-    color: theme.textSecondary,
-    marginTop: 4,
-    fontWeight: '600',
-  },
-  quantityControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.surfaceSecondary,
-    borderRadius: 28,
-    padding: 4,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  qtyBtn: {
-    width: 44,
-    height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  qtyBtnText: { color: theme.text, fontSize: 18, fontWeight: 'bold' },
-  qtyVal: {
-    color: theme.text,
-    fontSize: 15,
-    fontWeight: '700',
-    paddingHorizontal: 12,
-  },
-
-  discountSection: {
-    backgroundColor: theme.surface,
-    marginHorizontal: 16,
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: theme.border,
-    marginTop: 12,
-  },
-  discountSectionTitle: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: theme.text,
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  discountInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  discountInput: {
-    flex: 1,
-    backgroundColor: theme.inputBg,
-    borderWidth: 1.5,
-    borderColor: theme.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 44,
-    fontSize: 15,
-    color: theme.text,
-  },
-  discountInputError: {
-    borderColor: theme.error,
-  },
-  applyDiscountBtn: {
-    backgroundColor: theme.accent,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginLeft: 8,
-  },
-  applyDiscountBtnText: {
-    color: theme.onAccent,
-    fontWeight: '800',
-    fontSize: 14,
-  },
-  discountErrorText: {
-    color: theme.error,
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 6,
-  },
-  // Applied-discount "coupon" card — a decorative success-green pill, kept
-  // literal (like the Menu screen's dietary tag chips) so it reads as the
-  // same consistent green badge regardless of theme.
-  appliedDiscountCard: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#EAF7EE',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#1DA836',
-  },
-  appliedDiscountInfo: {
-    flex: 1,
-  },
-  appliedDiscountCode: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1DA836',
-    letterSpacing: 0.5,
-  },
-  // appliedDiscountCard's background is a fixed light-green tint in both
-  // themes (see appliedDiscountCard above) — this text must stay literal too.
-  appliedDiscountPercent: {
-    fontSize: 12,
-    color: '#6B6B6B',
-    marginTop: 2,
-  },
-  removeDiscountBtn: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    backgroundColor: '#FDECEA',
-    borderRadius: 8,
-  },
-  removeDiscountText: {
-    color: '#E0393E',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-
-  priceBreakdown: {
-    backgroundColor: theme.surface,
-    marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  priceLabel: { fontSize: 14, color: theme.textSecondary },
-  priceValue: { fontSize: 14, color: theme.text, fontWeight: '600' },
-  priceLabelWarning: { fontSize: 13, color: theme.warning, flex: 1, paddingRight: 10 },
-  addAddressLink: { fontSize: 13, color: theme.text, fontWeight: '700', textDecorationLine: 'underline' },
-  discountValue: { fontSize: 14, color: theme.success, fontWeight: '600' },
-  totalRow: {
-    marginTop: 8,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: theme.border,
-    marginBottom: 0,
-  },
-    totalLabel: { fontSize: 15, fontWeight: '800', color: theme.text },
-  totalValue: { fontFamily: legacyTypography.heading, fontSize: 16, fontWeight: '900', color: theme.text },
-
-  // Cutoff notice — a decorative "heads up" amber card, kept literal for the
-  // same reason as the discount badge/coupon colors above.
-  cutoffNotice: {
-    flexDirection: 'row',
-    backgroundColor: '#FFF8E1',
-    borderWidth: 1,
-    borderColor: '#F0DFA0',
-    borderRadius: 12,
-    padding: 12,
-    marginHorizontal: 16,
-    marginTop: 12,
-    gap: 10,
-  },
-  cutoffNoticeIcon: { fontSize: 18 },
-  cutoffNoticeTitle: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#8A6D00',
-    marginBottom: 2,
-  },
-  // cutoffNotice's background is a fixed light-amber tint in both themes
-  // (see cutoffNotice above) — same reasoning, this text must stay literal.
-  cutoffNoticeText: { fontSize: 13, color: '#6B6B6B', lineHeight: 17 },
-  cutoffNoticeDate: { fontSize: 12, color: '#6B6B6B', marginTop: 4 },
-
-  footer: {
-    backgroundColor: theme.surface,
-    borderTopWidth: 1,
-    borderTopColor: theme.border,
-    padding: 20,
-    paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-  },
-  checkoutBtn: {
-    backgroundColor: theme.accent,
-    paddingVertical: 16,
-    borderRadius: 12,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-  },
-  checkoutBtnText: { color: theme.onAccent, fontSize: 16, fontWeight: '800' },
-  checkoutBtnTotal: { color: theme.onAccent, fontSize: 16, fontWeight: '800', opacity: 0.65 },
-
-  noticeOverlay: { flex: 1, backgroundColor: theme.modalOverlay, justifyContent: 'center', alignItems: 'center' },
-  noticeCard: {
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 24,
-    padding: 28,
-    marginHorizontal: 32,
-    alignItems: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  noticeIcon: { fontSize: 36, marginBottom: 12 },
-  noticeTitle: { fontSize: 18, fontWeight: '900', color: theme.text, marginBottom: 8, textAlign: 'center' },
-  noticeText: { fontSize: 14, color: theme.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 24 },
-  noticeBtn: { backgroundColor: theme.success, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 14, alignSelf: 'stretch', alignItems: 'center' },
-  noticeBtnText: { color: theme.white, fontSize: 15, fontWeight: '800' },
+const styles = StyleSheet.create({
+  fill: { flex: 1 },
+  list: { padding: 15 },
+  listEmpty: { flexGrow: 1, justifyContent: 'center' },
+  empty: { alignItems: 'center', gap: 10, padding: 20 },
+  emptyText: { fontSize: 18, fontWeight: '700', color: 'gray' },
+  item: { borderRadius: 10, marginBottom: 12, padding: 15, gap: 8 },
+  itemTop: { flexDirection: 'row' },
+  itemInfo: { flex: 1, gap: 2 },
+  itemName: { fontSize: 16, fontWeight: '700' },
+  itemPrice: { fontSize: 14, fontWeight: '700' },
+  itemDate: { fontSize: 12, fontWeight: '700' },
+  remove: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  removeText: { color: 'red', fontSize: 14 },
+  itemMiddle: { flexDirection: 'row', alignItems: 'center' },
+  options: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', marginTop: 5 },
+  optionChip: { backgroundColor: 'lightgray', borderRadius: 4, marginRight: 6, marginBottom: 6 },
+  optionText: { fontSize: 11, color: 'black', marginHorizontal: 6, marginVertical: 3 },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  stepBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  stepText: { fontSize: 16, fontWeight: '700' },
+  qty: { fontSize: 14, fontWeight: '700', width: 24, textAlign: 'center' },
+  note: { fontSize: 12, color: 'gray', fontStyle: 'italic' },
+  allergy: { fontSize: 12, fontWeight: '700', color: fixed.amber },
+  board: { borderTopLeftRadius: 15, borderTopRightRadius: 15, padding: 20, gap: 15 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  mealLabel: { fontSize: 14, color: 'gray' },
+  mealValue: { fontSize: 16, color: 'gray' },
+  subsidyLabel: { flex: 1, fontSize: 12 },
+  subsidyValue: { fontSize: 16, fontWeight: '700' },
+  feeLabel: { flex: 1, fontSize: 12, color: 'gray' },
+  feeLabelBad: { color: '#C62828', fontWeight: '700' },
+  feeValue: { fontSize: 14, fontWeight: '700' },
+  divider: { height: 1 },
+  payLabel: { fontSize: 16, fontWeight: '700' },
+  payValue: { fontSize: 22, fontWeight: '700' },
 });

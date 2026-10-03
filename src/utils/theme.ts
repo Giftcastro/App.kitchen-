@@ -1,124 +1,194 @@
+/**
+ * Colour tokens, 1:1 with the YourKitchenCo MAUI app's
+ * Resources/Styles/Colors.xaml (qwertystig/KitchenCO main) — each token is
+ * the {AppThemeBinding Light=..., Dark=...} pair the MAUI views use, so a
+ * screen ported from a .xaml file reads the same token names it bound to.
+ *
+ * Base is black/white monochrome. `brandPop` (the client's CI blue) is kept
+ * to the same three narrow spots as MAUI: the selected tab icon, the glow
+ * behind the login logo, and the delivery-day calendar icon.
+ */
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedScheme = 'light' | 'dark';
 
 export interface ThemeColors {
-  background: string;
-  surface: string;
-  surfaceSecondary: string;
-  border: string;
+  /** PageBgLight / PageBgDark */
+  pageBg: string;
+  /** CardBgLight / CardBgDark */
+  cardBg: string;
+  /** PrimaryTextLight / PrimaryTextDark */
   text: string;
+  /** SecondaryTextLight / SecondaryTextDark */
   textSecondary: string;
-  textTertiary: string;
-  accent: string;
-  /** Foreground color for content placed on top of `accent` (e.g. primary button text) — flips with accent so it stays legible in both modes. */
-  onAccent: string;
-  /**
-   * The CI colour "pop" the client asked for on top of the black-and-white
-   * look (client review, Sep 2026 — repeated 2026-09-15: "bring in a bit of
-   * colour... pops of colour to just liven it up but not too much").
-   * Deliberately separate from `accent`, which stays black/white and keeps
-   * driving every primary button/CTA — this is only for a handful of narrow,
-   * mostly-decorative spots (active tab bar icon, the login glow, the
-   * "Ordering for <day>" bar) so the app still *reads* as black and white
-   * everywhere else. Currently plain black/white (same as accent) by
-   * choice — the client's moodboard blue #3571B7 (dark: #B6DFF8) read cold
-   * against the warm menu, so it was dropped. Change here to bring a pop back.
-   */
+  /** Primary / PrimaryDark — every primary button and accent. Also BrandGold, Gold, Secondary, Tertiary (all monochrome). */
+  primary: string;
+  /** Text on top of `primary`: White / PrimaryDarkText */
+  onPrimary: string;
+  /** BrandPop / BrandPopDark */
   brandPop: string;
+  /** BrandPopGlowOuter* (5%) */
+  brandPopGlowOuter: string;
+  /** BrandPopGlowInner* (9%) */
+  brandPopGlowInner: string;
+  /** SurfaceBorderLight / SurfaceBorderDark */
+  surfaceBorder: string;
+  /** Cream on Menu/Cart/Orders/Profile/Payment in light mode; PageBgDark in dark */
+  cream: string;
+  /** Entry borders (#E0E0E0 / #333333) */
+  inputBorder: string;
+  /** Card borders on Profile/Settings/Orders (#E0E0E0 / #252525) */
+  cardBorder: string;
+  /** Warm tan chip/notice background (#EFE9DC / #242426) */
+  tan: string;
+  /** Admin card surfaces (White / #1E1E1E) */
+  adminCard: string;
+  /** Menu toggle track (#EFEFEF / #1E1E1E) */
+  segmentTrack: string;
+  /** Unselected menu toggle text (#777777 / #AAAAAA) */
+  segmentText: string;
+  /** Cart count badge (#DC2626 / #F87171) */
+  badge: string;
+  /** Floating cart bar (#121212 / #F7F2E8) */
+  floatingBar: string;
+  /** Text on the floating cart bar (White / #121212) */
+  onFloatingBar: string;
+  /** Muted text on the floating cart bar (#A6FFFFFF / #A6121212) */
+  onFloatingBarMuted: string;
+  /** Watermark badge behind empty-state emoji (#10000000 / #15FFFFFF) */
+  watermark: string;
+  /** Plain-entry placeholder colour (Gray200 / Gray500) */
+  placeholder: string;
+  /** Disabled button background (Gray200 / Gray600) */
+  disabledBg: string;
+  /** Disabled button text (Gray950 / Gray200) */
+  disabledText: string;
+  /** Divider under the admin nav strip (#E0E0E0 / #2E2E32) */
+  navDivider: string;
+  /** Dashboard order item text (#333333 / #CCCCCC) */
+  bodyMuted: string;
+  /** Help tip text (#4E4E4E / #A1A1AA) */
+  tipText: string;
+  /** Product detail editor (#F5F5F5 / #2A2A2A) */
+  editorBg: string;
+  /** Order history icon tile (#F5F5F5 / #1F1F1F) */
+  tileBg: string;
+  error: string;
   success: string;
   warning: string;
-  error: string;
   info: string;
-  white: string;
-  black: string;
-  tabBar: string;
-  headerBg: string;
-  cardBg: string;
-  inputBg: string;
-  modalOverlay: string;
+  /** Status bar content */
   statusBarStyle: 'light-content' | 'dark-content';
 }
 
-// Black-and-white theme (client review, Sep 2026): "keep the overall feel
-// black and white", with only subtle pops of colour.
-//
-// So `accent` — which paints every primary button, active chip and selected
-// state in the app — is plain black here and plain white in dark mode, and
-// the only colours left anywhere are the semantic status ones below:
-// success/warning/error/info. Those are the pops, and they are reserved for
-// things that genuinely carry meaning (an order status, a saving, a cutoff
-// warning, a destructive action) rather than for decoration.
-//
-// Two earlier accents live in the history here: the brand blue #3571B7 and a
-// sage green #C4D29B trialled on 2026-09-05. Both are superseded — reinstating
-// either means changing `accent`/`onAccent` in both palettes together, since
-// anything drawn on top of the accent reads `onAccent` for its colour.
 export const lightColors: ThemeColors = {
-  background: '#FFFFFF',
-  surface: '#FFFFFF',
-  surfaceSecondary: '#F6F6F6',
-  border: '#EBEBEB',
+  pageBg: '#FFFFFF',
+  cardBg: '#FFFFFF',
   text: '#000000',
   textSecondary: '#6B6B6B',
-  textTertiary: '#9E9E9E',
-  accent: '#000000',
-  onAccent: '#FFFFFF',
-  brandPop: '#000000',
+  primary: '#000000',
+  onPrimary: '#FFFFFF',
+  brandPop: '#3571B7',
+  brandPopGlowOuter: 'rgba(53,113,183,0.05)',
+  brandPopGlowInner: 'rgba(53,113,183,0.09)',
+  surfaceBorder: '#EBEBEB',
+  cream: '#FDF9E9',
+  inputBorder: '#E0E0E0',
+  cardBorder: '#E0E0E0',
+  tan: '#EFE9DC',
+  adminCard: '#FFFFFF',
+  segmentTrack: '#EFEFEF',
+  segmentText: '#777777',
+  badge: '#DC2626',
+  floatingBar: '#121212',
+  onFloatingBar: '#FFFFFF',
+  onFloatingBarMuted: 'rgba(255,255,255,0.65)',
+  watermark: 'rgba(0,0,0,0.063)',
+  placeholder: '#C8C8C8',
+  disabledBg: '#C8C8C8',
+  disabledText: '#141414',
+  navDivider: '#E0E0E0',
+  bodyMuted: '#333333',
+  tipText: '#4E4E4E',
+  editorBg: '#F5F5F5',
+  tileBg: '#F5F5F5',
+  error: '#AF1718',
   success: '#1DA836',
   warning: '#E8A100',
-  error: '#AF1718',
   info: '#0073E6',
-  white: '#FFFFFF',
-  black: '#000000',
-  tabBar: '#FFFFFF',
-  headerBg: '#FFFFFF',
-  cardBg: '#FFFFFF',
-  inputBg: '#F6F6F6',
-  modalOverlay: 'rgba(0,0,0,0.5)',
   statusBarStyle: 'dark-content',
 };
 
-// Dark theme mirrors the same logic against near-black surfaces. `accent`
-// inverts to white here — light mode's black accent would vanish into the
-// background — so anything painting text or icons on top of `accent` must use
-// `onAccent`, never a hardcoded white, or it renders invisible in one mode or
-// the other. `error` is likewise brightened from the brand red, following the
-// same lighten-for-dark-mode pattern already used below for
-// success/warning/info.
 export const darkColors: ThemeColors = {
-  background: '#0B0B0B',
-  surface: '#141414',
-  surfaceSecondary: '#1E1E1E',
-  border: '#2C2C2C',
+  pageBg: '#0B0B0B',
+  cardBg: '#141414',
   text: '#FFFFFF',
   textSecondary: '#A0A0A0',
-  textTertiary: '#6B6B6B',
-  accent: '#FFFFFF',
-  onAccent: '#000000',
-  brandPop: '#FFFFFF',
+  primary: '#FFFFFF',
+  onPrimary: '#000000',
+  brandPop: '#B6DFF8',
+  brandPopGlowOuter: 'rgba(182,223,248,0.05)',
+  brandPopGlowInner: 'rgba(182,223,248,0.09)',
+  surfaceBorder: '#2C2C2C',
+  cream: '#0B0B0B',
+  inputBorder: '#333333',
+  cardBorder: '#252525',
+  tan: '#242426',
+  adminCard: '#1E1E1E',
+  segmentTrack: '#1E1E1E',
+  segmentText: '#AAAAAA',
+  badge: '#F87171',
+  floatingBar: '#F7F2E8',
+  onFloatingBar: '#121212',
+  onFloatingBarMuted: 'rgba(18,18,18,0.65)',
+  watermark: 'rgba(255,255,255,0.082)',
+  placeholder: '#6E6E6E',
+  disabledBg: '#404040',
+  disabledText: '#C8C8C8',
+  navDivider: '#2E2E32',
+  bodyMuted: '#CCCCCC',
+  tipText: '#A1A1AA',
+  editorBg: '#2A2A2A',
+  tileBg: '#1F1F1F',
+  error: '#CB6869',
   success: '#22C55E',
   warning: '#F5A623',
-  error: '#CB6869',
   info: '#3B9EFF',
-  white: '#FFFFFF',
-  black: '#000000',
-  tabBar: '#141414',
-  headerBg: '#141414',
-  cardBg: '#141414',
-  inputBg: '#1E1E1E',
-  modalOverlay: 'rgba(0,0,0,0.7)',
   statusBarStyle: 'light-content',
 };
 
-// Phone-like frame width: on viewports wider than this (e.g., desktop web),
-// the entire app renders as a centered mobile-width column, like a phone.
+/** Fixed colours MAUI hardcodes in both themes. */
+export const fixed = {
+  /** Allergy / dispute amber text */
+  amber: '#B45309',
+  /** Allergy / dispute amber background (#1AF59E0B) */
+  amberBg: 'rgba(245,158,11,0.10)',
+  /** Allergy editor focused (#33F59E0B) */
+  amberBgStrong: 'rgba(245,158,11,0.20)',
+  /** Destructive outline (Sign Out) */
+  danger: '#C62828',
+  /** Logout / delete outline */
+  dangerBright: '#DC2626',
+  /** Success green used by Register's auto-match tick and the confirmation badge */
+  green: '#059669',
+  greenBg: 'rgba(5,150,105,0.10)',
+  /** Ordering-closed notice */
+  noticeBg: '#FFF3CD',
+  noticeText: '#856404',
+  /** Neutral translucent admin buttons (#22888888) */
+  neutralButton: 'rgba(136,136,136,0.13)',
+  /** Admin status/role badge (#22121212) */
+  badgeBg: 'rgba(18,18,18,0.13)',
+  muted: '#888888',
+  faint: '#AAAAAA',
+  nearBlack: '#121212',
+};
+
+/**
+ * Phone-like frame width: on viewports wider than this (desktop web), the app
+ * renders as a centered mobile-width column.
+ */
 export const APP_MAX_WIDTH = 480;
-
-// Tablet frame width: on tablets (>= TABLET_BREAKPOINT) the centered frame
-// widens so content can breathe and multi-column grids have room.
 export const TABLET_MAX_WIDTH = 720;
-
-// Minimum viewport width at which the app switches to its tablet layout.
 export const TABLET_BREAKPOINT = 600;
 
 export function getThemeColors(mode: ResolvedScheme): ThemeColors {

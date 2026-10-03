@@ -1,1848 +1,347 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { StyleSheet, View, FlatList, TouchableOpacity, StatusBar, Modal, ScrollView, useWindowDimensions, Animated, RefreshControl, Image, TextProps, TextInputProps } from 'react-native';
-import { Text as BrandText, TextInput as BrandTextInput } from '../../components/AppText';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import { useKitchen } from '../../context/KitchenCoContext';
-import { DeliveryEstimator } from '../../components/DeliveryEstimator';
-import { CutoffCountdown } from '../../components/CutoffCountdown';
-import { QuickAddButton } from '../../components/QuickAddButton';
-import { Skeleton } from '../../components/Skeleton';
-import { getUpcomingOrderableWeekdays, UpcomingWeekday, getCycleWeekForDate } from '../../utils/deliveryHelpers';
-import { useResponsive } from '../../utils/responsive';
-import { useSimulatedLoad } from '../../utils/useSimulatedLoad';
-import { APP_MAX_WIDTH, ThemeColors } from '../../utils/theme';
-import { legacyTypography } from '../../utils/legacyTypography';
-import { fetchAllCycleMenus, fetchCycleItemPriceRands, dayNameToDbDay, mealTypeKeyToDbSlot } from '../../lib/supabase/menu';
+/** UserDashboardPage.xaml + UserDashboardViewModel. */
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Image, ImageBackground, Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Text } from '../../components/AppText';
+import { Btn, Card, Page, SearchBar } from '../../components/ui';
+import { useApp } from '../../state/AppState';
+import { setNavParam } from '../../state/navParams';
+import { getProducts } from '../../services/catalog';
+import { fmtDayLabel } from '../../services/scheduling';
+import type { Product } from '../../models';
 
-// This screen keeps the pre-KitchenCo prototype's RobotoCondensed body type
-// instead of the app-wide Montserrat (see legacyTypography.ts) — every
-// existing Text/TextInput usage below picks this up automatically since none
-// set their own fontFamily already; a handful of headline-level styles
-// (listCardName, uberItemName, dayTitle) override back to GotchaGothic,
-// matching how the old app split the two fonts.
-const Text: React.FC<TextProps> = ({ style, ...rest }) => (
-  <BrandText style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
-);
-const TextInput: React.FC<TextInputProps> = ({ style, ...rest }) => (
-  <BrandTextInput style={[{ fontFamily: legacyTypography.body }, style]} {...rest} />
-);
+type MenuKind = 'Main' | 'Weekly';
 
-interface SizeOption { label: string; price: number; }
-
-interface UIReadyItem {
-  id: string; name: string; description: string;
-  category: string; image?: string; sizes: SizeOption[];
-  /** Cycle-menu ingredient text, when the kitchen has supplied it (cycle items only). */
-  ingredients?: string;
-  /** Optional dietary tags (e.g. "Keto", "Vegan") — only rendered when present in menu data. */
-  tags?: string[];
+interface CategoryChip {
+  name: string;
+  icon: string;
+  imageUrl: string;
 }
 
-const PAGE_PADDING = 16;
-const CARD_GAP = 20; // minimum horizontal gutter (actual gap grows via space-between)
-
-const ROW_GAP = 28; // vertical spacing between grid rows
-
-// A per-category and per-meal-type colour used to live here, painting a 4px
-// strip across the top of every menu card. Both were dropped in the Sep 2026
-// client review — "keep the overall feel black and white" — and neither was
-// carrying information: the strip was decoration to stop the grid looking
-// samey back when cards had no imagery, and every category now has a real
-// photograph (STATIC_CATEGORY_IMAGES below) doing that job far better.
-
-// One real, freely-licensed (Pexels License — free for commercial use) photo
-// per Main Menu category, replacing the old per-item emoji placeholder. The
-// client asked for genuine photography here, not per-dish photos — every
-// item in a category shares that category's single image.
-//
-// `w=1000&h=350&fit=crop` asks Pexels to crop server-side to the banner's own
-// ~2.86:1 aspect ratio (categoryBanner below: full width × 140 tall) — client
-// review flagged the photos looking poorly cropped/zoomed, which is what
-// resizeMode="cover" does when handed a source image whose own aspect ratio
-// is nothing like the banner's; requesting it pre-cropped to roughly the
-// right shape means cover barely has to crop further.
-const STATIC_CATEGORY_IMAGES: Record<string, string> = {
-  'CIAO ITALY': 'https://images.pexels.com/photos/5531093/pexels-photo-5531093.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'STIR FRY': 'https://images.pexels.com/photos/33145258/pexels-photo-33145258.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'POKE BOWL': 'https://images.pexels.com/photos/4770328/pexels-photo-4770328.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'WRAPS': 'https://images.pexels.com/photos/15076695/pexels-photo-15076695.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'HOT DOGS': 'https://images.pexels.com/photos/29476591/pexels-photo-29476591.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'BURGER BAR': 'https://images.pexels.com/photos/36007382/pexels-photo-36007382.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'SALAD BAR': 'https://images.pexels.com/photos/842545/pexels-photo-842545.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'SANDWICHES': 'https://images.pexels.com/photos/11256670/pexels-photo-11256670.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'FITNESS MEALS': 'https://images.pexels.com/photos/30635717/pexels-photo-30635717.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'VEGAN MEALS': 'https://images.pexels.com/photos/19647374/pexels-photo-19647374.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'SOUPS': 'https://images.pexels.com/photos/8738017/pexels-photo-8738017.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'RAMEN BOWLS': 'https://images.pexels.com/photos/31393431/pexels-photo-31393431.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'PORK SPECIALITIES': 'https://images.pexels.com/photos/15876423/pexels-photo-15876423.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  "CHEF'S MEAL OF THE DAY": 'https://images.pexels.com/photos/7243881/pexels-photo-7243881.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-};
-
-// Same idea for the Today's Menu (cycle) meal types.
-const CYCLE_MEAL_TYPE_IMAGES: Record<string, string> = {
-  'MAIN MEAL': 'https://images.pexels.com/photos/38330332/pexels-photo-38330332.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'VEGETARIAN MEAL': 'https://images.pexels.com/photos/17486827/pexels-photo-17486827.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'HEALTHY MEAL': 'https://images.pexels.com/photos/25315523/pexels-photo-25315523.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'CURRY OF THE DAY': 'https://images.pexels.com/photos/33643313/pexels-photo-33643313.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-  'GOURMET SANDWICH': 'https://images.pexels.com/photos/19202827/pexels-photo-19202827.jpeg?auto=compress&cs=tinysrgb&w=1000&h=350&fit=crop',
-};
-
-const FALLBACK_CATEGORY_IMAGE = STATIC_CATEGORY_IMAGES["CHEF'S MEAL OF THE DAY"];
-
-// Category names live in data as shouty caps ("CIAO ITALY") since that's how
-// the client's product list is authored — display-only title-casing here
-// (never used for matching/lookup) reads calmer, closer to the reference UI.
-function formatCategoryLabel(name: string): string {
-  return name
+const titleCase = (value: string) =>
+  value
     .toLowerCase()
     .split(' ')
-    .map(word => word.replace(/^[a-z]/, c => c.toUpperCase()))
+    .map(w => (w ? w[0].toUpperCase() + w.slice(1) : w))
     .join(' ');
-}
 
-export default function MenuScreen() {
-  const { addToCart, cart, cycleWeekOffset, theme, isDark, discounts, menus, menusLoading, refetchMenus, user, triggerCartFly, orderingForDate, visibleAnnouncements, dismissAnnouncement } = useKitchen();
-  // A warm cream backdrop instead of stark white — light mode only, matching
-  // how that palette never carried the warmth into dark mode either. Scoped
-  // to this screen's own canvas; cards/surfaces stay on the current theme's
-  // colors untouched. Sourced from the client's own CI palette: a 25% tint
-  // of the Mediterranean Pantry cream (#F5E8A6) blended into white.
-  const screenBackground = isDark ? theme.background : '#FDF9E9';
-  const styles = useMemo(() => createStyles(theme), [theme]);
-
-  // Today's Menu (cycle) content and its flat price — loaded once from
-  // Supabase (see fetchAllCycleMenus's own comment for why all 8 weeks load
-  // at once rather than per-viewed-week).
-  const [cycleMenus, setCycleMenus] = useState<Record<string, Record<string, any>[]>>({});
-  const [cycleItemPrice, setCycleItemPrice] = useState(80);
-  const refetchCycleMenu = () =>
-    Promise.all([fetchAllCycleMenus(), fetchCycleItemPriceRands()]).then(([menusResult, priceResult]) => {
-      setCycleMenus(menusResult);
-      setCycleItemPrice(priceResult);
-    });
-  useEffect(() => { refetchCycleMenu().catch(() => {}); }, []);
-
-  const { isLoading, refreshing, refresh } = useSimulatedLoad(async () => {
-    await Promise.all([refetchMenus(), refetchCycleMenu()]);
-  });
-  const addToCartBtnRef = useRef<React.ElementRef<typeof TouchableOpacity>>(null);
+export default function UserDashboardScreen() {
+  const { colors, isDark, cartCount, cartTotal, selectedOrderingDate } = useApp();
   const router = useRouter();
-  // Which toggle (Standard Classics / Today's Menu) was showing before a
-  // trip to /select-date to change the delivery day — carried as `?view=`
-  // on the way back (see the two router.push('/select-date...') calls
-  // below) so confirming a new date returns here instead of always
-  // resetting to Standard Classics.
-  const { view: viewParam } = useLocalSearchParams<{ view?: string }>();
-  const [menuView, setMenuView] = useState<'main' | 'today'>(viewParam === 'today' ? 'today' : 'main');
-  // Adjusted during render rather than in an effect: an effect renders the
-  // stale toggle first and corrects it on a second pass (and trips
-  // react-hooks/set-state-in-effect). Tracking the last synced value is React's
-  // documented pattern for "adjust state when a prop changes" — the toggle
-  // below still sets menuView directly, so this only reacts to a NEW ?view=.
-  const [syncedViewParam, setSyncedViewParam] = useState(viewParam);
-  if (viewParam !== syncedViewParam) {
-    setSyncedViewParam(viewParam);
-    if (viewParam === 'today' || viewParam === 'main') setMenuView(viewParam);
-  }
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [selectedItem, setSelectedItem] = useState<any>(null);
-  const [specialInstructions, setSpecialInstructions] = useState('');
-  const [isCycleItem, setIsCycleItem] = useState(false);
-  const [modalQuantity, setModalQuantity] = useState(1);
-  const [selectedSizeIndex, setSelectedSizeIndex] = useState(0);
-  // Which upcoming weekdays (Main Menu only) this order should be scheduled for.
-  // Empty = a normal, undated order. Only static-menu items support this — the
-  // rotating weekly menu's content is admin-controlled week to week, so it isn't
-  // safe to let customers book against it 2 weeks out.
-  const [selectedDeliveryDates, setSelectedDeliveryDates] = useState<string[]>([]);
-  // Per-date quantity, only used once 2+ dates are selected — lets a customer
-  // put e.g. 3 of an item on one date and 6 on another in a single Add to
-  // Cart pass instead of the shared QUANTITY stepper applying to every date.
-  const [dateQuantities, setDateQuantities] = useState<Record<string, number>>({});
-  // Names of category-level extras (e.g. "Extra Bacon") selected for the item
-  // currently open in the customize modal — an Uber-Eats-style modifier tied
-  // to this specific order, not a standalone browsable menu item.
-  const [selectedAddOns, setSelectedAddOns] = useState<Set<string>>(new Set());
-  // Set the moment something lands in the basket, to drive the "Added to
-  // Basket" confirmation sheet (client review, Sep 2026). Holds the ISO dates
-  // the add was actually applied to — labels are derived at render time so
-  // they can't go stale against the orderable window.
-  const [addedToBasket, setAddedToBasket] = useState<{ itemName: string; isos: string[] } | null>(null);
-  const upcomingWeekdays = useMemo(() => getUpcomingOrderableWeekdays(), []);
+  const insets = useSafeAreaInsets();
+  const [currentMenu, setCurrentMenu] = useState<MenuKind>('Main');
+  const [products, setProducts] = useState<Product[]>([]);
+  const [searchText, setSearchText] = useState('');
+  const [activeCategory, setActiveCategory] = useState('');
+  const [isBusy, setIsBusy] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  const busyRef = useRef(false);
 
-  // Today's Menu (cycle items) can now be pre-ordered up to a week ahead —
-  // narrower than the Main Menu's ~2-3 week horizon, so this only takes
-  // "This week"/"Next week" out of the shared upcomingWeekdays list (not
-  // "In 2 weeks"). The 2-3 business day advance cutoff is still enforced for
-  // free, since upcomingWeekdays never contains a date earlier than
-  // getOrderCutoffInfo().earliestDeliveryDate.
-  const cycleOrderableDays = useMemo(
-    () => upcomingWeekdays.filter(w => w.weekLabel !== 'In 2 weeks'),
-    [upcomingWeekdays]
-  );
-  // The one day this customer is ordering for. Today's Menu used to carry its
-  // own multi-select date row at the top of the page; the Sep 2026 client
-  // review took that off the menu entirely in favour of a single choice made
-  // up front on /select-date, so this now just resolves the global
-  // `orderingForDate` against the days actually still orderable.
-  //
-  // The fallback to the earliest orderable day covers admins only — they reach
-  // this screen through "Preview App" and are deliberately not sent through
-  // the picker, so without it their preview would render an empty menu.
-  const orderingDay = useMemo(
-    () => cycleOrderableDays.find(d => d.iso === orderingForDate) ?? cycleOrderableDays[0] ?? null,
-    [cycleOrderableDays, orderingForDate]
+  const loadData = useCallback(
+    async (menu: MenuKind) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setIsBusy(true);
+      try {
+        const items = await getProducts(menu, selectedOrderingDate);
+        // Pulled dishes (Admin > Menu Catalog > Available off) stay off the customer menu.
+        setProducts(items.filter(p => p.isAvailable));
+      } catch {
+        setProducts([]);
+      } finally {
+        busyRef.current = false;
+        setIsBusy(false);
+        setLoadedOnce(true);
+      }
+    },
+    [selectedOrderingDate]
   );
 
-  // A date picked under the Main Menu's ~2-week horizon can land outside
-  // Today's Menu's narrower 1-week one (e.g. "Fri, 25 Sept" is orderable for
-  // Standard Classics but not for the rotating cycle). Without this, the
-  // fallback above would silently swap in the earliest cycle day instead —
-  // fine for the admin "Preview App" case that fallback exists for, but for a
-  // real customer it means Today's Menu quietly adds items to a different day
-  // than the one they actually chose. Send them back through the same
-  // delivery-day picker, scoped to what Today's Menu can actually offer.
-  useEffect(() => {
-    if (
-      menuView === 'today' &&
-      user?.role !== 'admin' &&
-      orderingForDate &&
-      !cycleOrderableDays.some(d => d.iso === orderingForDate)
-    ) {
-      router.push('/select-date?change=1&view=today');
-    }
-  }, [menuView, user, orderingForDate, cycleOrderableDays, router]);
+  useFocusEffect(
+    useCallback(() => {
+      loadData(currentMenu);
+    }, [loadData, currentMenu])
+  );
 
-  // Copy for the Added to Basket sheet. Derived from the ISO dates the add was
-  // applied to rather than stored as text, so the labels can't drift out of
-  // step with the orderable window while the sheet is open.
-  const addedDayName = useMemo(() => {
-    if (!addedToBasket || addedToBasket.isos.length !== 1) return null;
-    return upcomingWeekdays.find(w => w.iso === addedToBasket.isos[0])?.dayName ?? null;
-  }, [addedToBasket, upcomingWeekdays]);
-
-  const addedToBasketMessage = useMemo(() => {
-    if (!addedToBasket) return '';
-    const { itemName, isos } = addedToBasket;
-    if (isos.length > 1) return `${itemName} has been added for ${isos.length} delivery days.`;
-    const label = isos.length === 1 ? upcomingWeekdays.find(w => w.iso === isos[0])?.label : undefined;
-    return label
-      ? `${itemName} has been added for ${label}.`
-      : `${itemName} has been added to your basket.`;
-  }, [addedToBasket, upcomingWeekdays]);
-
-  // Which rotation week (Week 1-8 in cycleMenu.json) a given upcoming weekday
-  // pulls its meals from, resolved from that date's own position in the
-  // calendar-anchored rotation (see getCycleWeekForDate).
-  //
-  // This used to project forward from whichever week an admin had last picked
-  // by hand — "This week" = that week, "Next week" = the one after — which was
-  // only ever correct while somebody remembered to advance it on schedule. The
-  // client asked for the cycle to rotate on its own, so a date three weeks out
-  // now resolves to the week it will genuinely be cooked from, with no admin
-  // action involved. A manual override still applies, as a shift of the whole
-  // rotation rather than a pin on one week.
-  const getCycleWeekKeyForDate = (day: UpcomingWeekday): string =>
-    `Week ${getCycleWeekForDate(new Date(`${day.iso}T00:00:00`), cycleWeekOffset)}`;
-
-  // Card sizing follows the responsive app frame. Phones keep the compact
-  // 2-column grid; tablets widen the frame and move to 3 columns so cards
-  // stay readable instead of stretching.
-  // 4px slack guards against scrollbar / sub-pixel rounding on web so cards
-  // always genuinely fit side-by-side (prevents list-like wrapping).
-  const { width: windowWidth } = useWindowDimensions();
-  const { isTablet, contentMaxWidth } = useResponsive();
-  const frameWidth = Math.min(windowWidth, contentMaxWidth);
-  const usableWidth = frameWidth - PAGE_PADDING * 2 - 4;
-  const numColumns = isTablet ? 3 : 2;
-  const CARD_WIDTH = Math.floor((usableWidth - CARD_GAP * (numColumns - 1)) / numColumns);
-
-  const getItemQuantity = (id: string) => {
-    const item = cart.find(c => c.id === id);
-    return item ? item.quantity : 0;
+  const switchMenu = (menu: MenuKind) => {
+    if (menu === currentMenu) return;
+    setSearchText('');
+    setActiveCategory('');
+    setProducts([]);
+    setCurrentMenu(menu);
   };
 
-  // Looks up the one real photo standing in for a category (static menu
-  // categories and cycle meal types share the same lookup) — see
-  // STATIC_CATEGORY_IMAGES / CYCLE_MEAL_TYPE_IMAGES above.
-  const getCategoryImage = (category: string): string =>
-    STATIC_CATEGORY_IMAGES[category] || CYCLE_MEAL_TYPE_IMAGES[category] || FALLBACK_CATEGORY_IMAGE;
+  const categories: CategoryChip[] = useMemo(() => {
+    const seen = new Map<string, CategoryChip>();
+    for (const p of products) {
+      if (p.category && !seen.has(p.category)) seen.set(p.category, { name: p.category, icon: p.icon, imageUrl: p.imageUrl });
+    }
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [products]);
 
-  // `menus` (from context) is the single source of truth — the same data
-  // admin's Meals tab reads and writes. Flatten it into the flat, per-item
-  // shape the rest of this screen (search, filters, grid) already expects.
-  const flattenedStaticMenu = useMemo((): UIReadyItem[] => {
-    return menus.flatMap(cat =>
-      // Dishes an admin has switched off in Menu Management never reach the
-      // customer menu. Filtered here rather than at the point of display so the
-      // category strip drops a category too once its last dish is switched off,
-      // instead of offering a filter that leads to an empty grid.
-      cat.items.filter(item => item.active).map(item => ({
-        id: item.id,
-        name: item.name,
-        description: item.description,
-        category: cat.name,
-        image: item.image,
-        sizes: item.sizes,
-        tags: item.tags,
-      }))
+  const grouped = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    const filtered = products.filter(
+      p =>
+        (!activeCategory || p.category.toLowerCase() === activeCategory.toLowerCase()) &&
+        (!query || p.name.toLowerCase().includes(query) || p.description.toLowerCase().includes(query))
     );
-  }, [menus]);
+    return categories
+      .map(category => ({ category, products: filtered.filter(p => p.category.toLowerCase() === category.name.toLowerCase()) }))
+      .filter(section => section.products.length > 0);
+  }, [products, categories, activeCategory, searchText]);
 
-  const categories = useMemo(() => {
-    const cats = Array.from(new Set(flattenedStaticMenu.map(item => item.category)));
-    return cats;
-  }, [flattenedStaticMenu]);
+  const filterCategory = (category: string) => setActiveCategory(prev => (prev === category ? '' : category));
 
-  const filteredStaticMenu = useMemo(() => {
-    let items = flattenedStaticMenu;
-
-    if (selectedCategory) {
-      items = items.filter(item => item.category === selectedCategory);
-    }
-
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      items = items.filter(item =>
-        item.name.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q)
-      );
-    }
-
-    return items;
-  }, [flattenedStaticMenu, searchQuery, selectedCategory]);
-
-  const handleAddItem = (item: UIReadyItem) => {
-    setSelectedItem(item);
-    setSpecialInstructions('');
-    setIsCycleItem(false);
-    setModalQuantity(1);
-    setSelectedSizeIndex(0);
-    // Pre-select the day chosen up front on /select-date rather than opening
-    // empty. An undated add is still possible (clear the chips), but the
-    // default is now the customer's stated day, so a Main Menu dish and a
-    // Today's Menu dish added in the same session land on the same delivery.
-    setSelectedDeliveryDates(orderingForDate ? [orderingForDate] : []);
-    setDateQuantities(orderingForDate ? { [orderingForDate]: 1 } : {});
-    setSelectedAddOns(new Set());
+  const openProduct = (product: Product) => {
+    setNavParam('SelectedProduct', product);
+    router.push('/product');
   };
 
-  const toggleDeliveryDate = (iso: string) => {
-    const isSelected = selectedDeliveryDates.includes(iso);
-    if (isSelected) {
-      setSelectedDeliveryDates(prev => prev.filter(d => d !== iso));
-      setDateQuantities(prev => {
-        const next = { ...prev };
-        delete next[iso];
-        return next;
-      });
-    } else {
-      setSelectedDeliveryDates(prev => [...prev, iso]);
-      // Always starts at 1, not the shared stepper's current value — that
-      // stepper only reflects the last date it was displayed for (0 or 1
-      // dates selected), so carrying it over to a newly added date would be
-      // an arbitrary leftover value, not a deliberate choice for this date.
-      setDateQuantities(prev => ({ ...prev, [iso]: prev[iso] ?? 1 }));
-    }
-  };
+  const dateLabel = selectedOrderingDate ? fmtDayLabel(selectedOrderingDate) : 'Choose a delivery day';
 
-  const setDateQuantity = (iso: string, qty: number) => {
-    setDateQuantities(prev => ({ ...prev, [iso]: Math.max(1, Math.min(20, qty)) }));
-  };
-
-  const toggleAddOn = (name: string) => {
-    setSelectedAddOns(prev => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
-      return next;
-    });
-  };
-
-  const confirmAddToCart = () => {
-    if (!selectedItem) return;
-    const chosenSize = selectedItem.sizes[selectedSizeIndex] || selectedItem.sizes[0];
-
-    const categoryAddOns = menus.find(c => c.name === selectedItem.category)?.addOns;
-    const chosenAddOns = categoryAddOns?.filter(a => selectedAddOns.has(a.name)) ?? [];
-    const addOnsTotal = chosenAddOns.reduce((sum, a) => sum + a.price, 0);
-    // Distinct add-on selections on the same dish must land as separate cart
-    // lines (not silently merge/overwrite each other) — addToCart merges by id.
-    const addOnsIdSuffix = chosenAddOns.length > 0
-      ? `::addons=${chosenAddOns.map(a => a.name).sort().join(',')}`
-      : '';
-
-    // Main Menu items can optionally be pre-scheduled across several weekdays
-    // in one go; a cycle item instead carries the single date already picked
-    // on the Today's Menu screen (selectedItem.deliveryDate); an undated add
-    // just places a single normal order.
-    const datesToApply = isCycleItem
-      ? [selectedItem.deliveryDate as string | undefined]
-      : selectedDeliveryDates.length > 0
-        ? selectedDeliveryDates
-        : [undefined];
-
-    datesToApply.forEach((iso) => {
-      const dateMeta = iso ? upcomingWeekdays.find(w => w.iso === iso) : undefined;
-      // With 2+ dates selected, each date uses its own stepper value (see
-      // dateQuantities); a single date/undated add still uses the shared
-      // QUANTITY stepper.
-      const qtyForDate = iso && selectedDeliveryDates.length > 1
-        ? (dateQuantities[iso] ?? 1)
-        : modalQuantity;
-      for (let i = 0; i < qtyForDate; i++) {
-        addToCart({
-          id: (iso ? `${selectedItem.id}::${iso}` : selectedItem.id) + addOnsIdSuffix,
-          name: selectedItem.name,
-          price: chosenSize.price + addOnsTotal,
-          category: selectedItem.category,
-          quantity: 1,
-          image: selectedItem.image,
-          selectedSize: chosenSize.label,
-          notes: specialInstructions || undefined,
-          deliveryDate: iso,
-          deliveryDateLabel: dateMeta?.label,
-          addOns: chosenAddOns.length > 0 ? chosenAddOns : undefined,
-          // Structured source reference for place_order (see CartItem) —
-          // static items carry their real menu_items UUID directly as
-          // selectedItem.id; cycle items carry week/day/slot instead since
-          // they have no menu_items row at all.
-          source: isCycleItem ? 'cycle' : 'static',
-          menuItemId: isCycleItem ? undefined : selectedItem.id,
-          cycleWeekNumber: isCycleItem ? selectedItem.cycleWeekNumber : undefined,
-          cycleDayOfWeek: isCycleItem ? selectedItem.cycleDayOfWeek : undefined,
-          cycleSlot: isCycleItem ? selectedItem.cycleSlot : undefined,
-        });
-      }
-    });
-
-    // Confirm the add and offer a second delivery day right here, instead of
-    // leaving someone to discover on their own that they can order for
-    // another day (client review, Sep 2026). Captured before the reset below.
-    setAddedToBasket({
-      itemName: selectedItem.name,
-      isos: datesToApply.filter((iso): iso is string => !!iso),
-    });
-
-    setSelectedItem(null);
-    setSpecialInstructions('');
-    setIsCycleItem(false);
-    setSelectedDeliveryDates([]);
-    setDateQuantities({});
-    setSelectedAddOns(new Set());
-  };
-
-  const handleAddCycleItem = (mealName: string, mealType: string, day: UpcomingWeekday, weekName: string, ingredients?: string) => {
-    const cycleItem = {
-      id: `cycle-${weekName}-${day.dayName}-${mealType}-${mealName.replace(/\s+/g, '')}`,
-      name: mealName,
-      description: mealType.replace(/_/g, ' '),
-      ingredients,
-      category: `${weekName} • ${day.dayName}`,
-      sizes: [{ label: 'Regular', price: cycleItemPrice }],
-      mealType,
-      day: day.dayName,
-      weekName,
-      // Structured DB references for place_order — the cart id string above
-      // is for display/merge-key purposes only, this is what the RPC needs.
-      cycleWeekNumber: parseInt(weekName.replace(/\D/g, ''), 10),
-      cycleDayOfWeek: dayNameToDbDay(day.dayName),
-      cycleSlot: mealTypeKeyToDbSlot(mealType),
-      // Carries the customer's chosen delivery date through to the cart —
-      // picked up front on /select-date (see orderingDay), not
-      // in this add-to-cart modal like the Main Menu's multi-date picker.
-      deliveryDate: day.iso,
-      deliveryDateLabel: day.label,
-    };
-    setSelectedItem(cycleItem);
-    setSpecialInstructions('');
-    setIsCycleItem(true);
-    setModalQuantity(1);
-    setSelectedSizeIndex(0);
-    setSelectedDeliveryDates([]);
-    setSelectedAddOns(new Set());
-  };
-
-  const renderCategoryFilter = () => {
-    if (menuView !== 'main') return null;
-
+  const toggleButton = (label: string, menu: MenuKind) => {
+    const selected = currentMenu === menu;
     return (
-      <View style={styles.categoryFilterContainer}>
-        <View style={styles.categoryFilterRow}>
-          {/* "All" sits outside the scrolling FlatList entirely, rather than
-              as its ListHeaderComponent, so it stays put as a fixed anchor
-              while the rest of the categories scroll past it — a customer
-              can always get back to the full menu without scrolling back. */}
-          <TouchableOpacity
-            style={[styles.categoryChip, selectedCategory === null && styles.categoryChipActive]}
-            // The chip is a 2px underline hugging its label — 19px wide for
-            // "All" — so the tap target is widened with hitSlop rather than by
-            // growing the box, which would stretch the underline itself.
-            hitSlop={{ top: 12, bottom: 12, left: 10, right: 10 }}
-            onPress={() => setSelectedCategory(null)}
-            accessibilityRole="button"
-            accessibilityState={{ selected: selectedCategory === null }}
-            accessibilityLabel="All categories"
-          >
-            <Text style={[styles.categoryChipText, selectedCategory === null && styles.categoryChipTextActive]}>
-              All
-            </Text>
-          </TouchableOpacity>
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoryFilterList}
-            contentContainerStyle={styles.categoryFilterContent}
-            data={categories}
-            keyExtractor={(cat) => cat}
-            renderItem={({ item: category }) => {
-              const isActive = selectedCategory === category;
-              return (
-                <TouchableOpacity
-                  style={[styles.categoryChip, isActive && styles.categoryChipActive]}
-                  // Underline hugs the label — widen the touch area, not the rule.
-                  hitSlop={{ top: 12, bottom: 12, left: 10, right: 10 }}
-                  onPress={() => setSelectedCategory(isActive ? null : category)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: isActive }}
-                  accessibilityLabel={`${formatCategoryLabel(category)} category`}
-                >
-                  <Text style={[styles.categoryChipText, isActive && styles.categoryChipTextActive]}>
-                    {formatCategoryLabel(category)}
-                  </Text>
-                </TouchableOpacity>
-              );
-            }}
-          />
-        </View>
-      </View>
-    );
-  };
-
-  // Find applicable discounts for an item (active, non-expired)
-  const getItemDiscounts = (item: UIReadyItem) => {
-    const now = new Date();
-    return discounts.filter(d => {
-      if (!d.active) return false;
-      if (d.expires) {
-        const expiry = new Date(d.expires);
-        if (expiry < now) return false;
-      }
-      // Check if this discount targets this item
-      if (d.itemName) return item.name.toLowerCase() === d.itemName.toLowerCase();
-      if (d.categoryId) return item.category.toLowerCase() === d.categoryId.toLowerCase();
-      if (d.company) return item.category.toLowerCase().includes(d.company.toLowerCase());
-      return false; // Global discounts shown elsewhere, not per-item
-    });
-  };
-
-  // Extract grid item renderer for reusability
-  // Full-width list row (client reference, Sep 2026: Main Menu items read as
-  // a list, not a 2-column grid). `description` in the underlying data is
-  // already an ingredient list ("Roasted Butternut / Danish Feta Cheese /
-  // ..."), so it's shown under an "Ingredients:" label rather than invented —
-  // same for `tags` (e.g. "Vegetarian"), which already existed in the data
-  // and normalizer but had nothing rendering it until now.
-  const renderGridItem = ({ item }: { item: UIReadyItem }) => {
-    const qty = getItemQuantity(item.id);
-    const rawPrice = item.sizes[0] ? item.sizes[0].price : 0;
-    const itemDiscounts = getItemDiscounts(item);
-    const hasDiscount = itemDiscounts.length > 0;
-    const discountedPrice = hasDiscount ? rawPrice * (1 - itemDiscounts[0].percentage / 100) : rawPrice;
-    const displayPrice = `R${discountedPrice.toFixed(0)}`;
-    const originalDisplayPrice = `R${rawPrice.toFixed(0)}`;
-    // A second size (typically "Large") reads as a secondary price line below
-    // the base price — same two sizes handleAddItem's modal already offers,
-    // this just surfaces the upsize price on the card itself.
-    const secondSize = item.sizes.length > 1 ? item.sizes[1] : null;
-
-    return (
-      <TouchableOpacity
-        style={styles.listCard}
-        activeOpacity={0.9}
-        onPress={() => handleAddItem(item)}
-        accessibilityLabel={`${item.name}, ${displayPrice}`}
+      <Pressable
+        onPress={() => switchMenu(menu)}
+        accessibilityRole="tab"
+        aria-selected={selected}
+        style={({ pressed }) => [styles.toggleBtn, selected && { backgroundColor: colors.primary }, pressed && styles.pressed]}
       >
-        <View style={styles.listCardTopRow}>
-          <View style={styles.listCardNameCol}>
-            <Text style={styles.listCardName} numberOfLines={2}>{item.name}</Text>
-            {item.description ? (
-              <Text style={styles.listCardDesc} numberOfLines={3}>
-                <Text style={styles.listCardDescLabel}>Ingredients: </Text>
-                {item.description}
-              </Text>
-            ) : null}
-          </View>
-          <View style={styles.listCardPriceCol}>
-            <View style={styles.uberPriceRow}>
-              <Text style={styles.uberPrice}>{displayPrice}</Text>
-              {hasDiscount && <Text style={styles.uberOriginalPrice}>{originalDisplayPrice}</Text>}
-            </View>
-            {secondSize && (
-              <Text style={styles.listCardSizePrice}>{secondSize.label} R{secondSize.price.toFixed(0)}</Text>
-            )}
-            {hasDiscount && (
-              <Text style={styles.menuDiscountHint}>{itemDiscounts[0].percentage}% OFF</Text>
-            )}
-            <View style={styles.listCardAddBtn}>
-              <QuickAddButton quantity={qty} onPress={() => handleAddItem(item)} theme={theme} />
-            </View>
-          </View>
-        </View>
-
-        {item.tags && item.tags.length > 0 && (
-          <View style={styles.listCardTags}>
-            {item.tags.map(tag => (
-              <View key={tag} style={styles.listCardTag}>
-                <Text style={styles.listCardTagText}>{tag}</Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </TouchableOpacity>
+        <Text style={[styles.toggleText, { color: selected ? colors.onPrimary : colors.segmentText }]}>{label}</Text>
+      </Pressable>
     );
   };
 
-  // Properly aligned grid layout for static menu using FlatList numColumns
-  const renderStaticMenuGrid = () => {
-    const itemsByCategory = filteredStaticMenu.reduce<Record<string, UIReadyItem[]>>((acc, item) => {
-      if (!acc[item.category]) acc[item.category] = [];
-      acc[item.category].push(item);
-      return acc;
-    }, {});
+  const chip = (label: string, key: string, active: boolean) => (
+    <Pressable key={key} onPress={() => (key === '' ? setActiveCategory('') : filterCategory(key))} style={styles.chip}>
+      <Text style={[styles.chipText, { color: colors.text, fontWeight: active ? '700' : '400' }]}>{label}</Text>
+      <View style={[styles.chipUnderline, { backgroundColor: active ? colors.primary : 'transparent' }]} />
+    </Pressable>
+  );
 
-    const sections = Object.entries(itemsByCategory);
-
-    return (
-      <FlatList
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />
-        }
-        ListHeaderComponent={
-          <View style={styles.deliverySection}>
-            <DeliveryEstimator theme={theme} />
-            {searchQuery.trim().length > 0 && (
-              <View style={styles.searchSummaryRow}>
-                <Text style={styles.searchSummaryText}>
-                  Found <Text style={styles.searchSummaryBold}>{filteredStaticMenu.length}</Text> matching {filteredStaticMenu.length === 1 ? 'dish' : 'dishes'} for "{searchQuery.trim()}"
-                </Text>
+  return (
+    <Page bg={colors.cream}>
+      <ScrollView
+        contentContainerStyle={{ paddingTop: insets.top, paddingBottom: cartCount > 0 ? 96 : 16 }}
+        refreshControl={<RefreshControl refreshing={isBusy && loadedOnce} onRefresh={() => loadData(currentMenu)} tintColor={colors.primary} />}
+      >
+        {/* 1. Logo + cart */}
+        <View style={styles.header}>
+          <Image
+            source={isDark ? require('../../../assets/images/yourkcodark.png') : require('../../../assets/images/yourkcolight.png')}
+            style={styles.headerLogo}
+            resizeMode="contain"
+            accessibilityLabel="Your Kitchen Co."
+          />
+          <Pressable onPress={() => router.push('/cart')} accessibilityRole="button" accessibilityLabel={`Basket, ${cartCount} items`} style={styles.cartWrap}>
+            <View style={[styles.cartButton, { backgroundColor: colors.primary }]}>
+              <Text style={{ fontSize: 18 }}>🛒</Text>
+            </View>
+            {cartCount > 0 && (
+              <View style={[styles.badge, { backgroundColor: colors.badge, borderColor: colors.pageBg }]}>
+                <Text style={styles.badgeText}>{cartCount}</Text>
               </View>
             )}
-          </View>
-        }
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <Ionicons name="search" size={36} color={theme.textTertiary} />
-            <Text style={styles.emptyTitle}>
-              {searchQuery.trim() ? `No dishes found for "${searchQuery.trim()}"` : 'No matches found'}
-            </Text>
-            <Text style={styles.emptySub}>
-              {searchQuery.trim() ? 'Try checking your spelling or exploring other categories.' : 'Try a different category'}
-            </Text>
-            {(searchQuery.trim() || selectedCategory) && (
-              <TouchableOpacity
-                style={styles.clearSearchBtn}
-                onPress={() => { setSearchQuery(''); setSelectedCategory(null); }}
-                accessibilityRole="button"
-                accessibilityLabel="Clear search filter"
-              >
-                <Text style={styles.clearSearchBtnText}>Clear Search Filter</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        }
-        data={sections}
-        keyExtractor={([cat]) => cat}
-        renderItem={({ item: [category, items] }) => (
-          <View style={styles.categorySection}>
-            {/* One real photo per category — shown once here at the top of that
-                category's items (this is what a category chip filters down to),
-                never per-item. */}
-            <View style={styles.categoryBanner}>
-              <Image source={{ uri: getCategoryImage(category) }} style={styles.categoryBannerImage} resizeMode="cover" />
-              <View style={styles.categoryBannerOverlay} />
-              <Text style={styles.categoryBannerTitle}>{formatCategoryLabel(category)}</Text>
-            </View>
+          </Pressable>
+        </View>
 
-            {/* Single-column list (client reference, Sep 2026) — items read
-                top to bottom under the category photo rather than as a grid. */}
-            {/* Plain Views, not a nested FlatList: scrollEnabled={false} meant
-                there was no virtualisation to gain, while the nested scroll
-                container still swallowed vertical drags that began on a card
-                (i.e. most of the screen) on Android. Same fix Today's Menu
-                already had — this was the last place with the pattern. */}
-            <View style={styles.uberGrid}>
-              {items.map((item) => (
-                <View key={item.id}>{renderGridItem({ item })}</View>
+        {/* 2. Search */}
+        <View style={[styles.searchBox, { borderColor: colors.surfaceBorder, backgroundColor: colors.cardBg }]}>
+          <SearchBar value={searchText} onChangeText={setSearchText} placeholder="Search dishes, ingredients..." bare />
+        </View>
+
+        {/* 3. Delivery day — tap to change */}
+        <Card radius={12} padding={[14, 10]} border={colors.surfaceBorder} style={styles.dateCard} onPress={() => router.push('/select-date')}>
+          <View style={styles.dateRow}>
+            <Text style={{ fontSize: 15, color: colors.brandPop }}>📅</Text>
+            <View style={styles.flex}>
+              <Text style={[styles.dateCaption, { color: colors.textSecondary }]}>Delivering</Text>
+              <Text style={[styles.dateValue, { color: colors.text }]}>{dateLabel}</Text>
+            </View>
+            <Text style={[styles.change, { color: colors.primary }]}>Change ›</Text>
+          </View>
+        </Card>
+
+        {/* 4. Main / Cycling toggle */}
+        <View style={[styles.toggle, { backgroundColor: colors.segmentTrack }]}>
+          {toggleButton('Main Menu', 'Main')}
+          {toggleButton('Cycling Menu', 'Weekly')}
+        </View>
+
+        {/* 5. */}
+        <Text style={[styles.sectionTitle, { color: colors.text }]}>Explore Our Menu</Text>
+
+        {/* 6. Category slider */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slider} style={styles.sliderWrap}>
+          {chip('All', '', activeCategory === '')}
+          {categories.map(c => chip(titleCase(c.name), c.name, activeCategory.toLowerCase() === c.name.toLowerCase()))}
+        </ScrollView>
+
+        {/* 7. Cutoff message */}
+        <View style={[styles.notice, { borderColor: colors.surfaceBorder, backgroundColor: colors.tan }]}>
+          <Text style={[styles.noticeText, { color: colors.text }]}>Orders close at 9:00 AM, two business days before your delivery date.</Text>
+        </View>
+
+        {!loadedOnce && isBusy && <ActivityIndicator color={colors.primary} style={styles.loader} />}
+
+        {/* 8. Category sections */}
+        {grouped.map(section => (
+          <View key={section.category.name} style={styles.section}>
+            <ImageBackground source={{ uri: section.category.imageUrl }} style={styles.hero} imageStyle={styles.heroImage} resizeMode="cover">
+              <View style={styles.heroShade} />
+              <Text style={styles.heroTitle}>{titleCase(section.category.name)}</Text>
+            </ImageBackground>
+            <View style={styles.products}>
+              {section.products.map(product => (
+                <Card key={product.id} border={colors.surfaceBorder} shadow="soft" onPress={() => openProduct(product)}>
+                  <View style={styles.productRow}>
+                    <View style={styles.productInfo}>
+                      <Text style={[styles.productName, { color: colors.text }]} numberOfLines={1}>
+                        {product.name}
+                      </Text>
+                      {!!product.description && (
+                        <Text style={[styles.productDesc, { color: colors.textSecondary }]} numberOfLines={2}>
+                          {product.description}
+                        </Text>
+                      )}
+                      {!!product.ingredients.trim() && (
+                        <Text style={[styles.ingredients, { color: colors.textSecondary }]} numberOfLines={1}>
+                          <Text style={[styles.ingredients, styles.bold, { color: colors.textSecondary }]}>Ingredients: </Text>
+                          {product.ingredients}
+                        </Text>
+                      )}
+                      {product.dietaryTags.length > 0 && (
+                        <View style={styles.tags}>
+                          {product.dietaryTags.map(tag => (
+                            <View key={tag} style={[styles.tag, { borderColor: colors.surfaceBorder, backgroundColor: colors.tan }]}>
+                              <Text style={[styles.tagText, { color: colors.text }]}>{tag}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                    <View style={styles.priceCol}>
+                      <Text style={[styles.price, { color: colors.primary }]}>R {product.basePrice.toFixed(2)}</Text>
+                      {product.largePrice != null && (
+                        <Text style={[styles.largePrice, { color: colors.textSecondary }]}>Large R {product.largePrice.toFixed(2)}</Text>
+                      )}
+                      <Btn title="+" onPress={() => openProduct(product)} bold fontSize={20} height={40} radius={20} paddingH={0} style={styles.plus} />
+                    </View>
+                  </View>
+                </Card>
               ))}
             </View>
           </View>
-        )}
-      />
-    );
-  };
-
-  // Today's Menu — customer picks one or more upcoming orderable weekdays
-  // (same 2-3-business-day-minimum list the Main Menu uses) and each picked
-  // day gets its own "day header + meal grid" section stacked on the page
-  // (e.g. Monday's meals, then Friday's meals underneath), instead of only
-  // ever showing a single day at a time. Which rotation week a date pulls
-  // its meals from is projected from the admin's current "active week" (see
-  // getCycleWeekKeyForDate above) — a given day's meals can genuinely differ
-  // from another day's even within the same page.
-  const renderCycleMenu = () => {
-    if (Object.keys(cycleMenus).length === 0) {
-      return (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>📅</Text>
-          <Text style={styles.emptyTitle}>No menu available</Text>
-          <Text style={styles.emptySub}>Check back later</Text>
-        </View>
-      );
-    }
-
-    if (!orderingDay) {
-      return (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyEmoji}>📅</Text>
-          <Text style={styles.emptyTitle}>No orderable dates available</Text>
-          <Text style={styles.emptySub}>Check back later</Text>
-        </View>
-      );
-    }
-
-    // Resolves one day's meals (and which rotation week they came from) —
-    // called once per section below, since each selected day can land in a
-    // different rotation week.
-    const getMealsForDay = (day: UpcomingWeekday) => {
-      const weekKey = getCycleWeekKeyForDate(day);
-      const weekData = (cycleMenus as any)[weekKey];
-      if (!weekData || !Array.isArray(weekData)) return { weekKey, meals: null as null | { mealType: string; mealDescription: string; ingredients?: string }[] };
-      const dayData = weekData.find((dayObj: any) => dayObj.DAY === day.dayName);
-      const meals = dayData
-        ? Object.entries(dayData)
-            .filter(([k]) => k !== 'DAY' && k !== 'DESCRIPTIONS')
-            .map(([mealType, mealDescription]: [string, any]) => ({
-              mealType,
-              mealDescription: typeof mealDescription === 'string' ? mealDescription : String(mealDescription),
-              ingredients: (dayData as any).DESCRIPTIONS?.[mealType] || undefined,
-            }))
-        : [];
-      return { weekKey, meals };
-    };
-
-    // Meal type ("MAIN MEAL", "CURRY OF THE DAY", ...) -> that type's meals,
-    // in first-seen order — one dish per type per day today, but this holds
-    // even if a future day's data ever lists more than one under the same type.
-    const groupMealsByType = (meals: { mealType: string; mealDescription: string; ingredients?: string }[]) => {
-      const map = new Map<string, { mealType: string; mealDescription: string; ingredients?: string }[]>();
-      meals.forEach((meal) => {
-        const arr = map.get(meal.mealType) ?? [];
-        arr.push(meal);
-        map.set(meal.mealType, arr);
-      });
-      return Array.from(map.entries());
-    };
-
-    // Cycle meal card renderer
-    const renderCycleCard = (
-      meal: { mealType: string; mealDescription: string; ingredients?: string },
-      day: UpcomingWeekday,
-      weekKeyStr: string
-    ) => {
-      const mealName = meal.mealDescription;
-      const qty = getItemQuantity(`cycle-${weekKeyStr}-${day.dayName}-${meal.mealType}-${mealName.replace(/\s+/g, '')}`);
-
-      // Same full-width row the Main Menu uses (styles.listCard*), not the
-      // narrow two-up card this used to be: at half the screen's width these
-      // dish names — "Crispy Fish & Chips with Tartar Sauce" and the like —
-      // were truncating to an ellipsis after two lines. Cycle meals carry no
-      // ingredients, sizes, tags or discounts, so those parts of the Main
-      // Menu row simply have nothing to render here.
-      return (
-        <TouchableOpacity
-          style={styles.listCard}
-          activeOpacity={0.9}
-          onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr, meal.ingredients)}
-          accessibilityLabel={`${mealName}, R${cycleItemPrice}`}
-        >
-          <View style={styles.listCardTopRow}>
-            <View style={styles.listCardNameCol}>
-              <Text style={styles.listCardName} numberOfLines={2}>{mealName}</Text>
-              {meal.ingredients ? (
-                <Text style={styles.listCardDesc} numberOfLines={2}>{meal.ingredients}</Text>
-              ) : null}
-            </View>
-            <View style={styles.listCardPriceCol}>
-              <View style={styles.uberPriceRow}>
-                <Text style={styles.uberPrice}>R{cycleItemPrice}</Text>
-              </View>
-              <View style={styles.listCardAddBtn}>
-                <QuickAddButton
-                  quantity={qty}
-                  onPress={() => handleAddCycleItem(mealName, meal.mealType, day, weekKeyStr, meal.ingredients)}
-                  theme={theme}
-                />
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-      );
-    };
-
-    return (
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 100 }}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={theme.text} colors={[theme.text]} />
-        }
-      >
-        <View style={styles.weekStatusRow}>
-          <CutoffCountdown compact theme={theme} />
-        </View>
-
-        {/* One section, for the single day chosen on /select-date. Kept as a
-            map over a one-element array so the day-scoped body below stays
-            exactly as it was when several days could be shown at once. */}
-        {[orderingDay].map((day) => {
-          const { weekKey, meals } = getMealsForDay(day);
-          return (
-            <View key={day.iso} style={styles.categorySection}>
-              <View style={styles.dayHeaderBar}>
-                <View style={styles.dayHeaderLeft}>
-                  <View style={styles.todayDot} />
-                  <Text style={[styles.dayTitle, styles.dayTitleToday]}>{day.label}</Text>
-                </View>
-                {meals && meals.length > 0 && <Text style={styles.dayMealCount}>{meals.length} meals</Text>}
-              </View>
-              {meals === null ? (
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyEmoji}>📅</Text>
-                  <Text style={styles.emptyTitle}>{weekKey} menu not available</Text>
-                  <Text style={styles.emptySub}>Check back later for this week's schedule</Text>
-                </View>
-              ) : meals.length > 0 ? (
-                // Grouped by meal type (Main Meal, Vegetarian Meal, ...) —
-                // a plain text label per group, no photo (client asked for no
-                // images on Today's Menu). Plain rows of Views inside each
-                // group, not a nested FlatList: see the Main Menu grid above
-                // for why (swallowed Android drags).
-                groupMealsByType(meals).map(([mealType, groupMeals]) => (
-                  <View key={`cycle-${day.iso}-${mealType}`} style={styles.mealTypeSection}>
-                    <Text style={styles.mealTypeLabel}>{formatCategoryLabel(mealType)}</Text>
-                    {/* Stacked full-width rows, no column chunking — these are
-                        Main Menu-style list rows now, one per line. */}
-                    {groupMeals.map((meal, idx) => (
-                      <React.Fragment key={`cycle-${day.iso}-${mealType}-${idx}`}>
-                        {renderCycleCard(meal, day, weekKey)}
-                      </React.Fragment>
-                    ))}
-                  </View>
-                ))
-              ) : (
-                <View style={styles.emptyContainer}>
-                  <Text style={styles.emptyEmoji}>😴</Text>
-                  <Text style={styles.emptyTitle}>No meals scheduled for {day.dayName}</Text>
-                  <Text style={styles.emptySub}>Try a different delivery day.</Text>
-                </View>
-              )}
-            </View>
-          );
-        })}
-      </ScrollView>
-    );
-  };
-
-  // Brief shimmer shown for the useSimulatedLoad() initial-load window — a
-  // stand-in for the real fetch this screen will eventually make.
-  const renderMenuSkeleton = () => (
-    <View style={styles.listContainer}>
-      <View style={styles.uberGridColumn}>
-        {[0, 1].map(i => <Skeleton key={`s1-${i}`} theme={theme} style={{ width: CARD_WIDTH, height: 190 }} />)}
-      </View>
-      <View style={styles.uberGridColumn}>
-        {[0, 1].map(i => <Skeleton key={`s2-${i}`} theme={theme} style={{ width: CARD_WIDTH, height: 190 }} />)}
-      </View>
-      <View style={styles.uberGridColumn}>
-        {[0, 1].map(i => <Skeleton key={`s3-${i}`} theme={theme} style={{ width: CARD_WIDTH, height: 190 }} />)}
-      </View>
-    </View>
-  );
-
-  return (
-    <SafeAreaView
-      // Top inset belongs to the navigator header, bottom to the tab bar —
-      // see the note in (tabs)/_layout.tsx. Without this the screen pads both
-      // a second time and content sits in a dead band on notched phones.
-      edges={['left', 'right']}
-      style={[styles.container, { backgroundColor: screenBackground }]}
-    >
-      <StatusBar barStyle={theme.statusBarStyle} backgroundColor={screenBackground} />
-
-      {/* Admins land here deliberately (via "Preview App") to see exactly what a
-          customer sees while editing items — not to place personal orders. */}
-      {user?.role === 'admin' && (
-        <View style={styles.previewBanner}>
-          <View style={styles.previewBannerLeft}>
-            <Ionicons name="eye" size={14} color={theme.text} />
-            <Text style={styles.previewBannerText}>Previewing as a customer</Text>
-          </View>
-          <TouchableOpacity onPress={() => router.replace('/admin')} accessibilityRole="button" accessibilityLabel="Exit customer preview">
-            <Text style={styles.previewBannerExit}>Exit Preview</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Messages the kitchen has sent to this customer — a menu change, a
-          delivery delay. Sits above everything else on the menu because it is
-          the one thing here that may change what they were about to order. */}
-      {visibleAnnouncements.map((a) => (
-        <View key={a.id} style={styles.announcementBar}>
-          <Ionicons name="megaphone" size={15} color={theme.text} style={styles.announcementIcon} />
-          <View style={styles.announcementBody}>
-            <Text style={styles.announcementTitle}>{a.title}</Text>
-            <Text style={styles.announcementText}>{a.body}</Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => dismissAnnouncement(a.id)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityRole="button"
-            accessibilityLabel={`Dismiss notification: ${a.title}`}
-          >
-            <Ionicons name="close" size={16} color={theme.textSecondary} />
-          </TouchableOpacity>
-        </View>
-      ))}
-
-      {/* Search Bar - at the top. No visible date strip here (client's
-          explicit call, Sep 2026, after briefly trying a Kianda-style inline
-          date strip) — the compact icon is the only on-screen date control,
-          opening the dedicated /select-date picker instead. */}
-      <View style={styles.searchSection}>
-        <View style={styles.searchWrapper}>
-          <Ionicons name="search" size={17} color={theme.textTertiary} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search dishes, meals..."
-            placeholderTextColor={theme.textTertiary}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-            accessibilityLabel="Search dishes, meals"
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity
-              onPress={() => setSearchQuery('')}
-              style={styles.searchClear}
-              accessibilityRole="button"
-              accessibilityLabel="Clear search"
-            >
-              <Text style={styles.searchClearIcon}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        {orderingDay && (
-          <TouchableOpacity
-            style={styles.dateIconBtn}
-            onPress={() => router.push(`/select-date?change=1&view=${menuView}`)}
-            accessibilityRole="button"
-            accessibilityLabel={`Ordering for ${orderingDay.label}. Change delivery day`}
-          >
-            {/* The CI-colour "pop" the client asked to liven the app up with
-                (client review, Sep 2026, repeated 2026-09-15) — this is the
-                app's stand-in for the old visible "Ordering for <day>" bar,
-                so it's a natural place for the one touch of colour. */}
-            <Ionicons name="calendar-outline" size={18} color={theme.brandPop} />
-          </TouchableOpacity>
-        )}
-      </View>
-
-      <View style={styles.toggleContainer}>
-        <TouchableOpacity
-          style={[styles.toggleBtn, menuView === 'main' && styles.toggleBtnActive]}
-          onPress={() => setMenuView('main')}
-          accessibilityRole="button"
-          accessibilityState={{ selected: menuView === 'main' }}
-        >
-          <Text style={[styles.toggleBtnText, menuView === 'main' && styles.toggleBtnTextActive]}>Standard Classics</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.toggleBtn, menuView === 'today' && styles.toggleBtnActive]}
-          onPress={() => setMenuView('today')}
-          accessibilityRole="button"
-          accessibilityState={{ selected: menuView === 'today' }}
-        >
-          <Text style={[styles.toggleBtnText, menuView === 'today' && styles.toggleBtnTextActive]}>Today's Menu</Text>
-        </TouchableOpacity>
-      </View>
-
-      {menuView === 'main' ? renderCategoryFilter() : null}
-
-      {(isLoading || menusLoading) ? renderMenuSkeleton() : (menuView === 'main' ? renderStaticMenuGrid() : renderCycleMenu())}
-
-      {/* Add to Cart Modal with Notes */}
-      <Modal
-        visible={!!selectedItem}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setSelectedItem(null)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{isCycleItem ? 'Add Meal' : 'Customize Order'}</Text>
-              <TouchableOpacity
-                onPress={() => setSelectedItem(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Close"
-              >
-                <Text style={styles.modalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {selectedItem && (() => {
-              const activeSize = selectedItem.sizes[selectedSizeIndex] || selectedItem.sizes[0];
-              const categoryAddOns = menus.find(c => c.name === selectedItem.category)?.addOns;
-              const addOnsTotal = (categoryAddOns ?? [])
-                .filter(a => selectedAddOns.has(a.name))
-                .reduce((sum, a) => sum + a.price, 0);
-              // With 2+ dates selected each has its own quantity; otherwise
-              // it's just the shared QUANTITY stepper (0 or 1 dates picked).
-              const totalUnits = !isCycleItem && selectedDeliveryDates.length > 1
-                ? selectedDeliveryDates.reduce((sum, iso) => sum + (dateQuantities[iso] ?? 1), 0)
-                : modalQuantity;
-              const lineTotal = (activeSize.price + addOnsTotal) * totalUnits;
-
-              return (
-                <>
-                  <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-                    <View style={styles.modalItemInfo}>
-                      <View style={styles.modalItemDetails}>
-                        <Text style={styles.modalItemName}>{selectedItem.name}</Text>
-                        <Text style={styles.modalItemPrice}>R{activeSize.price.toFixed(0)}</Text>
-                        {isCycleItem && selectedItem.description ? (
-                          <Text style={styles.modalItemMealType}>{selectedItem.description}</Text>
-                        ) : null}
-                        {isCycleItem && selectedItem.deliveryDateLabel ? (
-                          <Text style={styles.modalItemMealType}>📅 Delivering {selectedItem.deliveryDateLabel}</Text>
-                        ) : null}
-                      </View>
-                    </View>
-
-                    {/* Full, untruncated ingredients — shown in full here (unlike the
-                        2-line preview on the browsing card) so anyone with an allergy
-                        can actually check before adding to cart. */}
-                    {(isCycleItem ? selectedItem.ingredients : selectedItem.description) ? (
-                      <View style={styles.ingredientsSection}>
-                        <Text style={styles.notesLabel}>INGREDIENTS</Text>
-                        <Text style={styles.ingredientsText}>{isCycleItem ? selectedItem.ingredients : selectedItem.description}</Text>
-                      </View>
-                    ) : null}
-
-                    {selectedItem.sizes.length > 1 && (
-                      <View style={styles.sizeSection}>
-                        <Text style={styles.notesLabel}>SIZE</Text>
-                        <View style={styles.sizeRow}>
-                          {selectedItem.sizes.map((size: SizeOption, idx: number) => (
-                            <TouchableOpacity
-                              key={size.label}
-                              style={[styles.sizeChip, selectedSizeIndex === idx && styles.sizeChipActive]}
-                              onPress={() => setSelectedSizeIndex(idx)}
-                              activeOpacity={0.8}
-                              accessibilityRole="button"
-                              accessibilityState={{ selected: selectedSizeIndex === idx }}
-                              accessibilityLabel={`${size.label}, R${size.price.toFixed(0)}`}
-                            >
-                              <Text style={[styles.sizeChipLabel, selectedSizeIndex === idx && styles.sizeChipTextActive]}>
-                                {size.label}
-                              </Text>
-                              <Text style={[styles.sizeChipPrice, selectedSizeIndex === idx && styles.sizeChipTextActive]}>
-                                R{size.price.toFixed(0)}
-                              </Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      </View>
-                    )}
-
-                    {categoryAddOns && categoryAddOns.length > 0 && (
-                      <View style={styles.addOnsSection}>
-                        <Text style={styles.notesLabel}>ADD EXTRAS (OPTIONAL)</Text>
-                        <View style={styles.addOnsList}>
-                          {categoryAddOns.map((addOn, addOnIdx) => {
-                            const isSelected = selectedAddOns.has(addOn.name);
-                            return (
-                              <TouchableOpacity
-                                key={addOn.name}
-                                style={[styles.addOnRow, addOnIdx > 0 && styles.addOnRowDivider]}
-                                onPress={() => toggleAddOn(addOn.name)}
-                                activeOpacity={0.7}
-                                accessibilityRole="checkbox"
-                                accessibilityState={{ checked: isSelected }}
-                                accessibilityLabel={`${addOn.name}, +R${addOn.price.toFixed(0)}`}
-                              >
-                                <View style={styles.addOnRowLeft}>
-                                  <View style={[styles.addOnCheckbox, isSelected && styles.addOnCheckboxSelected]}>
-                                    {isSelected && <Text style={styles.addOnCheckboxCheck}>✓</Text>}
-                                  </View>
-                                  <Text style={styles.addOnName}>{addOn.name}</Text>
-                                </View>
-                                <Text style={styles.addOnPrice}>+R{addOn.price.toFixed(0)}</Text>
-                              </TouchableOpacity>
-                            );
-                          })}
-                        </View>
-                      </View>
-                    )}
-
-                    {!isCycleItem && (
-                      <View style={styles.deliveryDatesSection}>
-                        <View style={styles.deliverySectionHeader}>
-                          <Text style={styles.notesLabel}>DELIVER ON (OPTIONAL)</Text>
-                          {selectedDeliveryDates.length > 0 && (
-                            <TouchableOpacity
-                              onPress={() => { setSelectedDeliveryDates([]); setDateQuantities({}); }}
-                              accessibilityRole="button"
-                              accessibilityLabel="Clear selected delivery dates"
-                            >
-                              <Text style={styles.deliveryClearText}>Clear</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                        <Text style={styles.deliveryHint}>
-                          Defaults to the day you're ordering for. Add more weekdays to pre-order the same dish up to 2 weeks ahead, or clear them all for an undated order.
-                        </Text>
-                        {(['This week', 'Next week', 'In 2 weeks'] as const).map((group) => {
-                          const groupDays = upcomingWeekdays.filter(w => w.weekLabel === group);
-                          if (groupDays.length === 0) return null;
-                          return (
-                            <View key={group} style={styles.deliveryGroup}>
-                              <Text style={styles.deliveryGroupLabel}>{group}</Text>
-                              <View style={styles.deliveryChipRow}>
-                                {groupDays.map((day) => {
-                                  const isSelected = selectedDeliveryDates.includes(day.iso);
-                                  return (
-                                    <TouchableOpacity
-                                      key={day.iso}
-                                      style={[styles.deliveryChip, isSelected && styles.deliveryChipActive]}
-                                      onPress={() => toggleDeliveryDate(day.iso)}
-                                      activeOpacity={0.8}
-                                      accessibilityRole="checkbox"
-                                      accessibilityState={{ checked: isSelected }}
-                                      accessibilityLabel={day.label}
-                                    >
-                                      <Text style={[styles.deliveryChipText, isSelected && styles.deliveryChipTextActive]}>
-                                        {day.label}
-                                      </Text>
-                                    </TouchableOpacity>
-                                  );
-                                })}
-                              </View>
-                            </View>
-                          );
-                        })}
-                      </View>
-                    )}
-
-                    {selectedItem.tags && selectedItem.tags.length > 0 && (
-                      <DietaryTagRow key={selectedItem.id} tags={selectedItem.tags} styles={styles} />
-                    )}
-
-                    <View style={styles.quantitySection}>
-                      {selectedDeliveryDates.length > 1 ? (
-                        <>
-                          <Text style={styles.notesLabel}>QUANTITY PER DAY</Text>
-                          {selectedDeliveryDates.map((iso) => {
-                            const dateMeta = upcomingWeekdays.find(w => w.iso === iso);
-                            const qty = dateQuantities[iso] ?? 1;
-                            const label = dateMeta?.label ?? iso;
-                            return (
-                              <View key={iso} style={styles.dateQuantityRow}>
-                                <Text style={styles.dateQuantityLabel}>{label}</Text>
-                                <View style={styles.quantityStepperRow}>
-                                  <TouchableOpacity
-                                    style={[styles.stepperBtn, qty <= 1 && styles.stepperBtnDisabled]}
-                                    onPress={() => setDateQuantity(iso, qty - 1)}
-                                    disabled={qty <= 1}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={`Decrease quantity for ${label}`}
-                                  >
-                                    <Text style={styles.stepperBtnText}>−</Text>
-                                  </TouchableOpacity>
-                                  <Text style={styles.stepperValue} accessibilityLabel={`Quantity for ${label}: ${qty}`}>{qty}</Text>
-                                  <TouchableOpacity
-                                    style={styles.stepperBtn}
-                                    onPress={() => setDateQuantity(iso, qty + 1)}
-                                    accessibilityRole="button"
-                                    accessibilityLabel={`Increase quantity for ${label}`}
-                                  >
-                                    <Text style={styles.stepperBtnText}>+</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              </View>
-                            );
-                          })}
-                        </>
-                      ) : (
-                        <>
-                          <Text style={styles.notesLabel}>QUANTITY</Text>
-                          <View style={styles.quantityStepperRow}>
-                            <TouchableOpacity
-                              style={[styles.stepperBtn, modalQuantity <= 1 && styles.stepperBtnDisabled]}
-                              onPress={() => setModalQuantity(q => Math.max(1, q - 1))}
-                              disabled={modalQuantity <= 1}
-                              accessibilityRole="button"
-                              accessibilityLabel="Decrease quantity"
-                            >
-                              <Text style={styles.stepperBtnText}>−</Text>
-                            </TouchableOpacity>
-                            <Text style={styles.stepperValue} accessibilityLabel={`Quantity: ${modalQuantity}`}>{modalQuantity}</Text>
-                            <TouchableOpacity
-                              style={styles.stepperBtn}
-                              onPress={() => setModalQuantity(q => Math.min(20, q + 1))}
-                              accessibilityRole="button"
-                              accessibilityLabel="Increase quantity"
-                            >
-                              <Text style={styles.stepperBtnText}>+</Text>
-                            </TouchableOpacity>
-                          </View>
-                        </>
-                      )}
-                    </View>
-
-                    <View style={styles.notesSection}>
-                      <Text style={styles.notesLabel}>Special Instructions / Allergies</Text>
-                      <TextInput
-                        style={styles.notesInput}
-                        placeholder="e.g., No onions, allergy to nuts, extra sauce..."
-                        placeholderTextColor={theme.textTertiary}
-                        value={specialInstructions}
-                        onChangeText={setSpecialInstructions}
-                        multiline={true}
-                        numberOfLines={4}
-                        textAlignVertical="top"
-                        accessibilityLabel="Special instructions or allergies"
-                      />
-                    </View>
-                  </ScrollView>
-
-                  <TouchableOpacity
-                    ref={addToCartBtnRef}
-                    style={styles.modalAddBtn}
-                    onPress={() => {
-                      addToCartBtnRef.current?.measureInWindow((x, y, width, height) => {
-                        triggerCartFly(x + width / 2, y + height / 2);
-                      });
-                      confirmAddToCart();
-                    }}
-                    activeOpacity={0.9}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.modalAddBtnText}>
-                      Add to Cart · R{lineTotal.toFixed(2)}
-                      {selectedDeliveryDates.length > 1 ? ` (${selectedDeliveryDates.length} days)` : ''}
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              );
-            })()}
-          </View>
-        </View>
-      </Modal>
-
-      {/* Added to Basket — confirms the add and, per the client review, offers a
-          second delivery day at the one moment someone is actually thinking
-          about it. Dismissing keeps the day already in play. */}
-      <Modal
-        visible={!!addedToBasket}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setAddedToBasket(null)}
-      >
-        <View style={styles.addedOverlay}>
-          <View style={styles.addedCard}>
-            <Text style={styles.addedTitle}>Added to Basket</Text>
-            <Text style={styles.addedBody}>{addedToBasketMessage}</Text>
-
-            <TouchableOpacity
-              style={styles.addedPrimaryBtn}
-              onPress={() => { setAddedToBasket(null); router.push(`/select-date?change=1&view=${menuView}`); }}
-              activeOpacity={0.9}
-              accessibilityRole="button"
-            >
-              <Text style={styles.addedPrimaryBtnText}>Order for a different day</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.addedSecondaryBtn}
-              onPress={() => setAddedToBasket(null)}
-              activeOpacity={0.9}
-              accessibilityRole="button"
-            >
-              <Text style={styles.addedSecondaryBtnText}>
-                {addedDayName ? `Continue with ${addedDayName}` : 'Continue shopping'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
-  );
-}
-
-type Styles = ReturnType<typeof createStyles>;
-
-// Dietary tag chips fade + scale in with a short stagger when the customizer
-// opens. Purely presentational — tags come straight from menu data and are
-// only rendered when a dish actually has them (none of the bundled items do yet).
-function DietaryTagRow({ tags, styles }: { tags: string[]; styles: Styles }) {
-  return (
-    <View style={styles.tagsSection}>
-      <Text style={styles.notesLabel}>DIETARY TAGS</Text>
-      <View style={styles.tagsRow}>
-        {tags.map((tag, idx) => (
-          <AnimatedTagChip key={tag} label={tag} delay={idx * 60} styles={styles} />
         ))}
-      </View>
-    </View>
+      </ScrollView>
+
+      {/* Floating cart bar */}
+      {cartCount > 0 && (
+        <Pressable
+          onPress={() => router.push('/cart')}
+          accessibilityRole="button"
+          style={[styles.floatBar, { backgroundColor: colors.floatingBar, borderColor: isDark ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)' }]}
+        >
+          <View style={[styles.floatCount, { backgroundColor: isDark ? '#121212' : '#FFFFFF' }]}>
+            <Text style={[styles.floatCountText, { color: isDark ? '#F7F2E8' : '#121212' }]}>{cartCount}</Text>
+          </View>
+          <View style={styles.flex}>
+            <Text style={[styles.floatTotal, { color: colors.onFloatingBar }]}>R {cartTotal.toFixed(2)}</Text>
+            <Text style={[styles.floatDate, { color: colors.onFloatingBarMuted }]} numberOfLines={1}>
+              {dateLabel}
+            </Text>
+          </View>
+          <Text style={[styles.floatAction, { color: colors.onFloatingBar }]}>Review Order</Text>
+          <Text style={[styles.floatArrow, { color: colors.onFloatingBar }]}>→</Text>
+        </Pressable>
+      )}
+    </Page>
   );
 }
 
-function AnimatedTagChip({ label, delay, styles }: { label: string; delay: number; styles: Styles }) {
-  // Lazy useState, not useRef(new Animated.Value(x)).current: that form
-  // built a throwaway Animated.Value on every render and read a ref during
-  // render. useState guarantees the instance is created once and kept.
-  const [anim] = useState(() => new Animated.Value(0));
-  useEffect(() => {
-    Animated.timing(anim, { toValue: 1, duration: 240, delay, useNativeDriver: true }).start();
-  }, [anim, delay]);
-
-  return (
-    <Animated.View
-      style={[
-        styles.tagChip,
-        {
-          opacity: anim,
-          transform: [{ scale: anim.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }],
-        },
-      ]}
-    >
-      <Text style={styles.tagChipText}>{label}</Text>
-    </Animated.View>
-  );
-}
-
-const createStyles = (theme: ThemeColors) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.background },
-  previewBanner: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: theme.surfaceSecondary,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.border,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  previewBannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  previewBannerText: { color: theme.text, fontSize: 12, fontWeight: '800' },
-  previewBannerExit: { color: theme.text, fontSize: 12, fontWeight: '800', textDecorationLine: 'underline' },
-  searchSection: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 },
-  searchWrapper: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.inputBg,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    height: 44,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14, color: theme.text, paddingVertical: 0, height: 44 },
-  searchClear: { padding: 4 },
-  searchClearIcon: { fontSize: 16, color: theme.textTertiary, fontWeight: '700' },
-  // Compact stand-in for a visible date row — same destination
-  // (/select-date?change=1), no visible date text on the menu itself.
-  dateIconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.inputBg,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  toggleContainer: {
-    flexDirection: 'row',
-    padding: 4,
-    paddingHorizontal: 6,
-    backgroundColor: theme.surfaceSecondary,
-    marginHorizontal: 16,
-    marginVertical: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.border,
-  },
-  // minHeight rather than more padding: this measured 29px tall, under the
-  // 44px minimum comfortable tap target, and padding alone left the height
-  // dependent on the label's own line box.
-  toggleBtn: { flex: 1, minHeight: 44, paddingVertical: 7, alignItems: 'center', justifyContent: 'center', borderRadius: 9, marginHorizontal: 2 },
-  toggleBtnActive: { backgroundColor: theme.accent },
-  toggleBtnText: { color: theme.textTertiary, fontSize: 13, fontWeight: '700' },
-  toggleBtnTextActive: { color: theme.onAccent },
-  deliverySection: { marginTop: 8, marginBottom: 12 },
-  listContainer: { paddingHorizontal: 16, paddingBottom: 100 },
-  emptyContainer: { padding: 40, alignItems: 'center', justifyContent: 'center' },
-  emptyText: { color: theme.textTertiary, textAlign: 'center', fontSize: 14 },
-  emptyEmoji: { fontSize: 32, marginBottom: 12 },
-  emptyTitle: { color: theme.text, fontSize: 16, fontWeight: '700', marginBottom: 6, marginTop: 10, textAlign: 'center' },
-  emptySub: { color: theme.textTertiary, fontSize: 13, textAlign: 'center' },
-  searchSummaryRow: { paddingTop: 2, paddingBottom: 4 },
-  searchSummaryText: { fontSize: 13, color: theme.textSecondary },
-  searchSummaryBold: { fontWeight: '700', color: theme.text },
-  clearSearchBtn: {
-    marginTop: 14,
-    backgroundColor: theme.accent,
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  clearSearchBtnText: { color: theme.onAccent, fontSize: 13, fontWeight: '700' },
-
-  // Plain underline tabs (client reference, Sep 2026) — no pill background,
-  // no per-category icon; the active tab is marked by an underline instead.
-  // A transparent bottom border of the same width sits on every tab so the
-  // active one gaining a real border never shifts the row's height.
-  categoryFilterContainer: { marginBottom: 16 },
-  // "All" is a fixed sibling, not part of the scrolling FlatList, so the row
-  // itself carries the left inset that keeps it off the very edge of the
-  // screen (matching every other element here — search bar, toggle,
-  // heading all sit 16px in) — a device's rounded corner/edge can otherwise
-  // clip a sliver of flush-left text.
-  categoryFilterRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 16 },
-  // flex: 1, not flexGrow — this must be bounded to the row's remaining
-  // width so the category list scrolls *within* that space instead of the
-  // FlatList itself growing to fit all its content and pushing "All" along
-  // with it out of view.
-  categoryFilterList: { flex: 1 },
-  categoryFilterContent: { paddingRight: 16 },
-  categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    // Real 44x44 minimum rather than relying on the hitSlop at the call site:
-    // hitSlop is a native touch concept that react-native-web does not
-    // translate into layout, so on the web build the target would have stayed
-    // at the 32x19 the label alone measured. The hitSlop stays as extra reach
-    // on device. justifyContent centres the label along the row axis so short
-    // labels ("All") sit in the middle of their box.
-    minHeight: 44,
-    minWidth: 44,
-    justifyContent: 'center',
-    paddingVertical: 8,
-    marginRight: 18,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  categoryChipActive: {
-    borderBottomColor: theme.text,
-  },
-  categoryChipText: { color: theme.textSecondary, fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.3 },
-  categoryChipTextActive: { color: theme.text },
-
-  categorySection: { marginBottom: 28 },
-  categoryBanner: {
-    height: 140,
-    borderRadius: 18,
-    overflow: 'hidden',
-    marginBottom: 16,
-    justifyContent: 'flex-end',
-  },
-  categoryBannerImage: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
-  // Bottom-anchored only, not the full photo (client reference, Sep 2026) —
-  // the top of the image stays clear and the title keeps its own text
-  // shadow for legibility instead of the photo being tinted everywhere.
-  categoryBannerOverlay: {
-    position: 'absolute', left: 0, right: 0, bottom: 0, height: '65%',
-    backgroundColor: 'rgba(0,0,0,0.18)',
-  },
-  categoryBannerTitle: {
-    fontSize: 21,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.4,
-    padding: 14,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 6,
-  },
-  // Today's Menu meal-type group — text-only, no photo.
-  mealTypeSection: { marginBottom: 24 },
-  mealTypeLabel: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: theme.text,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
-  // gap replaces the ItemSeparatorComponent the nested FlatList used to draw.
-  uberGrid: { gap: 12 },
-  uberGridColumn: {
-    justifyContent: 'space-between',
-    marginBottom: ROW_GAP,
-  },
-  // Same layout FlatList produced for a `numColumns` row, but stated in full:
-  // FlatList applied `flexDirection: 'row'` itself and layered
-  // columnWrapperStyle on top, so a hand-rolled row has to set it explicitly.
-  // A short final row still sits left, exactly as it did before.
-  gridRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: ROW_GAP,
-  },
-
-  uberCard: {
-    backgroundColor: theme.surface,
-    borderRadius: 20,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: theme.border,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  menuDiscountHint: {
-    fontSize: 10,
-    color: theme.warning,
-    fontWeight: '700',
-    maxWidth: 100,
-    textAlign: 'right',
-  },
-  uberContent: { padding: 10 },
-  uberTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 3 },
-  uberItemNameFlex: { flex: 1, marginBottom: 0 },
-  uberItemName: { fontFamily: legacyTypography.heading, fontSize: 15, fontWeight: '800', color: theme.text, lineHeight: 19, marginBottom: 3, letterSpacing: -0.2 },
-  uberItemDesc: { fontSize: 11, color: theme.textSecondary, lineHeight: 15, marginBottom: 8 },
-  uberMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
-  uberPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, flexShrink: 1 },
-  uberPrice: { fontSize: 15, fontWeight: '900', color: theme.text, letterSpacing: -0.4 },
-  uberOriginalPrice: { fontSize: 12, fontWeight: '600', color: theme.textTertiary, textDecorationLine: 'line-through' },
-
-  // Full-width Main Menu list row (client reference, Sep 2026). Reuses
-  // uberCard's shape/shadow via a plain width:100%, and uberPrice/
-  // uberOriginalPrice/uberPriceRow/menuDiscountHint above for the price —
-  // only the parts genuinely new to the list layout get their own styles.
-  listCard: {
-    backgroundColor: theme.surface,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: theme.border,
-    padding: 14,
-    width: '100%',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  listCardTopRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10 },
-  listCardNameCol: { flex: 1 },
-  listCardName: { fontFamily: legacyTypography.heading, fontSize: 16, fontWeight: '800', color: theme.text, lineHeight: 20, letterSpacing: -0.2 },
-  // Price, "Large" price, and the add button all stack in this one right-hand
-  // column (client reference, Sep 2026) — the add button sits with the price
-  // it applies to rather than sharing a row with the tags below.
-  listCardPriceCol: { alignItems: 'flex-end' },
-  listCardSizePrice: { fontSize: 12, fontWeight: '600', color: theme.textSecondary, marginTop: 2 },
-  listCardAddBtn: { marginTop: 8 },
-  listCardDesc: { fontSize: 13, color: theme.textSecondary, lineHeight: 18, marginTop: 6 },
-  listCardDescLabel: { fontWeight: '700', color: theme.text },
-  listCardTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
-  listCardTag: {
-    backgroundColor: theme.surfaceSecondary,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-  },
-  listCardTagText: { fontSize: 11, fontWeight: '600', color: theme.textSecondary },
-
-  dayHeaderBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingHorizontal: 4 },
-  dayHeaderLeft: { flexDirection: 'row', alignItems: 'center' },
-  // Neutral, not green: this header names the day being ordered for, which is
-  // usually a future delivery rather than today, so a green "live now" marker
-  // was both a colour the repaint removes and a slightly wrong signal.
-  todayDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.text, marginRight: 6 },
-  dayTitle: { fontFamily: legacyTypography.heading, fontSize: 15, fontWeight: '800', color: theme.text },
-  dayTitleToday: { color: theme.text },
-  dayMealCount: { fontSize: 12, color: theme.textTertiary, fontWeight: '600' },
-
-  todayBadge: {
+const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  bold: { fontWeight: '700' },
+  pressed: { opacity: 0.88, transform: [{ scale: 0.96 }] },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 },
+  // 32pt tall at the artwork's 2236x490 aspect, left-aligned (AspectFit + Start).
+  headerLogo: { width: 146, height: 32 },
+  cartWrap: { width: 42, height: 42, marginLeft: 'auto' },
+  cartButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  badge: {
     position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: theme.success,
-    borderRadius: 12,
-    paddingVertical: 2,
-    paddingHorizontal: 8,
-  },
-  todayBadgeText: { color: '#000000', fontSize: 10, fontWeight: '800' },
-  todayCardBorder: {
-    borderColor: theme.success,
-  },
-
-  // Modal Styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: theme.modalOverlay,
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: theme.surface,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 24,
-    paddingBottom: 16,
-    borderTopWidth: 1,
-    borderTopColor: theme.border,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    width: '100%',
-    maxWidth: APP_MAX_WIDTH,
-    maxHeight: '86%',
-    alignSelf: 'center',
-  },
-  modalScroll: { flexGrow: 0 },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    paddingHorizontal: 5,
     alignItems: 'center',
-    marginBottom: 20,
+    justifyContent: 'center',
   },
-  modalTitle: { fontFamily: legacyTypography.heading, fontSize: 22, fontWeight: '900', color: theme.text, letterSpacing: -0.5 },
-  modalClose: { fontSize: 28, color: theme.textSecondary, fontWeight: '600' },
-  modalItemInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.surfaceSecondary,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
+  badgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '700' },
+  searchBox: { marginHorizontal: 16, marginBottom: 10, borderWidth: 1, borderRadius: 20, height: 42, justifyContent: 'center' },
+  dateCard: { marginHorizontal: 16, marginBottom: 10 },
+  dateRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  dateCaption: { fontSize: 10 },
+  dateValue: { fontSize: 13, fontWeight: '700' },
+  change: { fontSize: 12, fontWeight: '700' },
+  toggle: { marginHorizontal: 16, marginBottom: 14, borderRadius: 24, padding: 4, height: 48, flexDirection: 'row' },
+  toggleBtn: { flex: 1, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  toggleText: { fontSize: 13, fontWeight: '700' },
+  sectionTitle: { fontSize: 20, fontWeight: '700', marginHorizontal: 16, marginBottom: 10 },
+  sliderWrap: { marginBottom: 10, flexGrow: 0 },
+  slider: { gap: 22, paddingHorizontal: 16 },
+  chip: { alignItems: 'center', gap: 6 },
+  chipText: { fontSize: 14 },
+  chipUnderline: { height: 2.5, width: 20, borderRadius: 1.5 },
+  notice: { marginHorizontal: 16, marginBottom: 14, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
+  noticeText: { fontSize: 12 },
+  loader: { marginVertical: 24 },
+  section: { marginBottom: 20 },
+  hero: { height: 110, marginHorizontal: 16, marginBottom: 10, borderRadius: 16, overflow: 'hidden', justifyContent: 'flex-end' },
+  heroImage: { borderRadius: 16 },
+  heroShade: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: 'rgba(0,0,0,0.55)' },
+  heroTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '700', marginHorizontal: 16, marginBottom: 12 },
+  products: { gap: 10, paddingHorizontal: 16 },
+  productRow: { flexDirection: 'row', gap: 14 },
+  productInfo: { flex: 1, gap: 4 },
+  productName: { fontSize: 16, fontWeight: '700' },
+  productDesc: { fontSize: 13 },
+  ingredients: { fontSize: 12 },
+  tags: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 2 },
+  tag: { borderWidth: 1, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginRight: 6, marginBottom: 6 },
+  tagText: { fontSize: 11, fontWeight: '700' },
+  priceCol: { minWidth: 78, alignItems: 'flex-end', justifyContent: 'center', gap: 2 },
+  price: { fontSize: 16, fontWeight: '700' },
+  largePrice: { fontSize: 10, fontWeight: '700', marginBottom: 4 },
+  plus: { width: 40, marginTop: 2 },
+  floatBar: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 16,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: theme.border,
-  },
-  modalItemDetails: { flex: 1 },
-  modalItemName: { fontFamily: legacyTypography.heading, fontSize: 16, fontWeight: '800', color: theme.text, marginBottom: 4 },
-  modalItemPrice: { fontFamily: legacyTypography.heading, fontSize: 18, fontWeight: '900', color: theme.text },
-  modalItemMealType: { fontSize: 13, fontWeight: '600', color: theme.textSecondary, marginTop: 2 },
-  notesSection: { marginBottom: 20 },
-  notesLabel: { fontSize: 13, fontWeight: '700', color: theme.textSecondary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-  ingredientsSection: {
-    backgroundColor: theme.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 20,
-  },
-  ingredientsText: { fontSize: 13, color: theme.text, lineHeight: 19, fontWeight: '500' },
-  notesInput: {
-    backgroundColor: theme.inputBg,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 16,
-    padding: 16,
-    fontSize: 15,
-    color: theme.text,
-    minHeight: 120,
-  },
-  modalAddBtn: {
-    backgroundColor: theme.accent,
-    paddingVertical: 18,
-    borderRadius: 16,
-    alignItems: 'center',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  modalAddBtnText: { color: theme.onAccent, fontSize: 16, fontWeight: '800' },
-
-  // Today's cycle menu — cutoff status row
-  // No paddingHorizontal here — the parent ScrollView's contentContainerStyle
-  // already pads 16px; adding it again here double-inset this row vs. every
-  // other element on the Today's Menu tab (and vs. DeliveryEstimator's
-  // equivalent slot on the Main Menu tab, which relies on the same parent
-  // padding via `listContainer`).
-  weekStatusRow: { marginBottom: 12, marginTop: 8 },
-
-  announcementBar: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: theme.surfaceSecondary,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.border,
-  },
-  announcementIcon: { marginTop: 1 },
-  announcementBody: { flex: 1 },
-  announcementTitle: { fontSize: 12, fontWeight: '800', color: theme.text, marginBottom: 2 },
-  announcementText: { fontSize: 12, color: theme.textSecondary, lineHeight: 17 },
-
-  // Added to Basket confirmation sheet.
-  addedOverlay: {
-    flex: 1,
-    backgroundColor: theme.modalOverlay,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-  },
-  addedCard: {
-    width: '100%',
-    backgroundColor: theme.surface,
-    borderRadius: 14,
-    padding: 22,
-  },
-  addedTitle: { fontFamily: legacyTypography.heading, fontSize: 17, fontWeight: '700', color: theme.text, marginBottom: 6 },
-  addedBody: { fontSize: 13, color: theme.textSecondary, lineHeight: 19, marginBottom: 20 },
-  addedPrimaryBtn: {
-    backgroundColor: theme.accent,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  addedPrimaryBtnText: { fontSize: 14, fontWeight: '700', color: theme.onAccent },
-  addedSecondaryBtn: {
-    backgroundColor: theme.surface,
-    borderWidth: 1,
-    borderColor: theme.border,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: 'center',
-  },
-  addedSecondaryBtnText: { fontSize: 14, fontWeight: '700', color: theme.text },
-
-  // Item customizer modal — size picker, quantity stepper, dietary tags
-  sizeSection: { marginBottom: 20 },
-  sizeRow: { flexDirection: 'row', gap: 10 },
-  sizeChip: {
-    flex: 1,
-    backgroundColor: theme.surfaceSecondary,
-    borderWidth: 1.5,
-    borderColor: theme.border,
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  sizeChipActive: { borderColor: theme.accent, backgroundColor: theme.surfaceSecondary },
-  sizeChipLabel: { color: theme.text, fontSize: 13, fontWeight: '800', marginBottom: 2 },
-  sizeChipPrice: { color: theme.textSecondary, fontSize: 12, fontWeight: '600' },
-  sizeChipTextActive: { color: theme.text },
-  addOnsSection: { marginBottom: 20 },
-  addOnsList: {
-    backgroundColor: theme.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  addOnRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  addOnRowDivider: { borderTopWidth: 1, borderTopColor: theme.border },
-  addOnRowLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, paddingRight: 10 },
-  addOnCheckbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 5,
-    borderWidth: 1.5,
-    borderColor: theme.textTertiary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  addOnCheckboxSelected: { backgroundColor: theme.accent, borderColor: theme.accent },
-  addOnCheckboxCheck: { color: theme.onAccent, fontSize: 12, fontWeight: '800' },
-  addOnName: { color: theme.text, fontSize: 14, fontWeight: '600', flexShrink: 1 },
-  addOnPrice: { color: theme.textSecondary, fontSize: 13, fontWeight: '700' },
-  deliveryDatesSection: { marginBottom: 20 },
-  deliverySectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  deliveryClearText: { color: theme.text, fontSize: 12, fontWeight: '700' },
-  deliveryHint: { color: theme.textTertiary, fontSize: 12, marginBottom: 12, lineHeight: 16 },
-  deliveryGroup: { marginBottom: 12 },
-  deliveryGroupLabel: { color: theme.textTertiary, fontSize: 11, fontWeight: '700', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-  deliveryChipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  deliveryChip: {
-    backgroundColor: theme.surfaceSecondary,
-    borderWidth: 1.5,
-    borderColor: theme.border,
-    borderRadius: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  deliveryChipActive: { borderColor: theme.accent, backgroundColor: theme.surfaceSecondary },
-  deliveryChipText: { color: theme.textSecondary, fontSize: 12, fontWeight: '700' },
-  deliveryChipTextActive: { color: theme.text },
-  tagsSection: { marginBottom: 20 },
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  // Dietary tags read as a quiet outline rather than a green pill — in a
-  // black-and-white menu, colour is reserved for status, not for labels.
-  tagChip: {
-    backgroundColor: theme.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-  },
-  tagChipText: { color: theme.text, fontSize: 12, fontWeight: '800' },
-  quantitySection: { marginBottom: 20 },
-  dateQuantityRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  dateQuantityLabel: { color: theme.text, fontSize: 14, fontWeight: '700' },
-  quantityStepperRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.surfaceSecondary,
-    borderWidth: 1,
-    borderColor: theme.border,
-    borderRadius: 14,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 6,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 8,
   },
-  stepperBtn: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stepperBtnDisabled: { opacity: 0.35 },
-  stepperBtnText: { color: theme.text, fontSize: 20, fontWeight: '800' },
-  stepperValue: { color: theme.text, fontSize: 16, fontWeight: '800', minWidth: 32, textAlign: 'center' },
+  floatCount: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  floatCountText: { fontSize: 13, fontWeight: '700' },
+  floatTotal: { fontSize: 15, fontWeight: '700' },
+  floatDate: { fontSize: 10, fontWeight: '700' },
+  floatAction: { fontSize: 13, fontWeight: '700' },
+  floatArrow: { fontSize: 15, fontWeight: '700', marginLeft: -6 },
 });
