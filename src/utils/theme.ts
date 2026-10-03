@@ -156,6 +156,17 @@ export const darkColors: ThemeColors = {
   statusBarStyle: 'light-content',
 };
 
+/**
+ * Native colours MAUI sets outside Colors.xaml:
+ * Platforms/Android/Resources/values/colors.xml (colorPrimary/Dark/Accent —
+ * the Android status bar, text cursor/selection and focused field
+ * underline) and the csproj's MauiIcon/MauiSplashScreen Color.
+ */
+export const native = {
+  androidPrimary: '#2B0B98',
+  splash: '#AF1718',
+};
+
 /** Fixed colours MAUI hardcodes in both themes. */
 export const fixed = {
   /** Allergy / dispute amber text */

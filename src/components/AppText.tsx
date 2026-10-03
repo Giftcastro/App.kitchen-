@@ -10,6 +10,7 @@
  * reach react-native-web's output on this RN version, hence a real wrapper.
  */
 import React from 'react';
+import { native } from '../utils/theme';
 import { Platform, StyleSheet, Text as RNText, TextInput as RNTextInput, TextProps, TextInputProps, TextStyle } from 'react-native';
 
 const FACES: Record<string, string> = {
@@ -37,8 +38,18 @@ export const Text = React.forwardRef<RNText, TextProps>(({ style, ...rest }, ref
 });
 Text.displayName = 'Text';
 
+/** Cursor and selection take Android's colorAccent (#2B0B98), as MAUI's native Entry/Editor do. */
 export const TextInput = React.forwardRef<RNTextInput, TextInputProps>(({ style, ...rest }, ref) => {
   const flat = StyleSheet.flatten(style) ?? {};
-  return <RNTextInput ref={ref} style={[flat, resolveFace(flat)]} {...rest} />;
+  const caret = Platform.OS === 'web' ? ({ caretColor: native.androidPrimary } as object) : null;
+  return (
+    <RNTextInput
+      ref={ref}
+      selectionColor={native.androidPrimary}
+      cursorColor={native.androidPrimary}
+      style={[flat, resolveFace(flat), caret]}
+      {...rest}
+    />
+  );
 });
 TextInput.displayName = 'TextInput';

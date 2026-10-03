@@ -8,7 +8,7 @@
  * (SelectDeliveryDayPage) before reaching AppShell's tabs.
  */
 import React, { useEffect } from 'react';
-import { ActivityIndicator, LogBox, StatusBar, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, LogBox, Platform, StatusBar, StyleSheet, View } from 'react-native';
 import { Redirect, Stack, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
@@ -27,6 +27,7 @@ import {
 import { AppStateProvider, useApp } from '../state/AppState';
 import { AlertHost } from '../components/Alerts';
 import { useResponsive } from '../utils/responsive';
+import { native } from '../utils/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
@@ -65,7 +66,11 @@ function RootNavigator() {
 
   return (
     <View style={[styles.root, { backgroundColor: colors.pageBg }]}>
-      <StatusBar barStyle={colors.statusBarStyle} backgroundColor={colors.pageBg} />
+      {/* Android paints the status bar in colorPrimaryDark (#2B0B98), as the MAUI app does; iOS keeps the page's own colours. */}
+      <StatusBar
+        barStyle={Platform.OS === 'android' ? 'light-content' : colors.statusBarStyle}
+        backgroundColor={native.androidPrimary}
+      />
       <View style={[styles.frame, { maxWidth: contentMaxWidth }]}>
         {redirect && <Redirect href={redirect as never} />}
         {authLoading ? (

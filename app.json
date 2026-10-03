@@ -14,7 +14,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#AF1718"
       },
       "package": "com.kitchenco.app"
     },
@@ -27,7 +27,8 @@
         "maximumScale": 1,
         "userScalable": false
       },
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#AF1718",
+      "themeColor": "#2B0B98"
     },
     "plugins": [
       "expo-router",
@@ -40,9 +41,14 @@
         {
           "image": "./assets/images/splash.png",
           "resizeMode": "contain",
-          "backgroundColor": "#FFFFFF"
+          "backgroundColor": "#AF1718"
         }
       ]
-    ]
+    ],
+    "primaryColor": "#2B0B98",
+    "androidStatusBar": {
+      "backgroundColor": "#2B0B98",
+      "barStyle": "light-content"
+    }
   }
 }

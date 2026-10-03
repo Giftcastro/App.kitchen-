@@ -24,6 +24,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Text, TextInput } from './AppText';
 import { alerts } from './Alerts';
 import { useApp } from '../state/AppState';
+import { native } from '../utils/theme';
 
 /** PageAnimation.EntranceAsync — replays every time the page appears. */
 export function useEntrance(distance = 18, duration = 260) {
@@ -249,7 +250,7 @@ export function PlainEntry({
   const { colors } = useApp();
   const [focused, setFocused] = useState(false);
   return (
-    <View style={[{ borderBottomWidth: 1, borderBottomColor: focused ? colors.primary : colors.placeholder, backgroundColor: bg }, style]}>
+    <View style={[{ borderBottomWidth: 1, borderBottomColor: focused ? native.androidPrimary : colors.placeholder, backgroundColor: bg }, style]}>
       <TextInput
         value={value}
         onChangeText={onChangeText}
