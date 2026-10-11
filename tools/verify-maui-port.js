@@ -219,7 +219,7 @@ const signIn = async (page, email) => {
       ['Notifications', '24-admin-notifications', 'Compose Broadcast'],
       ['Menu Catalog', '25-admin-menu', 'Menu Inventory'],
       ['Users', '26-admin-users', '+ Add User'],
-      ['Reports', '27-admin-reports', 'Download as Excel'],
+      ['Reports', '27-admin-reports', 'Where the revenue comes from'],
       ['Settings', '28-admin-settings', 'App Theme'],
     ]) {
       // Nav pills sit in a horizontal scroller; the label is unique there.

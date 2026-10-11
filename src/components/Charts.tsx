@@ -98,3 +98,75 @@ const styles = StyleSheet.create({
   noData: { alignItems: 'center', justifyContent: 'center' },
   noDataText: { fontSize: 13, color: 'gray' },
 });
+
+export interface BarRow {
+  label: string;
+  value: number;
+  /** Text shown on the right, e.g. "R1 240.00" or "42%". */
+  display: string;
+  /** Small second line under the label. */
+  sub?: string;
+}
+
+/**
+ * Ranked horizontal bars — the readable way to compare named categories on
+ * a phone (companies, dishes, categories): label and value on one line, a
+ * proportional bar underneath. `max` lets percentages scale to 100.
+ */
+export function BarList({
+  rows,
+  color,
+  trackColor,
+  textColor,
+  mutedColor,
+  max,
+  emptyText = 'No data for this range',
+}: {
+  rows: BarRow[];
+  color: string;
+  trackColor: string;
+  textColor: string;
+  mutedColor: string;
+  max?: number;
+  emptyText?: string;
+}) {
+  if (rows.length === 0) return <Text style={[barStyles.empty, { color: mutedColor }]}>{emptyText}</Text>;
+  const top = max ?? Math.max(...rows.map(r => r.value), 1);
+  return (
+    <View style={barStyles.list}>
+      {rows.map((r, i) => (
+        <View key={`${r.label}-${i}`} style={barStyles.row}>
+          <View style={barStyles.labels}>
+            <View style={barStyles.flex}>
+              <Text style={[barStyles.label, { color: textColor }]} numberOfLines={1}>
+                {r.label}
+              </Text>
+              {!!r.sub && (
+                <Text style={[barStyles.sub, { color: mutedColor }]} numberOfLines={1}>
+                  {r.sub}
+                </Text>
+              )}
+            </View>
+            <Text style={[barStyles.value, { color: textColor }]}>{r.display}</Text>
+          </View>
+          <View style={[barStyles.track, { backgroundColor: trackColor }]}>
+            <View style={[barStyles.fill, { backgroundColor: color, width: `${Math.max(2, Math.min(100, (r.value / top) * 100))}%` }]} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const barStyles = StyleSheet.create({
+  flex: { flex: 1 },
+  list: { gap: 12 },
+  row: { gap: 5 },
+  labels: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
+  label: { fontSize: 13, fontWeight: '600' },
+  sub: { fontSize: 11 },
+  value: { fontSize: 13, fontWeight: '700' },
+  track: { height: 6, borderRadius: 3, overflow: 'hidden' },
+  fill: { height: 6, borderRadius: 3 },
+  empty: { fontSize: 13 },
+});
