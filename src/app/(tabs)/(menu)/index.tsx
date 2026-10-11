@@ -186,11 +186,13 @@ export default function UserDashboardScreen() {
           {toggleButton('Cycling Menu', 'Weekly')}
         </View>
 
-        {/* Category slider */}
-        <HScroll contentContainerStyle={styles.slider} style={styles.sliderWrap}>
-          {chip('All', '', activeCategory === '')}
-          {categories.map(c => chip(titleCase(c.name), c.name, activeCategory.toLowerCase() === c.name.toLowerCase()))}
-        </HScroll>
+        {/* Category slider — "All" stays pinned on the left; only the categories scroll */}
+        <View style={styles.sliderRow}>
+          <View style={styles.sliderAll}>{chip('All', '', activeCategory === '')}</View>
+          <HScroll contentContainerStyle={styles.slider} style={styles.sliderScroll}>
+            {categories.map(c => chip(titleCase(c.name), c.name, activeCategory.toLowerCase() === c.name.toLowerCase()))}
+          </HScroll>
+        </View>
 
         {/* Cutoff message */}
         <View style={[styles.notice, { borderColor: colors.surfaceBorder, backgroundColor: colors.chipBg }]}>
@@ -334,8 +336,10 @@ const styles = StyleSheet.create({
   toggle: { marginHorizontal: 16, marginBottom: 14, borderRadius: 24, padding: 4, height: 48, flexDirection: 'row' },
   toggleBtn: { flex: 1, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   toggleText: { fontSize: 13, fontWeight: '700' },
-  sliderWrap: { marginBottom: 10, flexGrow: 0 },
-  slider: { gap: 22, paddingHorizontal: 16 },
+  sliderRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  sliderAll: { paddingLeft: 16, paddingRight: 22 },
+  sliderScroll: { flex: 1, flexGrow: 1 },
+  slider: { gap: 22, paddingRight: 16 },
   chip: { alignItems: 'center', gap: 6 },
   chipText: { fontSize: 14 },
   chipUnderline: { height: 2.5, width: 20, borderRadius: 1.5 },
