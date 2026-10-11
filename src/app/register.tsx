@@ -1,5 +1,5 @@
 /** RegisterPage.xaml + RegisterViewModel. */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text } from '../components/AppText';
@@ -22,12 +22,38 @@ export default function RegisterScreen() {
   const [selectedLocation, setSelectedLocation] = useState<CompanyLocation | null>(null);
   const [isCompanyAutoMatched, setIsCompanyAutoMatched] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The company list comes from the server; say so while it loads or if it can't (it used to fail silently).
+  const [companiesState, setCompaniesState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  const fetchCompanies = useCallback(() => {
+    listRegistrationCompanies()
+      .then(list => {
+        setCompanies(list);
+        setCompaniesState('ready');
+      })
+      .catch(() => {
+        setCompanies([]);
+        setCompaniesState('error');
+      });
+  }, []);
 
   useEffect(() => {
-    listRegistrationCompanies()
-      .then(setCompanies)
-      .catch(() => setCompanies([]));
-  }, []);
+    fetchCompanies();
+  }, [fetchCompanies]);
+
+  const retryCompanies = () => {
+    setCompaniesState('loading');
+    fetchCompanies();
+  };
+
+  const companyTitle =
+    companiesState === 'loading'
+      ? 'Loading companies…'
+      : companiesState === 'error'
+        ? "Couldn't load companies — tap to retry"
+        : companies.length === 0
+          ? 'No companies available yet'
+          : 'Select your company';
 
   const selectCompany = (company: Company | null) => {
     setSelectedCompany(company);
@@ -59,6 +85,16 @@ export default function RegisterScreen() {
     }
     if (password !== confirmPassword) {
       await alerts.show("Passwords Don't Match", 'Please make sure both password fields match.', 'OK');
+      return;
+    }
+    if (companiesState !== 'ready') {
+      await alerts.show(
+        'Companies Not Loaded',
+        companiesState === 'loading'
+          ? 'Still loading the company list — give it a moment and try again.'
+          : "We couldn't load the company list, so your account can't be set up yet. Check your connection and tap the company box to retry.",
+        'OK'
+      );
       return;
     }
     if (!selectedCompany || !selectedLocation) {
@@ -100,8 +136,9 @@ export default function RegisterScreen() {
 
           <View style={[styles.pickerBox, { borderColor: colors.surfaceBorder, backgroundColor: colors.cardBg }]}>
             <Picker
-              title="Select your company"
+              title={companyTitle}
               options={companies.map(c => c.name)}
+              onPressEmpty={companiesState === 'error' ? retryCompanies : undefined}
               selected={selectedCompany?.name ?? null}
               onSelect={name => {
                 selectCompany(companies.find(c => c.name === name) ?? null);
@@ -111,6 +148,11 @@ export default function RegisterScreen() {
             />
           </View>
           {isCompanyAutoMatched && <Text style={styles.matched}>✓ Matched automatically from your email address</Text>}
+          {companiesState === 'error' && (
+            <Text style={[styles.loadError, { color: colors.error }]}>
+              We couldn&apos;t reach the server, so the company list didn&apos;t load. Check your connection and tap the box above to try again.
+            </Text>
+          )}
 
           <View
             style={[
@@ -147,6 +189,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '700' },
   subtitle: { fontSize: 14 },
   form: { gap: 14 },
+  loadError: { fontSize: 12, marginTop: -6, marginLeft: 4 },
   pickerBox: { height: 50, borderWidth: 1, borderRadius: 12, justifyContent: 'center', paddingHorizontal: 15 },
   pickerInner: { borderBottomWidth: 0 },
   matched: { fontSize: 11, fontWeight: '700', color: '#059669', marginLeft: 4, marginTop: -6 },

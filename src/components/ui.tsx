@@ -278,6 +278,7 @@ export function Picker({
   options,
   selected,
   onSelect,
+  onPressEmpty,
   width,
   disabled,
   style,
@@ -287,6 +288,8 @@ export function Picker({
   options: string[];
   selected: string | null;
   onSelect: (value: string) => void;
+  /** Tapped while there are no options (e.g. to retry loading them). */
+  onPressEmpty?: () => void;
   width?: number;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -294,7 +297,11 @@ export function Picker({
 }) {
   const { colors } = useApp();
   const open = async () => {
-    if (disabled || options.length === 0) return;
+    if (disabled) return;
+    if (options.length === 0) {
+      onPressEmpty?.();
+      return;
+    }
     const choice = await alerts.actionSheet(title, 'Cancel', ...options);
     if (choice) onSelect(choice);
   };
