@@ -3,12 +3,13 @@
  * changed from the 📅 pill via the in-page DeliveryDayOverlay.
  */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { Image, ImageBackground, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ImageBackground, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../../../components/AppText';
 import { Btn, Card, Page, SearchBar, HScroll } from '../../../components/ui';
 import { useApp } from '../../../state/AppState';
+import { BrandLogo } from '../../../components/BrandLogo';
 import { setNavParam } from '../../../state/navParams';
 import { getProducts } from '../../../services/catalog';
 import { fmtDayLabel, fmtDayMonth, STATIC_WINDOW } from '../../../services/scheduling';
@@ -140,12 +141,9 @@ export default function UserDashboardScreen() {
           )}
           <View style={styles.header}>
             <View style={styles.headerSide} />
-            <Image
-              source={colors.headerLogo === 'dark' ? require('../../../../assets/images/yourkcodark.png') : require('../../../../assets/images/yourkcolight.png')}
-              style={styles.headerLogo}
-              resizeMode="contain"
-              accessibilityLabel="Your Kitchen Co."
-            />
+            <View style={styles.headerCenter}>
+              <BrandLogo size={26} color={colors.headerLogoInk} />
+            </View>
             <Pressable
               onPress={() => router.push('/cart')}
               accessibilityRole="button"
@@ -302,8 +300,8 @@ const styles = StyleSheet.create({
   // Grid 42 / * / 42: the empty left column keeps the logo truly centred.
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 14 },
   headerSide: { width: 42, height: 42 },
-  // Kept clear of the cart button: the wordmark is ~5.7:1, so 46pt tall overran narrow phones.
-  headerLogo: { flex: 1, height: 32, marginHorizontal: 14 },
+  // Middle column of the 42 / * / 42 grid, so the wordmark is centred and clear of the cart button.
+  headerCenter: { flex: 1, alignItems: 'center', marginHorizontal: 10 },
   cartButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   badge: {
     position: 'absolute',

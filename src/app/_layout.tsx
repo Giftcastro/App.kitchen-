@@ -25,6 +25,7 @@ import {
   OpenSans_700Bold_Italic,
   OpenSans_800ExtraBold,
 } from '@expo-google-fonts/open-sans';
+import { PlayfairDisplay_400Regular, PlayfairDisplay_700Bold } from '@expo-google-fonts/playfair-display';
 import { AppStateProvider, useApp } from '../state/AppState';
 import { AlertHost } from '../components/Alerts';
 import { useResponsive } from '../utils/responsive';
@@ -98,6 +99,9 @@ export default function RootLayout() {
     OpenSans_700Bold,
     OpenSans_700Bold_Italic,
     OpenSans_800ExtraBold,
+    // The brand wordmark (components/BrandLogo).
+    PlayfairDisplay_400Regular,
+    PlayfairDisplay_700Bold,
   });
 
   useEffect(() => {

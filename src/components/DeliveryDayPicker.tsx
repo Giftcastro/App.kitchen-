@@ -9,10 +9,11 @@
  *    content, with a ✕ to back out.
  */
 import React, { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from './AppText';
 import { Btn } from './ui';
 import { useApp } from '../state/AppState';
+import { BrandLogo } from './BrandLogo';
 import { fmtDayLabel, getOrderableDeliveryDates } from '../services/scheduling';
 
 interface PanelProps {
@@ -26,7 +27,7 @@ interface PanelProps {
 }
 
 export function DeliveryDayPanel({ windowDays, titleSize, subtitle, onConfirm, onClose, footer }: PanelProps) {
-  const { colors, isDark, selectedOrderingDate } = useApp();
+  const { colors, selectedOrderingDate } = useApp();
   const [dates] = useState(() => getOrderableDeliveryDates(windowDays));
   const [selected, setSelected] = useState<string | null>(
     selectedOrderingDate && dates.includes(selectedOrderingDate) ? selectedOrderingDate : dates[0] ?? null
@@ -36,11 +37,7 @@ export function DeliveryDayPanel({ windowDays, titleSize, subtitle, onConfirm, o
     <View style={[styles.root, { backgroundColor: colors.pageBg }]}>
       <View style={styles.header}>
         <View style={styles.logoRow}>
-          <Image
-            source={isDark ? require('../../assets/images/yourkcodark.png') : require('../../assets/images/yourkcolight.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
+          <BrandLogo size={24} align="left" />
           {onClose && (
             <Pressable
               onPress={onClose}
@@ -115,7 +112,6 @@ const styles = StyleSheet.create({
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 20 },
   header: { gap: 16, marginTop: 20, marginBottom: 24 },
   logoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  logo: { height: 40, width: 227 },
   close: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   closeText: { fontSize: 14, fontWeight: '700' },
   pressed: { opacity: 0.88, transform: [{ scale: 0.96 }] },

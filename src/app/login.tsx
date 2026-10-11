@@ -1,15 +1,16 @@
 /** LoginPage.xaml + LoginViewModel. */
 import React, { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text } from '../components/AppText';
 import { alerts } from '../components/Alerts';
 import { BoxEntry, Btn, CheckBox, Page } from '../components/ui';
 import { useApp } from '../state/AppState';
+import { BrandLogo } from '../components/BrandLogo';
 import { SuspendedAccountError } from '../services/auth';
 
 export default function LoginScreen() {
-  const { colors, isDark, signIn } = useApp();
+  const { colors, signIn } = useApp();
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,12 +44,7 @@ export default function LoginScreen() {
   return (
     <Page>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Image
-          source={isDark ? require('../../assets/images/yourkcodark.png') : require('../../assets/images/yourkcolight.png')}
-          style={styles.logo}
-          resizeMode="contain"
-          accessibilityLabel="Your Kitchen Co."
-        />
+        <BrandLogo size={40} style={styles.logo} />
 
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Sign in to continue</Text>
 
@@ -96,7 +92,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1, justifyContent: 'center', padding: 30, gap: 20 },
-  logo: { width: '100%', height: 110, marginBottom: 5 },
+  logo: { marginTop: 24, marginBottom: 29 },
   subtitle: { fontSize: 14, textAlign: 'center', marginTop: -10, marginBottom: 15 },
   form: { gap: 14 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 2, marginVertical: 4 },

@@ -1,16 +1,17 @@
 /** RegisterPage.xaml + RegisterViewModel. */
 import React, { useEffect, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text } from '../components/AppText';
 import { alerts } from '../components/Alerts';
 import { BoxEntry, Btn, Page, Picker } from '../components/ui';
 import { useApp } from '../state/AppState';
+import { BrandLogo } from '../components/BrandLogo';
 import { listRegistrationCompanies } from '../services/directory';
 import type { Company, CompanyLocation } from '../models';
 
 export default function RegisterScreen() {
-  const { colors, isDark, register } = useApp();
+  const { colors, register } = useApp();
   const router = useRouter();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -84,12 +85,7 @@ export default function RegisterScreen() {
   return (
     <Page>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Image
-          source={isDark ? require('../../assets/images/yourkcodark.png') : require('../../assets/images/yourkcolight.png')}
-          style={styles.logo}
-          resizeMode="contain"
-          accessibilityLabel="Your Kitchen Co."
-        />
+        <BrandLogo size={34} style={styles.logo} />
 
         <View style={styles.titles}>
           <Text style={[styles.title, { color: colors.text }]}>Create Account</Text>
@@ -146,7 +142,7 @@ export default function RegisterScreen() {
 
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 30, paddingTop: 30, paddingBottom: 56, gap: 20 },
-  logo: { width: '100%', height: 90, marginTop: 10 },
+  logo: { marginTop: 30, marginBottom: 10 },
   titles: { gap: 4, alignItems: 'center' },
   title: { fontSize: 28, fontWeight: '700' },
   subtitle: { fontSize: 14 },

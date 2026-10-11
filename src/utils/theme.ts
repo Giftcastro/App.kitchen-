@@ -46,8 +46,8 @@ export interface ThemeColors {
   headerBg: string;
   /** HeaderChipBg* — cart button / admin-preview banner on the band */
   headerChipBg: string;
-  /** Which logo reads on the header band: 'light' = yourkcolight.png (dark ink), 'dark' = yourkcodark.png (cream ink) */
-  headerLogo: 'light' | 'dark';
+  /** Ink for the brand wordmark on the header band (HeaderLogoLight/Dark: dark ink on light bands, cream on dark) */
+  headerLogoInk: string;
   /** SubtleFill — translucent neutral buttons/tiles */
   subtleFill: string;
   /** SubtleFillStrong — translucent badges */
@@ -81,7 +81,7 @@ const inkLight: ThemeColors = {
   tabBarUnselected: '#B7B0A2',
   headerBg: '#F7F2E8',
   headerChipBg: '#121212',
-  headerLogo: 'light',
+  headerLogoInk: '#121212',
   subtleFill: 'rgba(136,136,136,0.133)',
   subtleFillStrong: 'rgba(18,18,18,0.133)',
   error: '#DC2626',
@@ -109,7 +109,7 @@ const inkDark: ThemeColors = {
   tabBarUnselected: '#6E6E72',
   headerBg: '#121212',
   headerChipBg: '#F7F2E8',
-  headerLogo: 'dark',
+  headerLogoInk: '#F7F2E8',
   subtleFill: 'rgba(136,136,136,0.133)',
   subtleFillStrong: 'rgba(18,18,18,0.133)',
   error: '#F87171',
@@ -139,7 +139,7 @@ const pantryLight: ThemeColors = {
   tabBarUnselected: '#A9B98A',
   headerBg: '#363C1E',
   headerChipBg: '#D53220',
-  headerLogo: 'dark',
+  headerLogoInk: '#F5E8A6',
   subtleFill: 'rgba(80,123,69,0.149)',
   subtleFillStrong: 'rgba(213,50,32,0.149)',
 };
@@ -162,7 +162,7 @@ const pantryDark: ThemeColors = {
   tabBarUnselected: '#8A8F63',
   headerBg: '#F5E8A6',
   headerChipBg: '#363C1E',
-  headerLogo: 'light',
+  headerLogoInk: '#33351D',
   subtleFill: 'rgba(80,123,69,0.149)',
   subtleFillStrong: 'rgba(213,50,32,0.149)',
 };
