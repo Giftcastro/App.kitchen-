@@ -214,7 +214,7 @@ const signIn = async (page, email) => {
     await check('admin lands on Overview hub', await has(page, 'Upcoming Deliveries'));
     await check('overview shows all-time revenue', await has(page, 'Total Revenue (all time)'));
     for (const [label, name, marker] of [
-      ['Active Orders', '21-admin-active-orders', 'Production Sheet (PDF)'],
+      ['Active Orders', '21-admin-active-orders', 'Export'],
       ['Companies', '22-admin-companies', '🚚'],
       ['Notifications', '24-admin-notifications', 'Compose Broadcast'],
       ['Menu Catalog', '25-admin-menu', 'Menu Inventory'],
@@ -228,11 +228,11 @@ const signIn = async (page, email) => {
       await check(`admin ${label}`, await has(page, marker));
     }
     await clickText(page, 'Menu Catalog', 3500);
-    await clickText(page, 'Cycle Menu (8-week)', 3500);
+    await clickText(page, 'Cycle Menu', 3500);
     await shot(page, '29-admin-cycle-menu');
     await check('admin cycle editor', await has(page, 'Currently active for this week'));
     await clickText(page, 'Active Orders', 3500);
-    await clickText(page, '🍳  Prep Summary', 1500);
+    await clickText(page, 'Prep Summary', 1500);
     await shot(page, '30-admin-prep-summary');
     await clickText(page, '👤 Customer View', 5000);
     await shot(page, '31-admin-customer-view');

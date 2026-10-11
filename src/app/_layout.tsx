@@ -38,7 +38,12 @@ LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 const PUBLIC_ROUTES = ['login', 'register'];
 
 function RootNavigator() {
-  const { user, authLoading, selectedOrderingDate, colors, isAdminPreview } = useApp();
+  const { user, authLoading, selectedOrderingDate, colors, isAdminPreview, isDark } = useApp();
+
+  // Web: tell the browser the page's scheme so its scrollbars and form controls aren't bright white in dark mode.
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') document.documentElement.style.colorScheme = isDark ? 'dark' : 'light';
+  }, [isDark]);
   const segments = useSegments();
   const { contentMaxWidth } = useResponsive();
   const top = segments[0] ?? '';

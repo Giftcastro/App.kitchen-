@@ -111,10 +111,14 @@ export function SettingsContent() {
                   accessibilityRole="radio"
                   aria-checked={selected}
                   accessibilityLabel={theme.label}
-                  style={[styles.swatch, { borderColor: selected ? theme.swatch : 'transparent' }]}
+                  // The selected outline uses the text colour so it shows in dark mode too (MAUI's #121212 outline vanished there).
+                  style={[styles.swatch, { borderColor: selected ? colors.text : 'transparent' }]}
                 >
-                  <View style={[styles.swatchColor, { backgroundColor: theme.swatch }]} />
-                  <Text style={[styles.swatchLabel, { color: colors.text }]}>{theme.label}</Text>
+                  <View style={[styles.swatchColor, { backgroundColor: theme.swatch, borderColor: colors.surfaceBorder }]} />
+                  <Text style={[styles.swatchLabel, { color: colors.text }]}>
+                    {selected ? '✓ ' : ''}
+                    {theme.label}
+                  </Text>
                 </Pressable>
               );
             })}
@@ -140,7 +144,7 @@ const styles = StyleSheet.create({
   rowSubtitle: { fontSize: 12 },
   swatches: { flexDirection: 'row', gap: 10 },
   swatch: { flex: 1, borderWidth: 2, borderRadius: 10, padding: 10, gap: 6 },
-  swatchColor: { height: 28, borderRadius: 6 },
+  swatchColor: { height: 28, borderRadius: 6, borderWidth: 1 },
   swatchLabel: { fontSize: 11, fontWeight: '700' },
   signOut: { marginTop: 12 },
 });

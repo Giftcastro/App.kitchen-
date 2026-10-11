@@ -313,6 +313,17 @@ export function Picker({
   );
 }
 
+/** A Picker with its caption above it — used two-up for the admin Company / Date filters so neither gets cut off. */
+export function LabeledPicker({ label, ...picker }: React.ComponentProps<typeof Picker> & { label: string }) {
+  const { colors } = useApp();
+  return (
+    <View style={styles.labeledPicker}>
+      <Text style={[styles.pickerLabel, { color: colors.brandGold }]}>{label}</Text>
+      <Picker {...picker} />
+    </View>
+  );
+}
+
 export function Switch({ value, onValueChange, onColor }: { value: boolean; onValueChange: (v: boolean) => void; onColor?: string }) {
   const { colors } = useApp();
   return (
@@ -381,10 +392,15 @@ export function SearchBar({
  * A sideways-scrolling row (category slider, date chips, admin pills). Touch
  * swipes work everywhere; on the web a mouse wheel has no sideways axis, so
  * vertical wheel movement is turned into horizontal scrolling while the row
- * can still move, and the scrollbar is shown as a drag handle.
+ * can still move. Scrollbars stay hidden (they render as bright white
+ * browser bars in dark mode); touch and wheel both still scroll.
  */
-export function HScroll({ children, ...props }: ScrollViewProps & { children: React.ReactNode }) {
+export function HScroll({ children, focusX, ...props }: ScrollViewProps & { children: React.ReactNode; focusX?: number }) {
   const ref = useRef<ScrollView>(null);
+  // Bring a chosen item (e.g. the selected admin pill) into view once it has been laid out.
+  useEffect(() => {
+    if (focusX != null) ref.current?.scrollTo({ x: Math.max(0, focusX - 16), animated: false });
+  }, [focusX]);
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const node = (ref.current as unknown as { getScrollableNode?: () => HTMLElement } | null)?.getScrollableNode?.();
@@ -401,7 +417,7 @@ export function HScroll({ children, ...props }: ScrollViewProps & { children: Re
     return () => node.removeEventListener('wheel', onWheel);
   }, []);
   return (
-    <ScrollView ref={ref} horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} {...props}>
+    <ScrollView ref={ref} horizontal showsHorizontalScrollIndicator={false} {...props}>
       {children}
     </ScrollView>
   );
@@ -462,6 +478,8 @@ const styles = StyleSheet.create({
   boxEntryInput: { marginHorizontal: 15, fontSize: 14, height: 48 },
   picker: { flexDirection: 'row', alignItems: 'center', gap: 6, borderBottomWidth: 1, minHeight: 40, paddingHorizontal: 4 },
   pickerText: { flex: 1, fontSize: 14 },
+  labeledPicker: { flex: 1, minWidth: 0, gap: 2 },
+  pickerLabel: { fontSize: 11, fontWeight: '700' },
   checkbox: { width: 22, height: 22, borderRadius: 4, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   search: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 42, paddingHorizontal: 10 },
   searchInput: { flex: 1, fontSize: 14, paddingVertical: 8 },

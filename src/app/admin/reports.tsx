@@ -207,7 +207,9 @@ export default function AdminReportsScreen() {
   const bottomPerformers: SalesItemSummary[] = useMemo(() => {
     const sold = new Set(grouped.map(g => g.itemName));
     const neverSold = menuItemNames.filter(n => !sold.has(n)).map(n => ({ itemName: n, unitsSold: 0, totalRevenue: 0, swatchColor: '' }));
-    const lowest = [...grouped].sort((a, b) => a.unitsSold - b.unitsSold || a.totalRevenue - b.totalRevenue);
+    // With a small menu the two lists would overlap; a best seller is never also listed as a worst one.
+    const best = new Set(grouped.slice(0, 10).map(g => g.itemName));
+    const lowest = [...grouped].filter(g => !best.has(g.itemName)).sort((a, b) => a.unitsSold - b.unitsSold || a.totalRevenue - b.totalRevenue);
     return [...neverSold, ...lowest].slice(0, 10);
   }, [grouped, menuItemNames]);
 

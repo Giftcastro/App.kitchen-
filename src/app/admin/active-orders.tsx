@@ -4,12 +4,12 @@
  * kitchenExports); PDF / Excel go to the share sheet, or download on web.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Text } from '../../components/AppText';
 import { alerts } from '../../components/Alerts';
 import { AdminNavStrip } from '../../components/AdminNavStrip';
-import { Btn, Card, EmptyState, Page, Picker, Stars, HScroll } from '../../components/ui';
+import { Btn, Card, EmptyState, Page, Stars, LabeledPicker } from '../../components/ui';
 import { useApp } from '../../state/AppState';
 import {
   ALL_COMPANIES,
@@ -89,79 +89,57 @@ export default function AdminActiveOrdersScreen() {
     }
   };
 
-  const viewToggle = (label: string, prep: boolean) => {
+  const segment = (label: string, prep: boolean) => {
     const active = isPrepViewActive === prep;
     return (
-      <Btn
-        title={label}
+      <Pressable
         onPress={() => setIsPrepViewActive(prep)}
-        bold
-        fontSize={13}
-        height={40}
-        radius={8}
-        bg={active ? colors.primary : colors.cardBg}
-        color={active ? colors.onPrimary : colors.text}
-        borderColor={active ? 'transparent' : colors.surfaceBorder}
-        style={styles.flex}
-      />
+        accessibilityRole="tab"
+        aria-selected={active}
+        style={[styles.segmentBtn, active && { backgroundColor: colors.primary }]}
+      >
+        <Text style={[styles.segmentText, { color: active ? colors.onPrimary : colors.mutedText }]}>{label}</Text>
+      </Pressable>
     );
+  };
+
+  /** Every kitchen document for the filtered orders, behind one button instead of five. */
+  const openExports = async () => {
+    const options = [
+      '📄 Production Sheet (PDF)',
+      '📊 Production Sheet (Excel)',
+      '🏷️ Delivery Notes (PDF)',
+      '🧾 Invoices (PDF)',
+      isPrepViewActive ? '🖨️ Print Prep Sheet' : '🖨️ Print Order Sheet',
+    ];
+    const count = orders.length;
+    const choice = await alerts.actionSheet(
+      `Download or print
+${count} ${count === 1 ? 'order' : 'orders'} · ${companyFilter} · ${dateFilter}`,
+      'Cancel',
+      ...options
+    );
+    if (choice === options[0]) await exportWith(e => e.productionSheetPdf());
+    else if (choice === options[1]) await exportWith(e => e.productionSheetExcel());
+    else if (choice === options[2]) await exportWith(e => e.deliveryNotesPdf());
+    else if (choice === options[3]) await exportWith(e => e.invoicesPdf());
+    else if (choice === options[4]) await exportWith(e => (isPrepViewActive ? e.printPrepSheet() : e.printOrderSheet()), 'Nothing to Print');
   };
 
   return (
     <Page>
       <AdminNavStrip activeRoute="adminactiveorders" />
-      <HScroll style={styles.filtersWrap} contentContainerStyle={styles.filters}>
-        <Text style={[styles.filterLabel, { color: colors.brandGold }]}>Company:</Text>
-        <Picker title="Filter Company" options={companyFilterOptions(companies, rows)} selected={companyFilter} onSelect={setCompanyFilter} width={180} />
-        <Text style={[styles.filterLabel, styles.filterGap, { color: colors.brandGold }]}>Date:</Text>
-        <Picker title="Filter Date" options={dateFilterOptions(rows)} selected={dateFilter} onSelect={setDateFilter} width={170} />
-      </HScroll>
+      <View style={styles.filters}>
+        <LabeledPicker label="Company" title="Filter Company" options={companyFilterOptions(companies, rows)} selected={companyFilter} onSelect={setCompanyFilter} />
+        <LabeledPicker label="Delivery date" title="Filter Date" options={dateFilterOptions(rows)} selected={dateFilter} onSelect={setDateFilter} />
+      </View>
 
       <View style={styles.controls}>
-        <View style={styles.toggleRow}>
-          {viewToggle('📋  Orders View', false)}
-          {viewToggle('🍳  Prep Summary', true)}
+        <View style={[styles.segmentTrack, { backgroundColor: colors.chipBg }]}>
+          {segment('Orders', false)}
+          {segment('Prep Summary', true)}
         </View>
-        <View style={styles.toggleRow}>
-          <Btn title="📄 Production Sheet (PDF)" onPress={() => exportWith(e => e.productionSheetPdf())} bold fontSize={12} height={40} radius={8} paddingH={6} style={styles.flex} />
-          <Btn title="📊 Production Sheet (Excel)" onPress={() => exportWith(e => e.productionSheetExcel())} bold fontSize={12} height={40} radius={8} paddingH={6} style={styles.flex} />
-        </View>
-        <View style={styles.toggleRow}>
-          <Btn
-            title="🏷️ Delivery Notes (PDF)"
-            onPress={() => exportWith(e => e.deliveryNotesPdf())}
-            bg={colors.brandGold}
-            color={colors.onBrandGold}
-            bold
-            fontSize={12}
-            height={40}
-            radius={8}
-            paddingH={6}
-            style={styles.flex}
-          />
-          <Btn
-            title="🧾 Invoices (PDF)"
-            onPress={() => exportWith(e => e.invoicesPdf())}
-            bg={colors.brandGold}
-            color={colors.onBrandGold}
-            bold
-            fontSize={12}
-            height={40}
-            radius={8}
-            paddingH={6}
-            style={styles.flex}
-          />
-          <Btn
-            title="🖨️"
-            onPress={() => exportWith(e => (isPrepViewActive ? e.printPrepSheet() : e.printOrderSheet()), 'Nothing to Print')}
-            variant="neutral"
-            fontSize={14}
-            height={40}
-            radius={8}
-            paddingH={0}
-            style={styles.printBtn}
-          />
-        </View>
+        <Btn title="⬇  Export" onPress={openExports} bold fontSize={13} height={44} radius={22} paddingH={16} />
       </View>
 
       {isPrepViewActive ? (
@@ -231,13 +209,11 @@ export default function AdminActiveOrdersScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   bold: { fontWeight: '700' },
-  filtersWrap: { flexGrow: 0 },
-  filters: { gap: 8, alignItems: 'center', paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
-  filterLabel: { fontSize: 12, fontWeight: '700' },
-  filterGap: { marginLeft: 10 },
-  controls: { paddingHorizontal: 16, gap: 8, marginBottom: 8 },
-  toggleRow: { flexDirection: 'row', gap: 8 },
-  printBtn: { width: 44 },
+  filters: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
+  controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, marginBottom: 10 },
+  segmentTrack: { flex: 1, flexDirection: 'row', height: 44, borderRadius: 22, padding: 4 },
+  segmentBtn: { flex: 1, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  segmentText: { fontSize: 13, fontWeight: '700' },
   list: { paddingHorizontal: 16, paddingBottom: 16, flexGrow: 1 },
   prepHeader: { fontSize: 12, marginBottom: 10 },
   prepCard: { marginBottom: 8 },

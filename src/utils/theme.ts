@@ -111,7 +111,8 @@ const inkDark: ThemeColors = {
   headerChipBg: '#F7F2E8',
   headerLogoInk: '#F7F2E8',
   subtleFill: 'rgba(136,136,136,0.133)',
-  subtleFillStrong: 'rgba(18,18,18,0.133)',
+  // MAUI's #22121212 is invisible on a near-black card; a light tint keeps status/role badges readable.
+  subtleFillStrong: 'rgba(247,242,232,0.12)',
   error: '#F87171',
   success: '#34D399',
   placeholder: '#6E6E6E',

@@ -260,7 +260,7 @@ export default function AdminMenuScreen() {
       <AdminNavStrip activeRoute="adminmenu" />
       <View style={styles.typeRow}>
         {typeButton('Static Menu', 'Static')}
-        {typeButton('Cycle Menu (8-week)', 'Cycle')}
+        {typeButton('Cycle Menu', 'Cycle')}
       </View>
 
       {menuType === 'Static' ? (
@@ -294,7 +294,7 @@ export default function AdminMenuScreen() {
                 </View>
                 <View style={styles.productActions}>
                   <Btn title="Edit" onPress={() => editProduct(product)} bg="rgba(255,255,255,0.2)" color={productText} fontSize={11} height={32} paddingH={12} />
-                  <Btn title="Delete" onPress={() => deleteProduct(product)} variant="danger" fontSize={11} height={32} paddingH={12} />
+                  <Btn title="Delete" onPress={() => deleteProduct(product)} variant="dangerOutline" fontSize={11} height={32} paddingH={12} />
                 </View>
               </Card>
             )}
@@ -308,7 +308,7 @@ export default function AdminMenuScreen() {
           ListHeaderComponent={
             <View style={styles.cycleHeader}>
               <View style={[styles.activeBox, { backgroundColor: colors.subtleFillStrong }]}>
-                <Text style={[styles.activeText, { color: colors.brandGold }]}>Currently active for this week: Week {activeWeekNumber}</Text>
+                <Text style={[styles.activeText, { color: colors.brandGold }]}>Currently active for this week: Week {activeWeekNumber} of 8</Text>
               </View>
               <View style={styles.weekRow}>
                 <Text style={[styles.browse, { color: colors.text }]}>Browse / activate:</Text>
@@ -326,10 +326,12 @@ export default function AdminMenuScreen() {
                     <Text style={[styles.cycleHeaderText, { color: colors.brandGold }]}>
                       {row.dayName} — {row.categoryLabel}
                     </Text>
-                    <Text style={[styles.cycleValue, { color: colors.text }]}>{empty ? '(no dish set — tap Add to fill this slot)' : row.value}</Text>
+                    <Text style={[styles.cycleValue, { color: empty ? colors.mutedText : colors.text }, empty && styles.italic]}>
+                      {empty ? 'No dish set yet' : row.value}
+                    </Text>
                   </View>
                   <Btn title={empty ? 'Add' : 'Edit'} onPress={() => editCycleItem(row)} variant="neutral" fontSize={11} height={32} paddingH={12} />
-                  {!empty && <Btn title="Remove" onPress={() => removeCycleItem(row)} variant="danger" fontSize={11} height={32} paddingH={10} />}
+                  {!empty && <Btn title="Remove" onPress={() => removeCycleItem(row)} variant="dangerOutline" fontSize={11} height={32} paddingH={10} />}
                 </View>
               </Card>
             );
@@ -365,4 +367,5 @@ const styles = StyleSheet.create({
   cycleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cycleHeaderText: { fontSize: 12, fontWeight: '700' },
   cycleValue: { fontSize: 14, marginTop: 4 },
+  italic: { fontStyle: 'italic' },
 });

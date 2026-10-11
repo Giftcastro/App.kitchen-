@@ -66,6 +66,15 @@ export default function AdminCompaniesScreen() {
   };
 
   const toggleActive = async (company: Company) => {
+    if (company.isActive) {
+      const confirmed = await alerts.confirm(
+        'Suspend Company',
+        `Suspend ${company.name}? Its delivery locations will stop appearing when new people sign up.`,
+        'Suspend',
+        'Cancel'
+      );
+      if (!confirmed) return;
+    }
     const updated = { ...company, isActive: !company.isActive };
     try {
       await updateCompany(updated);
@@ -269,7 +278,7 @@ export default function AdminCompaniesScreen() {
               <Text style={[styles.muted11, { color: colors.mutedText }]}>{financialsSummary(company)}</Text>
               <Text style={[styles.muted11, styles.bold, { color: colors.brandGold }]}>🚚 {deliveryFeeSummary(company)}</Text>
               <View style={styles.buttonRow}>
-                {smallButton('Toggle Active', () => toggleActive(company))}
+                {smallButton(company.isActive ? 'Suspend' : 'Activate', () => toggleActive(company))}
                 {smallButton('Financials', () => manageFinancials(company))}
                 {smallButton('Delivery', () => manageDeliveryFee(company))}
                 {smallButton('Domains', () => manageDomains(company))}

@@ -12,6 +12,8 @@ export default function AdminLayout() {
     <Stack
       screenOptions={{
         animation: 'none',
+        // The page title lives in AdminNavStrip; a nav bar on top only repeated it.
+        headerShown: false,
         headerBackVisible: false,
         headerStyle: { backgroundColor: colors.pageBg },
         headerTintColor: colors.text,

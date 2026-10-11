@@ -44,6 +44,15 @@ export default function AdminUsersScreen() {
       await alerts.show('Not Allowed', "You can't suspend your own account.", 'OK');
       return;
     }
+    if (account.isActive) {
+      const confirmed = await alerts.confirm(
+        'Suspend User',
+        `Suspend ${account.fullName}? They won't be able to sign in or order until you activate them again.`,
+        'Suspend',
+        'Cancel'
+      );
+      if (!confirmed) return;
+    }
     const updated = { ...account, isActive: !account.isActive };
     try {
       await save(updated);
@@ -125,8 +134,10 @@ export default function AdminUsersScreen() {
       <AdminNavStrip activeRoute="adminusers" />
       <SearchBar value={searchQuery} onChangeText={setSearchQuery} placeholder="Search by name or email..." style={styles.search} />
       <View style={styles.filterRow}>
-        <Text style={[styles.filterLabel, { color: colors.brandGold }]}>Role Filter:</Text>
-        <Picker title="Filter Role" options={ROLE_FILTERS} selected={roleFilter} onSelect={setRoleFilter} width={160} />
+        <Text style={[styles.filterLabel, { color: colors.brandGold }]} numberOfLines={1}>
+          Role
+        </Text>
+        <Picker title="Filter Role" options={ROLE_FILTERS} selected={roleFilter} onSelect={setRoleFilter} style={styles.flex} />
         <Btn
           title="+ Add User"
           onPress={addUser}
@@ -148,7 +159,10 @@ export default function AdminUsersScreen() {
           <Card radius={12} style={styles.card}>
             <View style={styles.top}>
               <View style={styles.flex}>
-                <Text style={[styles.name, { color: colors.text }]}>{account.fullName}</Text>
+                <Text style={[styles.name, { color: colors.text }]}>
+                  {account.fullName}
+                  {account.id === me?.id && <Text style={[styles.you, { color: colors.mutedText }]}> (you)</Text>}
+                </Text>
                 <Text style={[styles.email, { color: colors.mutedText }]}>{account.email}</Text>
               </View>
               <View style={[styles.roleChip, { backgroundColor: colors.subtleFillStrong }]}>
@@ -161,8 +175,8 @@ export default function AdminUsersScreen() {
             </View>
             <View style={styles.actions}>
               <Btn title="Change Role" onPress={() => changeRole(account)} variant="neutral" fontSize={12} height={36} paddingH={12} />
-              {account.isActive ? (
-                <Btn title="Suspend" onPress={() => toggleStatus(account)} bg={colors.error} color="#FFFFFF" fontSize={12} height={36} paddingH={12} />
+              {account.id === me?.id ? null : account.isActive ? (
+                <Btn title="Suspend" onPress={() => toggleStatus(account)} variant="dangerOutline" fontSize={12} height={36} paddingH={12} />
               ) : (
                 <Btn title="Activate" onPress={() => toggleStatus(account)} bg="#2E7D32" color="#FFFFFF" fontSize={12} height={36} paddingH={12} />
               )}
@@ -179,7 +193,8 @@ const styles = StyleSheet.create({
   search: { marginHorizontal: 16, marginTop: 12, marginBottom: 4 },
   filterRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 16, marginBottom: 12 },
   filterLabel: { fontSize: 12, fontWeight: '700' },
-  addUser: { marginLeft: 'auto' },
+  addUser: { marginLeft: 4 },
+  you: { fontSize: 13, fontWeight: '400' },
   list: { paddingHorizontal: 16, paddingBottom: 16 },
   card: { marginBottom: 12 },
   top: { flexDirection: 'row', alignItems: 'flex-start' },

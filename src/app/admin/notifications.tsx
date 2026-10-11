@@ -64,11 +64,19 @@ export default function AdminNotificationsScreen() {
             </View>
             <View style={styles.field}>
               {fieldLabel('Notification Title')}
-              <PlainEntry value={title} onChangeText={setTitle} placeholder="e.g., Special Dinner Promo!" />
+              <PlainEntry value={title} onChangeText={setTitle} placeholder="e.g., Special Dinner Promo!" bg={colors.pageBg} style={[styles.input, { borderColor: colors.surfaceBorder }]} />
             </View>
             <View style={styles.field}>
               {fieldLabel('Message Body')}
-              <PlainEntry value={message} onChangeText={setMessage} placeholder="Write broadcast details here..." multiline height={90} />
+              <PlainEntry
+                value={message}
+                onChangeText={setMessage}
+                placeholder="Write broadcast details here..."
+                multiline
+                height={90}
+                bg={colors.pageBg}
+                style={[styles.input, { borderColor: colors.surfaceBorder }]}
+              />
             </View>
             <Btn title="Send Push Broadcast" onPress={send} disabled={isBusy} bg={colors.brandGold} color={colors.onBrandGold} bold radius={8} style={styles.send} />
             {isBusy && <ActivityIndicator color={colors.brandGold} />}
@@ -77,6 +85,7 @@ export default function AdminNotificationsScreen() {
 
         <Text style={[styles.heading, styles.historyHeading, { color: colors.text }]}>Sent History</Text>
 
+        {history.length === 0 && <Text style={[styles.body, { color: colors.mutedText }]}>No broadcasts sent yet.</Text>}
         {history.map(log => (
           <Card key={log.id} radius={10} padding={14}>
             <View style={styles.stack4}>
@@ -102,7 +111,9 @@ const styles = StyleSheet.create({
   form: { gap: 14 },
   heading: { fontSize: 18, fontWeight: '700' },
   historyHeading: { marginTop: 10 },
-  field: { gap: 4 },
+  field: { gap: 6 },
+  // Visible field boundary — MAUI's bare Entry/Editor read as plain text on a card.
+  input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 8 },
   fieldLabel: { fontSize: 12, fontWeight: '700' },
   send: { marginTop: 8 },
   stack4: { gap: 4 },

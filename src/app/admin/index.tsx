@@ -5,7 +5,7 @@ import { useFocusEffect } from 'expo-router';
 import { Text } from '../../components/AppText';
 import { alerts } from '../../components/Alerts';
 import { AdminNavStrip } from '../../components/AdminNavStrip';
-import { Btn, Card, Page, Picker, HScroll } from '../../components/ui';
+import { Btn, Card, Page, LabeledPicker } from '../../components/ui';
 import { useApp } from '../../state/AppState';
 import {
   ALL_COMPANIES,
@@ -107,11 +107,32 @@ export default function AdminDashboardScreen() {
     }
   };
 
+  /** MAUI's quick-status buttons; the order's current status shows ✓ and can't be re-sent. */
+  const statusButton = (row: AdminOrderRow, status: string, bg: string) => {
+    const current = row.order.status === status;
+    return (
+      <Btn
+        title={current ? `✓ ${status}` : status}
+        onPress={current ? undefined : () => setStatus(row, status)}
+        bg={bg}
+        color="#FFFFFF"
+        bold={current}
+        fontSize={status === 'Out for Delivery' ? 10 : 11}
+        height={36}
+        radius={8}
+        paddingH={4}
+        style={[styles.flex, current && styles.currentStatus]}
+      />
+    );
+  };
+
   const kpi = (emoji: string, label: string, value: string) => (
     <Card radius={16} border={colors.surfaceBorder} shadow="card" style={styles.kpi}>
       <View style={styles.kpiLabelRow}>
         <Text style={{ fontSize: 16 }}>{emoji}</Text>
-        <Text style={[styles.kpiLabel, { color: colors.textSecondary }]}>{label}</Text>
+        <Text style={[styles.kpiLabel, { color: colors.textSecondary }]} numberOfLines={2}>
+          {label}
+        </Text>
       </View>
       <Text style={[styles.kpiValue, { color: colors.text }]}>{value}</Text>
     </Card>
@@ -133,14 +154,12 @@ export default function AdminDashboardScreen() {
           <Btn title="Refresh" onPress={refresh} variant="ghost" color={colors.text} fontSize={12} height={32} paddingH={10} />
         </View>
 
-        <HScroll contentContainerStyle={styles.filters}>
-          <Text style={[styles.filterLabel, { color: colors.brandGold }]}>Company:</Text>
-          <Picker title="Filter Company" options={companyFilterOptions(companies, rows)} selected={companyFilter} onSelect={setCompanyFilter} width={170} />
-          <Text style={[styles.filterLabel, styles.filterGap, { color: colors.brandGold }]}>Date:</Text>
-          <Picker title="Filter Date" options={dateFilterOptions(rows)} selected={dateFilter} onSelect={setDateFilter} width={160} />
-        </HScroll>
+        <View style={styles.filters}>
+          <LabeledPicker label="Company" title="Filter Company" options={companyFilterOptions(companies, rows)} selected={companyFilter} onSelect={setCompanyFilter} />
+          <LabeledPicker label="Delivery date" title="Filter Date" options={dateFilterOptions(rows)} selected={dateFilter} onSelect={setDateFilter} />
+        </View>
 
-        <Btn title={`📤  Bulk Update Status (${upcoming.length} orders)`} onPress={bulkUpdate} bold fontSize={13} height={40} radius={8} />
+        <Btn title={`📤  Bulk Update Status (${upcoming.length} ${upcoming.length === 1 ? 'order' : 'orders'})`} onPress={bulkUpdate} bold fontSize={13} height={40} radius={8} />
 
         {upcoming.length === 0 ? (
           <Text style={styles.empty}>No upcoming orders match these filters.</Text>
@@ -162,9 +181,9 @@ export default function AdminDashboardScreen() {
                 </Text>
                 <Text style={[styles.item, { color: colors.textSecondary }]}>{row.order.itemName}</Text>
                 <View style={styles.statusButtons}>
-                  <Btn title="Preparing" onPress={() => setStatus(row, 'Preparing')} bg="#1E88E5" color="#FFFFFF" fontSize={11} height={36} radius={8} paddingH={4} style={styles.flex} />
-                  <Btn title="Out for Delivery" onPress={() => setStatus(row, 'Out for Delivery')} bg="#FB8C00" color="#FFFFFF" fontSize={10} height={36} radius={8} paddingH={4} style={styles.flex} />
-                  <Btn title="Delivered" onPress={() => setStatus(row, 'Delivered')} bg="#43A047" color="#FFFFFF" fontSize={11} height={36} radius={8} paddingH={4} style={styles.flex} />
+                  {statusButton(row, 'Preparing', '#1E88E5')}
+                  {statusButton(row, 'Out for Delivery', '#FB8C00')}
+                  {statusButton(row, 'Delivered', '#43A047')}
                 </View>
               </View>
             </Card>
@@ -180,14 +199,13 @@ const styles = StyleSheet.create({
   scroll: { padding: 16, gap: 16 },
   kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   kpi: { width: '47%', flexGrow: 1, gap: 4 },
-  kpiLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  // Emoji above the label so long labels ("Today's Deliveries Revenue") get the card's full width.
+  kpiLabelRow: { gap: 4 },
   kpiLabel: { fontSize: 12, flexShrink: 1 },
   kpiValue: { fontSize: 20, fontWeight: '700' },
   queueHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heading: { fontSize: 18, fontWeight: '700' },
-  filters: { gap: 8, alignItems: 'center' },
-  filterLabel: { fontSize: 12, fontWeight: '700' },
-  filterGap: { marginLeft: 10 },
+  filters: { flexDirection: 'row', gap: 12 },
   empty: { fontSize: 14, color: 'gray', textAlign: 'center', padding: 30 },
   rowGap: { gap: 8 },
   orderHeader: { flexDirection: 'row', alignItems: 'flex-start' },
@@ -198,4 +216,5 @@ const styles = StyleSheet.create({
   meta: { fontSize: 11 },
   item: { fontSize: 13 },
   statusButtons: { flexDirection: 'row', gap: 8 },
+  currentStatus: { opacity: 0.55 },
 });
