@@ -298,14 +298,15 @@ const styles = StyleSheet.create({
   },
   previewText: { fontSize: 12, fontWeight: '700' },
   // Grid 42 / * / 42: the empty left column keeps the logo truly centred.
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 14 },
   headerSide: { width: 42, height: 42 },
-  headerLogo: { flex: 1, height: 46 },
+  // Kept clear of the cart button: the wordmark is ~5.7:1, so 46pt tall overran narrow phones.
+  headerLogo: { flex: 1, height: 32, marginHorizontal: 14 },
   cartButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
   badge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -3,
+    right: -3,
     minWidth: 18,
     height: 18,
     borderRadius: 9,
