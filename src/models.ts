@@ -62,6 +62,8 @@ export interface CartItem {
 export const lineTotal = (item: CartItem) => item.unitPrice * item.quantity;
 
 export type DiscountType = 'None' | 'Percentage' | 'FixedZar';
+/** How a company's orders pay for delivery: the km-tier table (default), an admin-set flat fee, or free. */
+export type DeliveryFeeMode = 'DistanceTier' | 'Flat' | 'Free';
 
 export interface CompanyLocation {
   id: string;
@@ -93,6 +95,15 @@ export interface Company {
   discountValue: number;
   whitelistedDomains: string[];
   locations: CompanyLocation[];
+  deliveryFeeMode: DeliveryFeeMode;
+  /** Only used when deliveryFeeMode is Flat. */
+  flatDeliveryFee: number;
+}
+
+export function deliveryFeeSummary(c: Company): string {
+  if (c.deliveryFeeMode === 'Free') return 'Free delivery';
+  if (c.deliveryFeeMode === 'Flat') return `R${c.flatDeliveryFee.toFixed(2)} flat delivery`;
+  return 'Delivery by distance tier';
 }
 
 export function financialsSummary(c: Company): string {

@@ -8,11 +8,14 @@ import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CartItem, Company, CompanyLocation, UserAccount } from '../models';
 import { lineTotal } from '../models';
-import { getThemeColors, ThemeColors } from '../utils/theme';
+import { BrandTheme, getThemeColors, ThemeColors } from '../utils/theme';
+import { getOrderableDeliveryDates, STATIC_WINDOW } from '../services/scheduling';
 import * as auth from '../services/auth';
 
 const NOTIFICATIONS_PREF_KEY = 'settings.notifications_enabled';
 const DARK_MODE_PREF_KEY = 'settings.dark_mode_enabled';
+/** BrandThemeService's preference key — "Current" (Ink & Cream) or "MediterraneanPantry". */
+const BRAND_THEME_PREF_KEY = 'settings.brand_theme';
 /** Set when "Remember me" was ticked at login — the only case a saved session is resumed on launch. */
 const REMEMBER_ME_KEY = 'session.remember_me';
 
@@ -39,8 +42,16 @@ interface AppStateValue {
   cartCount: number;
   cartTotal: number;
 
+  // Admin "Customer View" (AdminCustomerSwitch)
+  /** True while an admin is previewing the customer app. */
+  isAdminPreview: boolean;
+  enterCustomerView: () => void;
+  returnToAdmin: () => void;
+
   // Settings
   colors: ThemeColors;
+  brandTheme: BrandTheme;
+  setBrandTheme: (theme: BrandTheme) => void;
   isDark: boolean;
   setDarkMode: (dark: boolean) => void;
   notificationsEnabled: boolean;
@@ -58,6 +69,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [darkPref, setDarkPref] = useState<boolean | null>(null);
   const [notificationsEnabled, setNotificationsState] = useState(true);
+  const [brandTheme, setBrandThemeState] = useState<BrandTheme>('Current');
+  const [customerView, setCustomerView] = useState(false);
 
   useEffect(() => {
     // MAUI always opens on the Login page; a saved session is only resumed
@@ -76,12 +89,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     })();
     (async () => {
       try {
-        const [dark, notifications] = await Promise.all([
+        const [dark, notifications, brand] = await Promise.all([
           AsyncStorage.getItem(DARK_MODE_PREF_KEY),
           AsyncStorage.getItem(NOTIFICATIONS_PREF_KEY),
+          AsyncStorage.getItem(BRAND_THEME_PREF_KEY),
         ]);
         if (dark !== null) setDarkPref(dark === 'true');
         if (notifications !== null) setNotificationsState(notifications === 'true');
+        // Anything unrecognised (e.g. a retired theme) falls back to Ink & Cream.
+        if (brand === 'MediterraneanPantry') setBrandThemeState('MediterraneanPantry');
       } catch {
         // Storage unavailable (private window) — keep defaults.
       }
@@ -93,6 +109,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setUserState(signedIn);
     setHasSeenCutoffNotice(false);
     setSelectedOrderingDate(null);
+    setCustomerView(false);
   };
 
   const signIn = async (email: string, password: string, rememberMe: boolean) => {
@@ -114,7 +131,15 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     setUserState(null);
     setSelectedOrderingDate(null);
     setCartItems([]);
+    setCustomerView(false);
   };
+
+  /** Admin → customer app, same session. A default ordering day is set so the Menu has a date. */
+  const enterCustomerView = () => {
+    setSelectedOrderingDate(prev => prev ?? getOrderableDeliveryDates(STATIC_WINDOW)[0] ?? null);
+    setCustomerView(true);
+  };
+  const returnToAdmin = () => setCustomerView(false);
 
   const addCartItem = useCallback((item: CartItem) => setCartItems(items => [...items, item]), []);
   const removeCartItem = useCallback((key: string) => setCartItems(items => items.filter(i => i.key !== key)), []);
@@ -125,7 +150,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const clearCart = useCallback(() => setCartItems([]), []);
 
   const isDark = darkPref ?? systemScheme === 'dark';
-  const colors = useMemo(() => getThemeColors(isDark ? 'dark' : 'light'), [isDark]);
+  const colors = useMemo(() => getThemeColors(isDark ? 'dark' : 'light', brandTheme), [isDark, brandTheme]);
+
+  const setBrandTheme = (theme: BrandTheme) => {
+    setBrandThemeState(theme);
+    AsyncStorage.setItem(BRAND_THEME_PREF_KEY, theme).catch(() => {});
+  };
 
   const setDarkMode = (dark: boolean) => {
     setDarkPref(dark);
@@ -154,7 +184,12 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     clearCart,
     cartCount: cartItems.reduce((sum, i) => sum + i.quantity, 0),
     cartTotal: cartItems.reduce((sum, i) => sum + lineTotal(i), 0),
+    isAdminPreview: user?.role === 'Admin' && customerView,
+    enterCustomerView,
+    returnToAdmin,
     colors,
+    brandTheme,
+    setBrandTheme,
     isDark,
     setDarkMode,
     notificationsEnabled,

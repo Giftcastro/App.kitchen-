@@ -20,7 +20,6 @@ import {
   updateStaticProduct,
 } from '../../services/catalog';
 import type { Product } from '../../models';
-import { fixed } from '../../utils/theme';
 
 type MenuType = 'Static' | 'Cycle';
 
@@ -247,7 +246,7 @@ export default function AdminMenuScreen() {
         bold
         radius={8}
         height={38}
-        bg={active ? colors.primary : 'rgba(136,136,136,0.13)'}
+        bg={active ? colors.primary : colors.subtleFill}
         color={active ? colors.onPrimary : colors.text}
         style={styles.flex}
       />
@@ -255,7 +254,6 @@ export default function AdminMenuScreen() {
   };
 
   const productText = isDark ? '#F7F2E8' : '#121212';
-  const rowBg = isDark ? '#1E1E1E' : '#FFFFFF';
 
   return (
     <Page>
@@ -270,14 +268,14 @@ export default function AdminMenuScreen() {
           <SearchBar value={searchQuery} onChangeText={setSearchQuery} placeholder="Search menu items..." style={styles.search} />
           <View style={styles.inventoryHeader}>
             <Text style={[styles.heading, { color: colors.text }]}>Menu Inventory</Text>
-            <Btn title="+ Add Item" onPress={addProduct} bold radius={8} height={38} />
+            <Btn title="+ Add Item" onPress={addProduct} bg={colors.brandGold} color={colors.onBrandGold} bold radius={8} height={38} />
           </View>
           <FlatList
             data={filtered}
             keyExtractor={p => p.id}
             contentContainerStyle={styles.list}
             renderItem={({ item: product }) => (
-              <Card radius={12} padding={12} bg={isDark ? '#1C1C1E' : '#FFFFFF'} border={isDark ? '#252525' : '#E0E0E0'} style={styles.productCard}>
+              <Card radius={12} padding={12} bg={isDark ? '#1C1C1E' : '#FFFFFF'} border={colors.surfaceBorder} style={styles.productCard}>
                 <View style={styles.productRow}>
                   <View style={styles.photo}>
                     <Image source={{ uri: product.imageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -291,7 +289,7 @@ export default function AdminMenuScreen() {
                   </View>
                   <View style={styles.available}>
                     <Text style={[styles.availableLabel, { color: productText }]}>Available</Text>
-                    <Switch value={product.isAvailable} onValueChange={() => toggleAvailability(product)} onColor="#121212" />
+                    <Switch value={product.isAvailable} onValueChange={() => toggleAvailability(product)} onColor={colors.primary} />
                   </View>
                 </View>
                 <View style={styles.productActions}>
@@ -309,23 +307,23 @@ export default function AdminMenuScreen() {
           contentContainerStyle={styles.list}
           ListHeaderComponent={
             <View style={styles.cycleHeader}>
-              <View style={[styles.activeBox, { backgroundColor: fixed.badgeBg }]}>
-                <Text style={[styles.activeText, { color: colors.primary }]}>Currently active for this week: Week {activeWeekNumber}</Text>
+              <View style={[styles.activeBox, { backgroundColor: colors.subtleFillStrong }]}>
+                <Text style={[styles.activeText, { color: colors.brandGold }]}>Currently active for this week: Week {activeWeekNumber}</Text>
               </View>
               <View style={styles.weekRow}>
                 <Text style={[styles.browse, { color: colors.text }]}>Browse / activate:</Text>
                 <Picker title="Week" options={WEEK_OPTIONS} selected={selectedWeek} onSelect={selectWeek} width={140} />
-                <Btn title="Set as Active Week" onPress={activateWeek} bold fontSize={12} radius={8} height={36} paddingH={10} />
+                <Btn title="Set as Active Week" onPress={activateWeek} bg={colors.brandGold} color={colors.onBrandGold} bold fontSize={12} radius={8} height={36} paddingH={10} />
               </View>
             </View>
           }
           renderItem={({ item: row }) => {
             const empty = !row.value.trim();
             return (
-              <Card radius={12} padding={12} bg={rowBg} style={styles.cycleCard}>
+              <Card radius={12} padding={12} style={styles.cycleCard}>
                 <View style={styles.cycleRow}>
                   <View style={styles.flex}>
-                    <Text style={[styles.cycleHeaderText, { color: colors.primary }]}>
+                    <Text style={[styles.cycleHeaderText, { color: colors.brandGold }]}>
                       {row.dayName} — {row.categoryLabel}
                     </Text>
                     <Text style={[styles.cycleValue, { color: colors.text }]}>{empty ? '(no dish set — tap Add to fill this slot)' : row.value}</Text>

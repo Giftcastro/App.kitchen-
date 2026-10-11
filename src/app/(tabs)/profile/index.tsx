@@ -2,15 +2,15 @@
 import React, { useCallback, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Text } from '../../components/AppText';
-import { alerts } from '../../components/Alerts';
-import { Btn, Card, Divider, Page } from '../../components/ui';
-import { useApp } from '../../state/AppState';
-import { getCompany, getDeliveryLocation, updateDeliveryFloor } from '../../services/directory';
-import { fmtMonthYear } from '../../services/scheduling';
+import { Text } from '../../../components/AppText';
+import { alerts } from '../../../components/Alerts';
+import { Btn, Card, Divider, Page } from '../../../components/ui';
+import { useApp } from '../../../state/AppState';
+import { getCompany, getDeliveryLocation, updateDeliveryFloor } from '../../../services/directory';
+import { fmtMonthYear } from '../../../services/scheduling';
 
 export default function ProfileScreen() {
-  const { colors, isDark, user, setUser, signOut } = useApp();
+  const { colors, user, setUser, signOut } = useApp();
   const router = useRouter();
   const [companyName, setCompanyName] = useState('—');
   const [mealSubsidyLabel, setMealSubsidyLabel] = useState('');
@@ -56,9 +56,7 @@ export default function ProfileScreen() {
     if (confirmed) await signOut();
   };
 
-  const cardBg = isDark ? colors.cardBg : '#FFFFFF';
-
-  const detailRow = (emoji: string, label: string, value: string, valueColor = colors.primary) => (
+  const detailRow = (emoji: string, label: string, value: string, valueColor = colors.brandGold) => (
     <View style={styles.detailRow}>
       <View style={styles.detailLeft}>
         <Text style={styles.emoji}>{emoji}</Text>
@@ -81,18 +79,18 @@ export default function ProfileScreen() {
   );
 
   return (
-    <Page bg={colors.cream}>
+    <Page>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.avatarGrid}>
-          <View style={[styles.avatar, { borderColor: colors.primary }]}>
-            <Image source={require('../../../assets/images/user.png')} style={styles.avatarImage} resizeMode="cover" />
+          <View style={[styles.avatar, { borderColor: colors.brandGold }]}>
+            <Image source={require('../../../../assets/images/user.png')} style={styles.avatarImage} resizeMode="cover" />
           </View>
           <Pressable
             onPress={() => alerts.show('Coming Soon', "Profile photo uploads aren't wired up yet.", 'OK')}
-            style={[styles.camera, { backgroundColor: colors.primary }]}
+            style={[styles.camera, { backgroundColor: colors.brandGold }]}
             accessibilityLabel="Change profile picture"
           >
-            <Text style={{ fontSize: 14, color: colors.onPrimary }}>📷</Text>
+            <Text style={{ fontSize: 14, color: '#FFFFFF' }}>📷</Text>
           </Pressable>
         </View>
 
@@ -101,7 +99,7 @@ export default function ProfileScreen() {
           <Text style={[styles.email, { color: colors.textSecondary }]}>{user.email}</Text>
         </View>
 
-        <Card radius={14} padding={[16, 8]} border={colors.cardBorder} bg={cardBg}>
+        <Card radius={14} padding={[16, 8]} border={colors.surfaceBorder}>
           {detailRow('📆', 'Account Context', `Joined ${fmtMonthYear(user.joinedDate)}`)}
           <Divider />
           {detailRow('🪪', 'Role', user.role)}
@@ -110,7 +108,7 @@ export default function ProfileScreen() {
           {!!mealSubsidyLabel && (
             <>
               <Divider />
-              {detailRow('🍽️', 'Meal Subsidy', mealSubsidyLabel)}
+              {detailRow('🍽️', 'Meal Subsidy', mealSubsidyLabel, colors.primary)}
             </>
           )}
           <Divider />
@@ -122,16 +120,16 @@ export default function ProfileScreen() {
               <Text style={[styles.detailLabel, { color: colors.text }]}>Delivery Floor</Text>
             </View>
             <View style={styles.detailLeft}>
-              <Text style={[styles.detailValue, { color: colors.primary }]}>{user.deliveryFloor.trim() ? user.deliveryFloor : 'Not set'}</Text>
+              <Text style={[styles.detailValue, { color: colors.brandGold }]}>{user.deliveryFloor.trim() ? user.deliveryFloor : 'Not set'}</Text>
               <Text style={[styles.chevronSmall, { color: colors.textSecondary }]}>›</Text>
             </View>
           </Pressable>
         </Card>
 
-        <Card radius={14} padding={[16, 4]} border={colors.cardBorder} bg={cardBg}>
-          {navRow('⚙️', 'Settings', () => router.push('/settings'))}
+        <Card radius={14} padding={[16, 4]} border={colors.surfaceBorder}>
+          {navRow('⚙️', 'Settings', () => router.push('/profile/settings'))}
           <Divider />
-          {navRow('❓', 'Help & Support', () => router.push('/help'))}
+          {navRow('❓', 'Help & Support', () => router.push('/profile/help'))}
         </Card>
 
         <Btn title="Sign Out" onPress={confirmSignOut} variant="dangerOutline" bold radius={10} height={46} />

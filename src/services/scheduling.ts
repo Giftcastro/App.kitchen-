@@ -90,6 +90,12 @@ export function fmtDayLabel(iso: string): string {
   return `${DAYS[d.getDay()]}, ${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()].slice(0, 3)}`;
 }
 
+/** "dd MMM" — e.g. "07 Oct" (the Menu's date pill) */
+export function fmtDayMonth(iso: string): string {
+  const d = fromIso(iso);
+  return `${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()].slice(0, 3)}`;
+}
+
 /** "dddd, dd MMM yyyy" */
 export function fmtLongDate(iso: string): string {
   return `${fmtDayLabel(iso)} ${fromIso(iso).getFullYear()}`;

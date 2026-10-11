@@ -17,15 +17,20 @@ import {
   loadActiveOrderRows,
   updateRowsStatus,
 } from '../../services/adminOrders';
-import { getUsers } from '../../services/directory';
+import { getAllOrders } from '../../services/orders';
 import { todayIso } from '../../services/scheduling';
-import type { Company } from '../../models';
+import type { Company, Order } from '../../models';
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** C#'s {0:N2}: thousands separators, two decimals. */
+const n2 = (value: number) => value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 export default function AdminDashboardScreen() {
-  const { colors, isDark } = useApp();
+  const { colors } = useApp();
   const [rows, setRows] = useState<AdminOrderRow[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [customerCount, setCustomerCount] = useState(0);
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [companyFilter, setCompanyFilter] = useState(ALL_COMPANIES);
   const [dateFilter, setDateFilter] = useState(ALL_DATES);
   const [isBusy, setIsBusy] = useState(false);
@@ -33,10 +38,10 @@ export default function AdminDashboardScreen() {
   const refresh = useCallback(async () => {
     setIsBusy(true);
     try {
-      const [{ rows: loaded, companies: loadedCompanies }, users] = await Promise.all([loadActiveOrderRows(), getUsers()]);
+      const [{ rows: loaded, companies: loadedCompanies }, orders] = await Promise.all([loadActiveOrderRows(), getAllOrders()]);
       setRows(loaded);
       setCompanies(loadedCompanies);
-      setCustomerCount(users.filter(u => u.role === 'Customer').length);
+      setAllOrders(orders);
       const companyOptions = companyFilterOptions(loadedCompanies, loaded);
       const dateOptions = dateFilterOptions(loaded);
       setCompanyFilter(prev => (companyOptions.includes(prev) ? prev : ALL_COMPANIES));
@@ -57,6 +62,11 @@ export default function AdminDashboardScreen() {
   const upcoming = useMemo(() => filterRows(rows, companyFilter, dateFilter), [rows, companyFilter, dateFilter]);
   const today = todayIso();
   const todaysRevenue = rows.filter(r => r.order.deliveryDate === today).reduce((sum, r) => sum + r.order.totalAmount, 0);
+  // totalAmount already includes the delivery fee here, so it's summed as-is.
+  const totalRevenue = allOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const monthToDate = allOrders.filter(o => new Date(o.orderDate).getTime() >= monthStart).reduce((sum, o) => sum + o.totalAmount, 0);
 
   const setStatus = async (row: AdminOrderRow, status: string) => {
     try {
@@ -97,37 +107,36 @@ export default function AdminDashboardScreen() {
     }
   };
 
-  const cardBg = isDark ? colors.cardBg : '#FFFFFF';
-  const kpi = (emoji: string, label: string, value: string, valueColor = colors.text) => (
-    <Card radius={16} border={colors.cardBorder} bg={cardBg} shadow="card" style={styles.kpi}>
+  const kpi = (emoji: string, label: string, value: string) => (
+    <Card radius={16} border={colors.surfaceBorder} shadow="card" style={styles.kpi}>
       <View style={styles.kpiLabelRow}>
         <Text style={{ fontSize: 16 }}>{emoji}</Text>
         <Text style={[styles.kpiLabel, { color: colors.textSecondary }]}>{label}</Text>
       </View>
-      <Text style={[styles.kpiValue, { color: valueColor }]}>{value}</Text>
+      <Text style={[styles.kpiValue, { color: colors.text }]}>{value}</Text>
     </Card>
   );
 
   return (
     <Page>
       <AdminNavStrip activeRoute="admindashboard" />
-      <ScrollView contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={isBusy} onRefresh={refresh} />}>
+      <ScrollView contentContainerStyle={styles.scroll} refreshControl={<RefreshControl refreshing={isBusy} onRefresh={refresh} tintColor={colors.primary} colors={[colors.primary]} />}>
         <View style={styles.kpiGrid}>
-          {kpi('💰', "Today's Deliveries Revenue", `R${todaysRevenue.toFixed(2)}`, isDark ? colors.text : '#121212')}
+          {kpi('💰', "Today's Deliveries Revenue", `R${todaysRevenue.toFixed(2)}`)}
           {kpi('🔥', 'Active Orders', String(rows.length))}
-          {kpi('🏢', 'Client Companies', String(companies.length))}
-          {kpi('👥', 'Registered Customers', String(customerCount))}
+          {kpi('💰', 'Total Revenue (all time)', `R${n2(totalRevenue)}`)}
+          {kpi('📈', `Month to Date (${MONTHS[now.getMonth()]})`, `R${n2(monthToDate)}`)}
         </View>
 
         <View style={styles.queueHeader}>
           <Text style={[styles.heading, { color: colors.text }]}>Upcoming Deliveries</Text>
-          <Btn title="Refresh" onPress={refresh} variant="ghost" color={isDark ? colors.text : '#121212'} fontSize={12} height={32} paddingH={10} />
+          <Btn title="Refresh" onPress={refresh} variant="ghost" color={colors.text} fontSize={12} height={32} paddingH={10} />
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
-          <Text style={[styles.filterLabel, { color: colors.primary }]}>Company:</Text>
+          <Text style={[styles.filterLabel, { color: colors.brandGold }]}>Company:</Text>
           <Picker title="Filter Company" options={companyFilterOptions(companies, rows)} selected={companyFilter} onSelect={setCompanyFilter} width={170} />
-          <Text style={[styles.filterLabel, styles.filterGap, { color: colors.primary }]}>Date:</Text>
+          <Text style={[styles.filterLabel, styles.filterGap, { color: colors.brandGold }]}>Date:</Text>
           <Picker title="Filter Date" options={dateFilterOptions(rows)} selected={dateFilter} onSelect={setDateFilter} width={160} />
         </ScrollView>
 
@@ -137,21 +146,21 @@ export default function AdminDashboardScreen() {
           <Text style={styles.empty}>No upcoming orders match these filters.</Text>
         ) : (
           upcoming.map(row => (
-            <Card key={row.order.id} radius={16} border={colors.cardBorder} bg={cardBg}>
+            <Card key={row.order.id} radius={16} border={colors.surfaceBorder}>
               <View style={styles.rowGap}>
                 <View style={styles.orderHeader}>
                   <View style={styles.flex}>
                     <Text style={[styles.orderNo, { color: colors.text }]}>Order #{row.order.orderNumber}</Text>
                     <Text style={[styles.customer, { color: colors.textSecondary }]}>{row.order.customerName}</Text>
                   </View>
-                  <View style={styles.statusChip}>
-                    <Text style={styles.statusText}>{row.order.status}</Text>
+                  <View style={[styles.statusChip, { backgroundColor: colors.chipBg }]}>
+                    <Text style={[styles.statusText, { color: colors.text }]}>{row.order.status}</Text>
                   </View>
                 </View>
                 <Text style={[styles.meta, { color: colors.textSecondary }]}>
                   {row.companyName} — {row.locationName} — {row.deliveryDateLabel}
                 </Text>
-                <Text style={[styles.item, { color: colors.bodyMuted }]}>{row.order.itemName}</Text>
+                <Text style={[styles.item, { color: colors.textSecondary }]}>{row.order.itemName}</Text>
                 <View style={styles.statusButtons}>
                   <Btn title="Preparing" onPress={() => setStatus(row, 'Preparing')} bg="#1E88E5" color="#FFFFFF" fontSize={11} height={36} radius={8} paddingH={4} style={styles.flex} />
                   <Btn title="Out for Delivery" onPress={() => setStatus(row, 'Out for Delivery')} bg="#FB8C00" color="#FFFFFF" fontSize={10} height={36} radius={8} paddingH={4} style={styles.flex} />
@@ -184,8 +193,8 @@ const styles = StyleSheet.create({
   orderHeader: { flexDirection: 'row', alignItems: 'flex-start' },
   orderNo: { fontSize: 15, fontWeight: '700' },
   customer: { fontSize: 12 },
-  statusChip: { backgroundColor: '#EFE9DC', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
-  statusText: { fontSize: 11, fontWeight: '700', color: '#121212' },
+  statusChip: { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 4 },
+  statusText: { fontSize: 11, fontWeight: '700' },
   meta: { fontSize: 11 },
   item: { fontSize: 13 },
   statusButtons: { flexDirection: 'row', gap: 8 },

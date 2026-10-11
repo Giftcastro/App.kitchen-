@@ -2,18 +2,18 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Text } from '../components/AppText';
-import { alerts } from '../components/Alerts';
-import { Btn, Page } from '../components/ui';
-import { useApp } from '../state/AppState';
-import { setNavParam } from '../state/navParams';
-import { CYCLE_WINDOW, fmtDayLabel, isValidDeliveryDate, STATIC_WINDOW } from '../services/scheduling';
-import { getCompany, getDeliveryLocation } from '../services/directory';
-import { getDiscounts } from '../services/promos';
-import { quoteCart } from '../services/pricing';
-import { fixed } from '../utils/theme';
-import { lineTotal } from '../models';
-import type { Company, CompanyLocation, Discount } from '../models';
+import { Text } from '../../../components/AppText';
+import { alerts } from '../../../components/Alerts';
+import { Btn, Page } from '../../../components/ui';
+import { useApp } from '../../../state/AppState';
+import { setNavParam } from '../../../state/navParams';
+import { CYCLE_WINDOW, fmtDayLabel, isValidDeliveryDate, STATIC_WINDOW } from '../../../services/scheduling';
+import { getCompany, getDeliveryLocation } from '../../../services/directory';
+import { getDiscounts } from '../../../services/promos';
+import { quoteCart } from '../../../services/pricing';
+import { fixed } from '../../../utils/theme';
+import { lineTotal } from '../../../models';
+import type { Company, CompanyLocation, Discount } from '../../../models';
 
 export default function CartScreen() {
   const { colors, isDark, user, cartItems, removeCartItem, setCartQuantity } = useApp();
@@ -68,7 +68,7 @@ export default function CartScreen() {
   };
 
   return (
-    <Page bg={colors.cream}>
+    <Page>
       <View style={styles.fill}>
         <FlatList
           data={cartItems}
@@ -81,7 +81,7 @@ export default function CartScreen() {
             </View>
           }
           renderItem={({ item }) => (
-            <View style={[styles.item, { backgroundColor: isDark ? colors.cardBg : '#FFFFFF' }]}>
+            <View style={[styles.item, { backgroundColor: colors.cardBg }]}>
               <View style={styles.itemTop}>
                 <View style={styles.itemInfo}>
                   <Text style={[styles.itemName, { color: colors.text }]}>{item.product.name}</Text>
@@ -104,7 +104,7 @@ export default function CartScreen() {
                 <View style={styles.stepper}>
                   <Pressable
                     onPress={() => decrease(item.key, item.quantity)}
-                    style={[styles.stepBtn, { backgroundColor: isDark ? '#333333' : '#E0E0E0' }]}
+                    style={[styles.stepBtn, { backgroundColor: colors.surfaceBorder }]}
                     accessibilityLabel="Decrease quantity"
                   >
                     <Text style={[styles.stepText, { color: isDark ? '#FFFFFF' : '#000000' }]}>-</Text>
@@ -127,7 +127,7 @@ export default function CartScreen() {
         />
 
         {hasItems && (
-          <View style={[styles.board, { backgroundColor: isDark ? colors.cardBg : '#FFFFFF' }]}>
+          <View style={[styles.board, { backgroundColor: colors.cardBg }]}>
             <View style={styles.row}>
               <Text style={styles.mealLabel}>Meal Total:</Text>
               <Text style={styles.mealValue}>R{quote.cartTotal.toFixed(2)}</Text>
@@ -146,11 +146,11 @@ export default function CartScreen() {
             )}
             {!!quote.deliveryFeeLabel && (
               <View style={styles.row}>
-                <Text style={[styles.feeLabel, quote.isOutsideDeliveryRange && styles.feeLabelBad]}>{quote.deliveryFeeLabel}</Text>
+                <Text style={[styles.feeLabel, quote.isOutsideDeliveryRange && [styles.feeLabelBad, { color: colors.error }]]}>{quote.deliveryFeeLabel}</Text>
                 {!quote.isOutsideDeliveryRange && <Text style={[styles.feeValue, { color: colors.text }]}>R{quote.deliveryFee.toFixed(2)}</Text>}
               </View>
             )}
-            {!!quote.subsidyLabel && <View style={[styles.divider, { backgroundColor: isDark ? '#333333' : '#E0E0E0' }]} />}
+            {!!quote.subsidyLabel && <View style={[styles.divider, { backgroundColor: colors.surfaceBorder }]} />}
             <View style={styles.row}>
               <Text style={[styles.payLabel, { color: colors.text }]}>You Pay:</Text>
               <Text style={[styles.payValue, { color: colors.primary }]}>R{quote.amountDue.toFixed(2)}</Text>
@@ -194,7 +194,7 @@ const styles = StyleSheet.create({
   subsidyLabel: { flex: 1, fontSize: 12 },
   subsidyValue: { fontSize: 16, fontWeight: '700' },
   feeLabel: { flex: 1, fontSize: 12, color: 'gray' },
-  feeLabelBad: { color: '#C62828', fontWeight: '700' },
+  feeLabelBad: { fontWeight: '700' },
   feeValue: { fontSize: 14, fontWeight: '700' },
   divider: { height: 1 },
   payLabel: { fontSize: 16, fontWeight: '700' },

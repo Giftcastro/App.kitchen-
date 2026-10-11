@@ -1,86 +1,49 @@
-/** SelectDeliveryDayPage.xaml + SelectDeliveryDayViewModel. */
-import React, { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+/**
+ * SelectDeliveryDayPage.xaml + SelectDeliveryDayViewModel — the mandatory
+ * first pick after sign-in, full screen with no nav bar. Changing the day
+ * later happens in DeliveryDayOverlay on the Menu / Product pages instead.
+ */
+import React from 'react';
+import { StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Text } from '../components/AppText';
-import { Btn, Page } from '../components/ui';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Btn } from '../components/ui';
+import { DeliveryDayPanel } from '../components/DeliveryDayPicker';
 import { useApp } from '../state/AppState';
-import { fmtDayLabel, getOrderableDeliveryDates, STATIC_WINDOW } from '../services/scheduling';
+import { STATIC_WINDOW } from '../services/scheduling';
 
 export default function SelectDeliveryDayScreen() {
-  const { colors, isDark, selectedOrderingDate, setSelectedOrderingDate } = useApp();
+  const { colors, setSelectedOrderingDate } = useApp();
   const router = useRouter();
-  // Widest window (10 weekdays) so this one screen covers both menus.
-  const [dates] = useState(() => getOrderableDeliveryDates(STATIC_WINDOW));
-  const [selected, setSelected] = useState<string | null>(
-    selectedOrderingDate && dates.includes(selectedOrderingDate) ? selectedOrderingDate : dates[0] ?? null
-  );
-  // Reached mid-session (Change day / "Order for a different day") rather than right after login.
-  const [isChangingDay] = useState(() => selectedOrderingDate !== null);
 
-  const confirm = () => {
-    if (!selected) return;
-    setSelectedOrderingDate(selected);
-    if (isChangingDay && router.canGoBack()) router.back();
-    else router.replace('/');
+  // Skip / View my orders: the highlighted (earliest) day becomes the default so the Menu still has a date.
+  const enter = (date: string | null, path: string) => {
+    if (date) setSelectedOrderingDate(date);
+    router.replace(path as never);
   };
 
   return (
-    <Page>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <Image
-          source={isDark ? require('../../assets/images/yourkcodark.png') : require('../../assets/images/yourkcolight.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-        <View style={styles.titles}>
-          <Text style={[styles.title, { color: colors.text }]}>Which day are you ordering for?</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            This sets the default delivery day for everything you add to your basket. You can change it any time.
-          </Text>
-        </View>
-        <View style={styles.grid}>
-          {dates.map(date => {
-            const isSelected = date === selected;
-            return (
-              <Pressable
-                key={date}
-                onPress={() => setSelected(date)}
-                accessibilityRole="radio"
-                aria-checked={isSelected}
-                style={[
-                  styles.option,
-                  { borderColor: colors.primary, backgroundColor: isSelected ? colors.primary : isDark ? colors.cardBg : '#FFFFFF' },
-                ]}
-              >
-                <Text style={[styles.optionText, { color: isSelected ? colors.onPrimary : colors.text }]}>{fmtDayLabel(date)}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Btn testID="confirm-day" title="Confirm" onPress={confirm} bold height={50} radius={12} style={styles.confirm} />
-      </ScrollView>
-    </Page>
+    <SafeAreaView edges={['top']} style={[styles.fill, { backgroundColor: colors.pageBg }]}>
+      <DeliveryDayPanel
+        // Widest window (10 weekdays) so this one screen covers both menus.
+        windowDays={STATIC_WINDOW}
+        titleSize={24}
+        subtitle="This sets the default delivery day for everything you add to your basket. You can change it any time."
+        onConfirm={date => enter(date, '/')}
+        footer={selected => (
+          <View style={styles.row}>
+            <Btn title="Skip for now" onPress={() => enter(selected, '/')} variant="outline" color={colors.primary} borderColor={colors.primary} bold height={46} radius={12} style={[styles.flex, styles.thick]} />
+            <Btn title="View my orders" onPress={() => enter(selected, '/orders')} variant="outline" color={colors.primary} borderColor={colors.primary} bold height={46} radius={12} style={[styles.flex, styles.thick]} />
+          </View>
+        )}
+      />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  scroll: { padding: 24, gap: 20 },
-  logo: { width: '100%', height: 70, marginTop: 10 },
-  titles: { gap: 4, alignItems: 'center' },
-  title: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
-  subtitle: { fontSize: 13, textAlign: 'center' },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  option: {
-    width: '48%',
-    flexGrow: 1,
-    height: 66,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 16,
-    justifyContent: 'center',
-  },
-  optionText: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
-  confirm: { marginTop: 10 },
+  fill: { flex: 1 },
+  flex: { flex: 1 },
+  thick: { borderWidth: 1.5 },
+  row: { flexDirection: 'row', gap: 10 },
 });

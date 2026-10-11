@@ -1,15 +1,17 @@
 /**
- * Colour tokens, 1:1 with the YourKitchenCo MAUI app's
- * Resources/Styles/Colors.xaml (qwertystig/KitchenCO main) — each token is
- * the {AppThemeBinding Light=..., Dark=...} pair the MAUI views use, so a
- * screen ported from a .xaml file reads the same token names it bound to.
+ * Colour tokens, 1:1 with the YourKitchenCo MAUI app (qwertystig/KitchenCO,
+ * rebrand/colors-and-parity): Resources/Styles/Colors.xaml is the "Ink &
+ * Cream" theme, and Resources/Styles/Themes/MediterraneanPantryTheme.xaml
+ * re-defines the brand keys for "Mediterranean Pantry". Settings > App Theme
+ * switches between them; each has its own light and dark values.
  *
- * Base is black/white monochrome. `brandPop` (the client's CI blue) is kept
- * to the same three narrow spots as MAUI: the selected tab icon, the glow
- * behind the login logo, and the delivery-day calendar icon.
+ * Token names follow the XAML resource keys: `primary` = Primary/PrimaryDark,
+ * `onPrimary` = the Light=White / Dark=PrimaryDarkText pairing every
+ * button on the accent uses, `brandGold` = BrandGold/BrandGoldDark, etc.
  */
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedScheme = 'light' | 'dark';
+export type BrandTheme = 'Current' | 'MediterraneanPantry';
 
 export interface ThemeColors {
   /** PageBgLight / PageBgDark */
@@ -20,188 +22,191 @@ export interface ThemeColors {
   text: string;
   /** SecondaryTextLight / SecondaryTextDark */
   textSecondary: string;
-  /** Primary / PrimaryDark — every primary button and accent. Also BrandGold, Gold, Secondary, Tertiary (all monochrome). */
+  /** Primary / PrimaryDark — buttons, prices, accents. Gold/GoldDark share it. */
   primary: string;
-  /** Text on top of `primary`: White / PrimaryDarkText */
+  /** Text on `primary`: White (light) / PrimaryDarkText (dark) */
   onPrimary: string;
-  /** BrandPop / BrandPopDark */
-  brandPop: string;
-  /** BrandPopGlowOuter* (5%) */
-  brandPopGlowOuter: string;
-  /** BrandPopGlowInner* (9%) */
-  brandPopGlowInner: string;
+  /** BrandGold / BrandGoldDark — secondary accent (labels, admin buttons, switches) */
+  brandGold: string;
+  /** Text on `brandGold`: White (light) / PrimaryDarkText (dark) */
+  onBrandGold: string;
   /** SurfaceBorderLight / SurfaceBorderDark */
   surfaceBorder: string;
-  /** Cream on Menu/Cart/Orders/Profile/Payment in light mode; PageBgDark in dark */
-  cream: string;
-  /** Entry borders (#E0E0E0 / #333333) */
-  inputBorder: string;
-  /** Card borders on Profile/Settings/Orders (#E0E0E0 / #252525) */
-  cardBorder: string;
-  /** Warm tan chip/notice background (#EFE9DC / #242426) */
-  tan: string;
-  /** Admin card surfaces (White / #1E1E1E) */
-  adminCard: string;
-  /** Menu toggle track (#EFEFEF / #1E1E1E) */
-  segmentTrack: string;
-  /** Unselected menu toggle text (#777777 / #AAAAAA) */
-  segmentText: string;
-  /** Cart count badge (#DC2626 / #F87171) */
-  badge: string;
-  /** Floating cart bar (#121212 / #F7F2E8) */
-  floatingBar: string;
-  /** Text on the floating cart bar (White / #121212) */
-  onFloatingBar: string;
-  /** Muted text on the floating cart bar (#A6FFFFFF / #A6121212) */
-  onFloatingBarMuted: string;
-  /** Watermark badge behind empty-state emoji (#10000000 / #15FFFFFF) */
-  watermark: string;
-  /** Plain-entry placeholder colour (Gray200 / Gray500) */
-  placeholder: string;
-  /** Disabled button background (Gray200 / Gray600) */
-  disabledBg: string;
-  /** Disabled button text (Gray950 / Gray200) */
-  disabledText: string;
-  /** Divider under the admin nav strip (#E0E0E0 / #2E2E32) */
-  navDivider: string;
-  /** Dashboard order item text (#333333 / #CCCCCC) */
-  bodyMuted: string;
-  /** Help tip text (#4E4E4E / #A1A1AA) */
-  tipText: string;
-  /** Product detail editor (#F5F5F5 / #2A2A2A) */
-  editorBg: string;
-  /** Order history icon tile (#F5F5F5 / #1F1F1F) */
-  tileBg: string;
+  /** ChipBgLight / ChipBgDark — chips, pills, toggles, notices */
+  chipBg: string;
+  /** MutedTextLight / MutedTextDark */
+  mutedText: string;
+  /** TabBarBg* — bottom tab bar */
+  tabBarBg: string;
+  /** TabBarText* — selected tab */
+  tabBarText: string;
+  /** TabBarUnselected* */
+  tabBarUnselected: string;
+  /** HeaderBg* — the Menu's header band */
+  headerBg: string;
+  /** HeaderChipBg* — cart button / admin-preview banner on the band */
+  headerChipBg: string;
+  /** Which logo reads on the header band: 'light' = yourkcolight.png (dark ink), 'dark' = yourkcodark.png (cream ink) */
+  headerLogo: 'light' | 'dark';
+  /** SubtleFill — translucent neutral buttons/tiles */
+  subtleFill: string;
+  /** SubtleFillStrong — translucent badges */
+  subtleFillStrong: string;
+  /** ErrorLight / ErrorDark */
   error: string;
+  /** SuccessLight / SuccessDark */
   success: string;
-  warning: string;
-  info: string;
-  /** Status bar content */
+  /** Styles.xaml's default Entry/Editor placeholder (Gray200 / Gray500) */
+  placeholder: string;
+  /** Styles.xaml's disabled Button (Gray200 / Gray600 background, Gray950 / Gray200 text) */
+  disabledBg: string;
+  disabledText: string;
   statusBarStyle: 'light-content' | 'dark-content';
 }
 
-export const lightColors: ThemeColors = {
-  pageBg: '#FFFFFF',
+const inkLight: ThemeColors = {
+  pageBg: '#F7F2E8',
   cardBg: '#FFFFFF',
-  text: '#000000',
-  textSecondary: '#6B6B6B',
-  primary: '#000000',
+  text: '#121212',
+  textSecondary: '#4E4E4E',
+  primary: '#121212',
   onPrimary: '#FFFFFF',
-  brandPop: '#3571B7',
-  brandPopGlowOuter: 'rgba(53,113,183,0.05)',
-  brandPopGlowInner: 'rgba(53,113,183,0.09)',
-  surfaceBorder: '#EBEBEB',
-  cream: '#FDF9E9',
-  inputBorder: '#E0E0E0',
-  cardBorder: '#E0E0E0',
-  tan: '#EFE9DC',
-  adminCard: '#FFFFFF',
-  segmentTrack: '#EFEFEF',
-  segmentText: '#777777',
-  badge: '#DC2626',
-  floatingBar: '#121212',
-  onFloatingBar: '#FFFFFF',
-  onFloatingBarMuted: 'rgba(255,255,255,0.65)',
-  watermark: 'rgba(0,0,0,0.063)',
+  brandGold: '#121212',
+  onBrandGold: '#FFFFFF',
+  surfaceBorder: '#E5DFD3',
+  chipBg: '#EFE9DC',
+  mutedText: '#888888',
+  tabBarBg: '#121212',
+  tabBarText: '#FFFFFF',
+  tabBarUnselected: '#B7B0A2',
+  headerBg: '#F7F2E8',
+  headerChipBg: '#121212',
+  headerLogo: 'light',
+  subtleFill: 'rgba(136,136,136,0.133)',
+  subtleFillStrong: 'rgba(18,18,18,0.133)',
+  error: '#DC2626',
+  success: '#059669',
   placeholder: '#C8C8C8',
   disabledBg: '#C8C8C8',
   disabledText: '#141414',
-  navDivider: '#E0E0E0',
-  bodyMuted: '#333333',
-  tipText: '#4E4E4E',
-  editorBg: '#F5F5F5',
-  tileBg: '#F5F5F5',
-  error: '#AF1718',
-  success: '#1DA836',
-  warning: '#E8A100',
-  info: '#0073E6',
   statusBarStyle: 'dark-content',
 };
 
-export const darkColors: ThemeColors = {
-  pageBg: '#0B0B0B',
-  cardBg: '#141414',
-  text: '#FFFFFF',
-  textSecondary: '#A0A0A0',
-  primary: '#FFFFFF',
-  onPrimary: '#000000',
-  brandPop: '#B6DFF8',
-  brandPopGlowOuter: 'rgba(182,223,248,0.05)',
-  brandPopGlowInner: 'rgba(182,223,248,0.09)',
-  surfaceBorder: '#2C2C2C',
-  cream: '#0B0B0B',
-  inputBorder: '#333333',
-  cardBorder: '#252525',
-  tan: '#242426',
-  adminCard: '#1E1E1E',
-  segmentTrack: '#1E1E1E',
-  segmentText: '#AAAAAA',
-  badge: '#F87171',
-  floatingBar: '#F7F2E8',
-  onFloatingBar: '#121212',
-  onFloatingBarMuted: 'rgba(18,18,18,0.65)',
-  watermark: 'rgba(255,255,255,0.082)',
+const inkDark: ThemeColors = {
+  pageBg: '#121212',
+  cardBg: '#1C1C1E',
+  text: '#F7F2E8',
+  textSecondary: '#A1A1AA',
+  primary: '#F7F2E8',
+  onPrimary: '#121212',
+  brandGold: '#F7F2E8',
+  onBrandGold: '#121212',
+  surfaceBorder: '#2E2E32',
+  chipBg: '#242426',
+  mutedText: '#AAAAAA',
+  tabBarBg: '#F7F2E8',
+  tabBarText: '#121212',
+  tabBarUnselected: '#6E6E72',
+  headerBg: '#121212',
+  headerChipBg: '#F7F2E8',
+  headerLogo: 'dark',
+  subtleFill: 'rgba(136,136,136,0.133)',
+  subtleFillStrong: 'rgba(18,18,18,0.133)',
+  error: '#F87171',
+  success: '#34D399',
   placeholder: '#6E6E6E',
   disabledBg: '#404040',
   disabledText: '#C8C8C8',
-  navDivider: '#2E2E32',
-  bodyMuted: '#CCCCCC',
-  tipText: '#A1A1AA',
-  editorBg: '#2A2A2A',
-  tileBg: '#1F1F1F',
-  error: '#CB6869',
-  success: '#22C55E',
-  warning: '#F5A623',
-  info: '#3B9EFF',
   statusBarStyle: 'light-content',
 };
+
+/** MediterraneanPantryTheme.xaml — everything it doesn't define falls through to Ink & Cream. */
+const pantryLight: ThemeColors = {
+  ...inkLight,
+  pageBg: '#FBF7E7',
+  cardBg: '#FFFFFF',
+  text: '#33351D',
+  textSecondary: '#6B6B4F',
+  surfaceBorder: '#E7E0C4',
+  primary: '#D53220',
+  onPrimary: '#FFFFFF',
+  brandGold: '#507B45',
+  onBrandGold: '#FFFFFF',
+  chipBg: '#F1ECD3',
+  mutedText: '#8A8A6E',
+  tabBarBg: '#363C1E',
+  tabBarText: '#F5E8A6',
+  tabBarUnselected: '#A9B98A',
+  headerBg: '#363C1E',
+  headerChipBg: '#D53220',
+  headerLogo: 'dark',
+  subtleFill: 'rgba(80,123,69,0.149)',
+  subtleFillStrong: 'rgba(213,50,32,0.149)',
+};
+
+const pantryDark: ThemeColors = {
+  ...inkDark,
+  pageBg: '#1A1D10',
+  cardBg: '#242816',
+  text: '#F5E8A6',
+  textSecondary: '#A9B98A',
+  surfaceBorder: '#33361F',
+  primary: '#F5E8A6',
+  onPrimary: '#363C1E',
+  brandGold: '#C4D29B',
+  onBrandGold: '#363C1E',
+  chipBg: '#2E321D',
+  mutedText: '#9AA882',
+  tabBarBg: '#F5E8A6',
+  tabBarText: '#363C1E',
+  tabBarUnselected: '#8A8F63',
+  headerBg: '#F5E8A6',
+  headerChipBg: '#363C1E',
+  headerLogo: 'light',
+  subtleFill: 'rgba(80,123,69,0.149)',
+  subtleFillStrong: 'rgba(213,50,32,0.149)',
+};
+
+export function getThemeColors(scheme: ResolvedScheme, brand: BrandTheme = 'Current'): ThemeColors {
+  if (brand === 'MediterraneanPantry') return scheme === 'dark' ? pantryDark : pantryLight;
+  return scheme === 'dark' ? inkDark : inkLight;
+}
+
+/** Settings > App Theme swatches. */
+export const BRAND_THEMES: { key: BrandTheme; label: string; swatch: string }[] = [
+  { key: 'MediterraneanPantry', label: 'Mediterranean Pantry', swatch: '#D53220' },
+  { key: 'Current', label: 'Ink & Cream', swatch: '#121212' },
+];
 
 /**
  * Native colours MAUI sets outside Colors.xaml:
  * Platforms/Android/Resources/values/colors.xml (colorPrimary/Dark/Accent —
- * the Android status bar, text cursor/selection and focused field
- * underline) and the csproj's MauiIcon/MauiSplashScreen Color.
+ * the Android status bar, text cursor/selection) and the csproj's
+ * MauiIcon/MauiSplashScreen Color.
  */
 export const native = {
   androidPrimary: '#2B0B98',
   splash: '#AF1718',
 };
 
-/** Fixed colours MAUI hardcodes in both themes. */
+/** Fixed colours MAUI hardcodes in every theme. */
 export const fixed = {
   /** Allergy / dispute amber text */
   amber: '#B45309',
   /** Allergy / dispute amber background (#1AF59E0B) */
   amberBg: 'rgba(245,158,11,0.10)',
-  /** Allergy editor focused (#33F59E0B) */
-  amberBgStrong: 'rgba(245,158,11,0.20)',
-  /** Destructive outline (Sign Out) */
-  danger: '#C62828',
-  /** Logout / delete outline */
-  dangerBright: '#DC2626',
-  /** Success green used by Register's auto-match tick and the confirmation badge */
+  /** Confirmation tick */
   green: '#059669',
   greenBg: 'rgba(5,150,105,0.10)',
-  /** Ordering-closed notice */
-  noticeBg: '#FFF3CD',
-  noticeText: '#856404',
-  /** Neutral translucent admin buttons (#22888888) */
-  neutralButton: 'rgba(136,136,136,0.13)',
-  /** Admin status/role badge (#22121212) */
-  badgeBg: 'rgba(18,18,18,0.13)',
-  muted: '#888888',
-  faint: '#AAAAAA',
-  nearBlack: '#121212',
+  /** Admin quick-status buttons */
+  statusPreparing: '#1E88E5',
+  statusOutForDelivery: '#FB8C00',
+  statusDelivered: '#43A047',
+  /** Admin Users: Activate / Suspended label */
+  activate: '#2E7D32',
+  suspendedText: '#E53935',
 };
 
-/**
- * Phone-like frame width: on viewports wider than this (desktop web), the app
- * renders as a centered mobile-width column.
- */
 export const APP_MAX_WIDTH = 480;
 export const TABLET_MAX_WIDTH = 720;
 export const TABLET_BREAKPOINT = 600;
-
-export function getThemeColors(mode: ResolvedScheme): ThemeColors {
-  return mode === 'dark' ? darkColors : lightColors;
-}

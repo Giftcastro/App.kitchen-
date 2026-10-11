@@ -1,9 +1,9 @@
 /** CancellationPolicyPage.xaml. */
 import React from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { Text } from '../components/AppText';
-import { Card, Page } from '../components/ui';
-import { useApp } from '../state/AppState';
+import { Text } from '../../../components/AppText';
+import { Card, Page } from '../../../components/ui';
+import { useApp } from '../../../state/AppState';
 
 const SECTIONS: [string, string][] = [
   [

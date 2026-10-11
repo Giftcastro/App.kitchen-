@@ -99,9 +99,9 @@ export function Btn({
     primary: { bg: colors.primary, fg: colors.onPrimary },
     outline: { bg: 'transparent', fg: colors.text, border: colors.surfaceBorder },
     ghost: { bg: 'transparent', fg: colors.primary },
-    neutral: { bg: 'rgba(136,136,136,0.13)', fg: colors.text },
-    danger: { bg: '#C62828', fg: '#FFFFFF' },
-    dangerOutline: { bg: 'transparent', fg: '#C62828', border: '#C62828' },
+    neutral: { bg: colors.subtleFill, fg: colors.text },
+    danger: { bg: colors.error, fg: '#FFFFFF' },
+    dangerOutline: { bg: 'transparent', fg: colors.error, border: colors.error },
   };
   const p = palette[variant];
   const background = disabled ? colors.disabledBg : bg ?? p.bg;
@@ -186,7 +186,7 @@ export function Card({
 
 export function Divider({ color, style }: { color?: string; style?: StyleProp<ViewStyle> }) {
   const { colors } = useApp();
-  return <View style={[{ height: 1, backgroundColor: color ?? colors.cardBorder }, style]} />;
+  return <View style={[{ height: 1, backgroundColor: color ?? colors.surfaceBorder }, style]} />;
 }
 
 /** Login/Register-style entry: 50pt rounded border box. */
@@ -205,15 +205,15 @@ export function BoxEntry({
   keyboardType?: KeyboardTypeOptions;
   testID?: string;
 }) {
-  const { colors, isDark } = useApp();
+  const { colors } = useApp();
   return (
-    <View style={[styles.boxEntry, { borderColor: colors.inputBorder, backgroundColor: isDark ? colors.cardBg : '#FFFFFF' }]}>
+    <View style={[styles.boxEntry, { borderColor: colors.surfaceBorder, backgroundColor: colors.cardBg }]}>
       <TextInput
         testID={testID}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#888888"
+        placeholderTextColor={colors.mutedText}
         secureTextEntry={secure}
         keyboardType={keyboardType}
         autoCapitalize={keyboardType === 'email-address' || secure ? 'none' : 'sentences'}
@@ -381,7 +381,7 @@ export function EmptyState({ emoji, title, message, badge }: { emoji: string; ti
   return (
     <View style={styles.empty}>
       {badge ? (
-        <View style={[styles.watermark, { backgroundColor: colors.watermark }]}>
+        <View style={[styles.watermark, { backgroundColor: colors.subtleFill }]}>
           <Text style={{ fontSize: 36, opacity: 0.8 }}>{emoji}</Text>
         </View>
       ) : (

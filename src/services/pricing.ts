@@ -1,13 +1,14 @@
 /**
  * The basket's money, computed by the same rules place_order applies
- * (supabase/migrations/0008_maui_parity.sql) so what the Cart and Payment
+ * (supabase/migrations/0009_company_delivery_fee.sql) so what the Cart and Payment
  * screens show is what the customer is actually charged:
  *
  *   subtotal   sum of unit price x quantity
  *   discount   the best active discount code that applies, % of subtotal,
  *              plus the company's own discount on what's left after subsidy
  *   subsidy    company accounts: per-meal subsidy x meals, capped
- *   delivery   one flat fee per checkout, by the location's distance band
+ *   delivery   one fee per checkout: the company's own setting (free / flat),
+ *              otherwise the location's distance band
  *
  * Delivery fee bands are MAUI's DeliveryFeeCalculator (same as the
  * database's calculate_delivery_fee_cents).
@@ -87,7 +88,17 @@ export function quoteCart(
   let deliveryFee = 0;
   let deliveryFeeLabel = '';
   let isOutsideDeliveryRange = false;
-  if (location && items.length > 0) {
+  const companyDelivery = user?.accountType === 'company' ? company : null;
+  if (items.length > 0 && companyDelivery?.deliveryFeeMode === 'Free') {
+    // Company-level override (Admin > Companies > Delivery) wins over the distance tier.
+    deliveryFeeLabel = `Delivery: Free (covered by ${companyDelivery.name})`;
+  } else if (items.length > 0 && companyDelivery?.deliveryFeeMode === 'Flat') {
+    deliveryFee = Math.max(0, companyDelivery.flatDeliveryFee);
+    deliveryFeeLabel =
+      deliveryFee === 0
+        ? `Delivery: Free (covered by ${companyDelivery.name})`
+        : `Delivery (flat rate for ${companyDelivery.name}): R${deliveryFee.toFixed(2)}`;
+  } else if (location && items.length > 0) {
     if (!location.distanceKnown) {
       isOutsideDeliveryRange = true;
       deliveryFeeLabel = 'No delivery distance is set for your location yet — please contact us';

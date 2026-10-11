@@ -1,6 +1,10 @@
-/** AdminActiveOrdersPage.xaml + AdminActiveOrdersViewModel. */
+/**
+ * AdminActiveOrdersPage.xaml + AdminActiveOrdersViewModel. Downloads work
+ * on the orders behind the current Company + Date filters (services/
+ * kitchenExports); PDF / Excel go to the share sheet, or download on web.
+ */
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, ScrollView, Share, StyleSheet, View } from 'react-native';
+import { FlatList, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Text } from '../../components/AppText';
 import { alerts } from '../../components/Alerts';
@@ -17,19 +21,13 @@ import {
   loadActiveOrderRows,
   updateRowsStatus,
 } from '../../services/adminOrders';
-import { fmtGenerated } from '../../services/scheduling';
-import { fixed } from '../../utils/theme';
+import { buildPrepSummary, KitchenExports } from '../../services/kitchenExports';
 import type { Company } from '../../models';
-
-interface PrepSummaryItem {
-  dishName: string;
-  totalQuantity: number;
-}
 
 const STATUSES = ['Received', 'Preparing', 'Out for Delivery', 'Delivered'];
 
 export default function AdminActiveOrdersScreen() {
-  const { colors, isDark } = useApp();
+  const { colors } = useApp();
   const [rows, setRows] = useState<AdminOrderRow[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyFilter, setCompanyFilter] = useState(ALL_COMPANIES);
@@ -65,13 +63,7 @@ export default function AdminActiveOrdersScreen() {
   );
 
   const orders = useMemo(() => filterRows(rows, companyFilter, dateFilter), [rows, companyFilter, dateFilter]);
-
-  // Bulk kitchen prep list: the same filtered orders, totalled per dish.
-  const prepSummary: PrepSummaryItem[] = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const row of orders) for (const line of row.order.lines) totals.set(line.name, (totals.get(line.name) ?? 0) + line.quantity);
-    return [...totals.entries()].map(([dishName, totalQuantity]) => ({ dishName, totalQuantity })).sort((a, b) => b.totalQuantity - a.totalQuantity);
-  }, [orders]);
+  const prepSummary = useMemo(() => buildPrepSummary(orders), [orders]);
 
   const updateStatus = async (row: AdminOrderRow) => {
     const action = await alerts.actionSheet(`Update Status for Order #${row.order.orderNumber}`, 'Cancel', ...STATUSES);
@@ -84,78 +76,17 @@ export default function AdminActiveOrdersScreen() {
     }
   };
 
-  const markAllFiltered = async () => {
+  /** Runs one download / print for the filtered orders, with MAUI's empty-filter guard. */
+  const exportWith = async (run: (exports: KitchenExports) => Promise<void>, emptyTitle = 'Nothing to Export') => {
     if (orders.length === 0) {
-      await alerts.show('No Orders', 'There are no orders matching the current filters.', 'OK');
+      await alerts.show(emptyTitle, 'There are no orders matching the current filters.', 'OK');
       return;
     }
-    const action = await alerts.actionSheet(`Mark all ${orders.length} filtered order(s) as...`, 'Cancel', ...STATUSES);
-    if (!action) return;
-    const confirmed = await alerts.confirm(
-      'Confirm Bulk Update',
-      `Set all ${orders.length} order(s) for ${companyFilter} / ${dateFilter} to "${action}"?`,
-      'Confirm',
-      'Cancel'
-    );
-    if (!confirmed) return;
-    const count = orders.length;
-    setIsBusy(true);
     try {
-      await updateRowsStatus(orders, action);
-      await refresh();
-      await alerts.show('Updated', `${count} order(s) marked as ${action}.`, 'OK');
+      await run(new KitchenExports(orders, companyFilter, dateFilter));
     } catch (err) {
-      setIsBusy(false);
-      await alerts.show('Not Updated', (err as Error)?.message ?? 'Could not update these orders.', 'OK');
+      await alerts.show('Export Failed', (err as Error)?.message ?? 'The file could not be created.', 'OK');
     }
-  };
-
-  const printOrderSheet = async () => {
-    if (orders.length === 0) {
-      await alerts.show('Nothing to Print', 'There are no orders matching the current filters.', 'OK');
-      return;
-    }
-    const groups = new Map<string, AdminOrderRow[]>();
-    for (const row of orders) {
-      const key = `${row.companyName} — ${row.locationName}`;
-      groups.set(key, [...(groups.get(key) ?? []), row]);
-    }
-    const out = [
-      'YOUR KITCHEN CO. — ORDER SHEET',
-      `Company: ${companyFilter}    Date: ${dateFilter}`,
-      `Generated: ${fmtGenerated()}`,
-      '-'.repeat(42),
-    ];
-    for (const key of [...groups.keys()].sort()) {
-      out.push('', key);
-      for (const row of groups.get(key)!.sort((a, b) => a.order.deliveryDate.localeCompare(b.order.deliveryDate))) {
-        out.push(
-          `  [${row.deliveryDateLabel}] #${row.order.orderNumber} — ${row.order.customerName}: ${row.order.itemName} (R${row.order.totalAmount.toFixed(2)}) — ${row.order.status}`
-        );
-        if (row.order.allergyNotes) out.push(`      ⚠️ ALLERGY: ${row.order.allergyNotes}`);
-      }
-    }
-    out.push('', '-'.repeat(42), `Total orders: ${orders.length}`);
-    await Share.share({ message: out.join('\n'), title: 'Order Sheet' });
-  };
-
-  const printPrepSheet = async () => {
-    if (prepSummary.length === 0) {
-      await alerts.show('Nothing to Print', 'There are no orders matching the current filters.', 'OK');
-      return;
-    }
-    const out = [
-      'YOUR KITCHEN CO. — KITCHEN PREP SHEET',
-      `Company: ${companyFilter}    Date: ${dateFilter}`,
-      `Generated: ${fmtGenerated()}`,
-      '-'.repeat(42),
-      '',
-      ...prepSummary.map(p => `  ${String(p.totalQuantity).padStart(3)}x  ${p.dishName}`),
-      '',
-      '-'.repeat(42),
-      `Total meals: ${prepSummary.reduce((sum, p) => sum + p.totalQuantity, 0)}   Distinct dishes: ${prepSummary.length}`,
-    ];
-    await Share.share({ message: out.join('\n'), title: 'Kitchen Prep Sheet' });
   };
 
   const viewToggle = (label: string, prep: boolean) => {
@@ -176,15 +107,13 @@ export default function AdminActiveOrdersScreen() {
     );
   };
 
-  const cardBg = isDark ? '#1E1E1E' : '#FFFFFF';
-
   return (
     <Page>
       <AdminNavStrip activeRoute="adminactiveorders" />
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersWrap} contentContainerStyle={styles.filters}>
-        <Text style={[styles.filterLabel, { color: colors.primary }]}>Company:</Text>
+        <Text style={[styles.filterLabel, { color: colors.brandGold }]}>Company:</Text>
         <Picker title="Filter Company" options={companyFilterOptions(companies, rows)} selected={companyFilter} onSelect={setCompanyFilter} width={180} />
-        <Text style={[styles.filterLabel, styles.filterGap, { color: colors.primary }]}>Date:</Text>
+        <Text style={[styles.filterLabel, styles.filterGap, { color: colors.brandGold }]}>Date:</Text>
         <Picker title="Filter Date" options={dateFilterOptions(rows)} selected={dateFilter} onSelect={setDateFilter} width={170} />
       </ScrollView>
 
@@ -193,15 +122,46 @@ export default function AdminActiveOrdersScreen() {
           {viewToggle('📋  Orders View', false)}
           {viewToggle('🍳  Prep Summary', true)}
         </View>
-        <Btn
-          title={isPrepViewActive ? '🖨️  Print Prep Sheet' : '🖨️  Print Order Sheet'}
-          onPress={isPrepViewActive ? printPrepSheet : printOrderSheet}
-          bold
-          fontSize={13}
-          height={40}
-          radius={8}
-        />
-        <Btn title="✅  Mark All Filtered As..." onPress={markAllFiltered} variant="outline" bold fontSize={13} height={40} radius={8} />
+        <View style={styles.toggleRow}>
+          <Btn title="📄 Production Sheet (PDF)" onPress={() => exportWith(e => e.productionSheetPdf())} bold fontSize={12} height={40} radius={8} paddingH={6} style={styles.flex} />
+          <Btn title="📊 Production Sheet (Excel)" onPress={() => exportWith(e => e.productionSheetExcel())} bold fontSize={12} height={40} radius={8} paddingH={6} style={styles.flex} />
+        </View>
+        <View style={styles.toggleRow}>
+          <Btn
+            title="🏷️ Delivery Notes (PDF)"
+            onPress={() => exportWith(e => e.deliveryNotesPdf())}
+            bg={colors.brandGold}
+            color={colors.onBrandGold}
+            bold
+            fontSize={12}
+            height={40}
+            radius={8}
+            paddingH={6}
+            style={styles.flex}
+          />
+          <Btn
+            title="🧾 Invoices (PDF)"
+            onPress={() => exportWith(e => e.invoicesPdf())}
+            bg={colors.brandGold}
+            color={colors.onBrandGold}
+            bold
+            fontSize={12}
+            height={40}
+            radius={8}
+            paddingH={6}
+            style={styles.flex}
+          />
+          <Btn
+            title="🖨️"
+            onPress={() => exportWith(e => (isPrepViewActive ? e.printPrepSheet() : e.printOrderSheet()), 'Nothing to Print')}
+            variant="neutral"
+            fontSize={14}
+            height={40}
+            radius={8}
+            paddingH={0}
+            style={styles.printBtn}
+          />
+        </View>
       </View>
 
       {isPrepViewActive ? (
@@ -209,7 +169,7 @@ export default function AdminActiveOrdersScreen() {
           data={prepSummary}
           keyExtractor={p => p.dishName}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={isBusy} onRefresh={refresh} tintColor="#121212" />}
+          refreshControl={<RefreshControl refreshing={isBusy} onRefresh={refresh} tintColor={colors.primary} colors={[colors.primary]} />}
           ListHeaderComponent={
             <Text style={[styles.prepHeader, { color: colors.textSecondary }]}>
               Total quantity needed per dish, across all matching orders — for bulk kitchen prep, not individual plating.
@@ -232,18 +192,18 @@ export default function AdminActiveOrdersScreen() {
           data={orders}
           keyExtractor={r => r.order.id}
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={isBusy} onRefresh={refresh} tintColor="#121212" />}
+          refreshControl={<RefreshControl refreshing={isBusy} onRefresh={refresh} tintColor={colors.primary} colors={[colors.primary]} />}
           ListEmptyComponent={<EmptyState emoji="📋" message="No active orders match these filters." />}
           renderItem={({ item: row }) => (
-            <Card radius={12} bg={cardBg} style={styles.orderCard}>
+            <Card radius={12} style={styles.orderCard}>
               <View style={styles.orderRow}>
                 <View style={styles.orderInfo}>
                   <Text style={[styles.company, { color: colors.text }]}>{row.companyName}</Text>
-                  <Text style={styles.location}>{row.locationName}</Text>
+                  <Text style={[styles.location, { color: colors.mutedText }]}>{row.locationName}</Text>
                   <Text style={[styles.item, { color: colors.text }]}>{row.order.itemName}</Text>
                   <View style={styles.metaRow}>
-                    <Text style={styles.meta}>{row.deliveryDateLabel}</Text>
-                    <Text style={styles.meta}>Order #{row.order.orderNumber}</Text>
+                    <Text style={[styles.meta, { color: colors.mutedText }]}>{row.deliveryDateLabel}</Text>
+                    <Text style={[styles.meta, { color: colors.mutedText }]}>Order #{row.order.orderNumber}</Text>
                     <Text style={[styles.meta, styles.bold, { color: colors.primary }]}>R{row.order.totalAmount.toFixed(2)}</Text>
                   </View>
                   {row.order.rating > 0 && <Stars rating={row.order.rating} size={13} color={colors.primary} />}
@@ -254,8 +214,8 @@ export default function AdminActiveOrdersScreen() {
                   )}
                 </View>
                 <View style={styles.orderRight}>
-                  <View style={[styles.statusChip, { backgroundColor: fixed.badgeBg }]}>
-                    <Text style={[styles.statusText, { color: colors.primary }]}>{row.order.status}</Text>
+                  <View style={[styles.statusChip, { backgroundColor: colors.subtleFillStrong }]}>
+                    <Text style={[styles.statusText, { color: colors.brandGold }]}>{row.order.status}</Text>
                   </View>
                   <Btn title="Update" onPress={() => updateStatus(row)} variant="neutral" fontSize={12} height={36} paddingH={12} />
                 </View>
@@ -277,6 +237,7 @@ const styles = StyleSheet.create({
   filterGap: { marginLeft: 10 },
   controls: { paddingHorizontal: 16, gap: 8, marginBottom: 8 },
   toggleRow: { flexDirection: 'row', gap: 8 },
+  printBtn: { width: 44 },
   list: { paddingHorizontal: 16, paddingBottom: 16, flexGrow: 1 },
   prepHeader: { fontSize: 12, marginBottom: 10 },
   prepCard: { marginBottom: 8 },
@@ -289,12 +250,12 @@ const styles = StyleSheet.create({
   orderInfo: { flex: 1, gap: 4 },
   orderRight: { alignItems: 'flex-end', justifyContent: 'space-between', gap: 8 },
   company: { fontSize: 15, fontWeight: '700' },
-  location: { fontSize: 12, color: '#888888' },
+  location: { fontSize: 12 },
   item: { fontSize: 13 },
   metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  meta: { fontSize: 11, color: '#AAAAAA' },
+  meta: { fontSize: 11 },
   statusChip: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
   statusText: { fontSize: 11, fontWeight: '700' },
-  allergyChip: { alignSelf: 'flex-start', backgroundColor: fixed.amberBg, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
-  allergyText: { fontSize: 11, fontWeight: '700', color: fixed.amber },
+  allergyChip: { alignSelf: 'flex-start', backgroundColor: 'rgba(245,158,11,0.10)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
+  allergyText: { fontSize: 11, fontWeight: '700', color: '#B45309' },
 });

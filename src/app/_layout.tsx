@@ -4,7 +4,8 @@
  * page stack.
  *
  * Routing mirrors the MAUI flow: signed out -> LoginPage; an Admin signs in
- * to AdminShell (/admin); everyone else picks a delivery day
+ * to AdminShell (/admin) — or, after "Customer View", into the customer
+ * tabs (AdminCustomerSwitch); everyone else picks a delivery day
  * (SelectDeliveryDayPage) before reaching AppShell's tabs.
  */
 import React, { useEffect } from 'react';
@@ -28,6 +29,7 @@ import { AppStateProvider, useApp } from '../state/AppState';
 import { AlertHost } from '../components/Alerts';
 import { useResponsive } from '../utils/responsive';
 import { native } from '../utils/theme';
+import { stackHeader } from '../utils/stackHeader';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
@@ -35,7 +37,7 @@ LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 const PUBLIC_ROUTES = ['login', 'register'];
 
 function RootNavigator() {
-  const { user, authLoading, selectedOrderingDate, colors } = useApp();
+  const { user, authLoading, selectedOrderingDate, colors, isAdminPreview } = useApp();
   const segments = useSegments();
   const { contentMaxWidth } = useResponsive();
   const top = segments[0] ?? '';
@@ -45,7 +47,7 @@ function RootNavigator() {
   if (!authLoading) {
     if (!user) {
       if (!PUBLIC_ROUTES.includes(top)) redirect = '/login';
-    } else if (isAdmin) {
+    } else if (isAdmin && !isAdminPreview) {
       if (top !== 'admin') redirect = '/admin';
     } else if (top === 'admin') {
       redirect = '/';
@@ -56,13 +58,6 @@ function RootNavigator() {
     }
   }
 
-  const header = {
-    headerStyle: { backgroundColor: colors.pageBg },
-    headerTintColor: colors.text,
-    headerTitleStyle: { fontFamily: 'OpenSans_600SemiBold', fontSize: 18, color: colors.text },
-    headerBackTitle: '',
-    contentStyle: { backgroundColor: colors.pageBg },
-  };
 
   return (
     <View style={[styles.root, { backgroundColor: colors.pageBg }]}>
@@ -78,19 +73,11 @@ function RootNavigator() {
             <ActivityIndicator color={colors.primary} />
           </View>
         ) : (
-          <Stack screenOptions={header}>
+          <Stack screenOptions={stackHeader(colors)}>
             <Stack.Screen name="login" options={{ headerShown: false }} />
             <Stack.Screen name="register" options={{ title: '' }} />
-            <Stack.Screen name="select-date" options={{ title: 'Delivery Day' }} />
+            <Stack.Screen name="select-date" options={{ headerShown: false }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="product" options={{ title: "" }} />
-            <Stack.Screen name="cart" options={{ title: 'Your Basket' }} />
-            <Stack.Screen name="payment" options={{ title: 'Payment' }} />
-            <Stack.Screen name="order-confirmation" options={{ headerShown: false, gestureEnabled: false }} />
-            <Stack.Screen name="tax-invoice" options={{ title: 'Tax Invoice' }} />
-            <Stack.Screen name="settings" options={{ title: 'Settings' }} />
-            <Stack.Screen name="help" options={{ title: 'Help & Support' }} />
-            <Stack.Screen name="cancellation-policy" options={{ title: 'Cancellation Policy' }} />
             <Stack.Screen name="admin" options={{ headerShown: false }} />
           </Stack>
         )}

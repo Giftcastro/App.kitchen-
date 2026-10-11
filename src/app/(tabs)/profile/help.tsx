@@ -3,14 +3,14 @@ import React from 'react';
 import { Linking, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import Constants from 'expo-constants';
-import { Text } from '../components/AppText';
-import { Card, Page } from '../components/ui';
-import { useApp } from '../state/AppState';
+import { Text } from '../../../components/AppText';
+import { Card, Page } from '../../../components/ui';
+import { useApp } from '../../../state/AppState';
 
 const SUPPORT_EMAIL = 'support@yourkitchenco.com';
 
 export default function HelpScreen() {
-  const { colors, isDark } = useApp();
+  const { colors } = useApp();
   const router = useRouter();
   const version = `${Constants.expoConfig?.version ?? '1.0.0'}${__DEV__ ? ' (Debug)' : ''}`;
 
@@ -23,20 +23,20 @@ export default function HelpScreen() {
             <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Our dedicated operations and support desk are standing by to help you.</Text>
           </View>
 
-          <Card radius={16} padding={20} border={colors.cardBorder} bg={isDark ? colors.cardBg : '#FFFFFF'} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}>
+          <Card radius={16} padding={20} border={colors.surfaceBorder} onPress={() => Linking.openURL(`mailto:${SUPPORT_EMAIL}`)}>
             <View style={styles.contact}>
               <Text style={{ fontSize: 32 }}>✉️</Text>
               <Text style={[styles.contactTitle, { color: colors.text }]}>Direct Email Support</Text>
-              <Text style={[styles.email, { color: colors.primary }]}>{SUPPORT_EMAIL}</Text>
+              <Text style={[styles.email, { color: colors.brandGold }]}>{SUPPORT_EMAIL}</Text>
             </View>
           </Card>
 
-          <View style={[styles.tip, { backgroundColor: colors.tan }]}>
+          <View style={[styles.tip, { backgroundColor: colors.chipBg }]}>
             <Text style={{ fontSize: 18 }}>💡</Text>
-            <Text style={[styles.tipText, { color: colors.tipText }]}>For immediate order assistance, check active status windows.</Text>
+            <Text style={[styles.tipText, { color: colors.textSecondary }]}>For immediate order assistance, check active status windows.</Text>
           </View>
 
-          <Card radius={14} border={colors.cardBorder} bg={isDark ? colors.cardBg : '#FFFFFF'} onPress={() => router.push('/cancellation-policy')}>
+          <Card radius={14} border={colors.surfaceBorder} onPress={() => router.push('/profile/cancellation-policy')}>
             <View style={styles.policyRow}>
               <Text style={{ fontSize: 18 }}>📄</Text>
               <Text style={[styles.policyText, { color: colors.text }]}>Cancellation &amp; Holiday Policy</Text>

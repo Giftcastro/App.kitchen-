@@ -102,7 +102,7 @@ export default function RegisterScreen() {
           <BoxEntry value={password} onChangeText={setPassword} placeholder="Password (min. 8 characters)" secure />
           <BoxEntry value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm Password (match your password)" secure />
 
-          <View style={[styles.pickerBox, { borderColor: colors.inputBorder, backgroundColor: isDark ? colors.cardBg : '#FFFFFF' }]}>
+          <View style={[styles.pickerBox, { borderColor: colors.surfaceBorder, backgroundColor: colors.cardBg }]}>
             <Picker
               title="Select your company"
               options={companies.map(c => c.name)}
@@ -119,7 +119,7 @@ export default function RegisterScreen() {
           <View
             style={[
               styles.pickerBox,
-              { borderColor: colors.inputBorder, backgroundColor: isDark ? colors.cardBg : '#FFFFFF', opacity: selectedCompany ? 1 : 0.5 },
+              { borderColor: colors.surfaceBorder, backgroundColor: colors.cardBg, opacity: selectedCompany ? 1 : 0.5 },
             ]}
           >
             <Picker
@@ -145,8 +145,8 @@ export default function RegisterScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 30, gap: 20 },
-  logo: { width: '100%', height: 250, marginTop: 10 },
+  scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 30, paddingTop: 30, paddingBottom: 56, gap: 20 },
+  logo: { width: '100%', height: 90, marginTop: 10 },
   titles: { gap: 4, alignItems: 'center' },
   title: { fontSize: 28, fontWeight: '700' },
   subtitle: { fontSize: 14 },

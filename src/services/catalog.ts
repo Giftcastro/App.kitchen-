@@ -13,7 +13,7 @@ import { CYCLE_WINDOW, fmtDayLabel, fromIso, getOrderableDeliveryDates, toIso } 
 
 // ── Category art (MAUI JsonProductService) ──────────────────────────────
 
-const unsplash = (photoId: string) => `https://images.unsplash.com/photo-${photoId}?w=800&h=600&fit=crop&auto=format&q=80`;
+const unsplash = (photoId: string) => `https://images.unsplash.com/photo-${photoId}?w=500&h=360&fit=crop&auto=format&q=80`;
 
 const STATIC_ICONS: Record<string, string> = {
   'SALAD BAR': '🥗',
@@ -115,13 +115,15 @@ export async function getStaticProducts(): Promise<Product[]> {
           ],
         });
       }
-      if (categoryAddOns.length > 0) {
-        groups.push({
-          title: 'Add-Ons',
-          isMultiSelect: true,
-          options: categoryAddOns.map((a: any) => ({ name: a.name, additionalPrice: a.price_cents / 100, isAddOn: true })),
-        });
-      }
+      // Category add-ons, split into "Sides" (wedges, salads, slaws...) and
+      // "Extras & Sauces" (sauces, extra patties/fillets) — both multi-select.
+      const isExtraOrSauce = (name: string) =>
+        /sauce/i.test(name) || /^extra/i.test(name) || /dressing/i.test(name);
+      const toOption = (a: any) => ({ name: a.name, additionalPrice: a.price_cents / 100, isAddOn: true });
+      const sides = categoryAddOns.filter((a: any) => !isExtraOrSauce(a.name));
+      const extras = categoryAddOns.filter((a: any) => isExtraOrSauce(a.name));
+      if (sides.length > 0) groups.push({ title: 'Sides (choose as many as you like)', isMultiSelect: true, options: sides.map(toOption) });
+      if (extras.length > 0) groups.push({ title: 'Extras & Sauces', isMultiSelect: true, options: extras.map(toOption) });
       products.push({
         id: item.id,
         name: item.name,

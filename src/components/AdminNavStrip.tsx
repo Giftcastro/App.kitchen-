@@ -1,20 +1,19 @@
 /**
  * Views/AdminNavStrip.xaml — embedded at the top of every admin page:
  * "Central Command" branding, the 9AM cutoff chip, a live clock, and the
- * horizontally scrolling section pills (plus Logout).
+ * horizontally scrolling section pills, plus Customer View (preview the
+ * customer app as this admin, AdminCustomerSwitch) and Logout.
  */
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text } from './AppText';
 import { useApp } from '../state/AppState';
-import { fixed } from '../utils/theme';
 
 export type AdminRoute =
   | 'admindashboard'
   | 'adminactiveorders'
   | 'admincompanies'
-  | 'admindiscounts'
   | 'adminnotifications'
   | 'adminmenu'
   | 'adminusers'
@@ -25,7 +24,6 @@ const TABS: { route: AdminRoute; label: string; path: string }[] = [
   { route: 'admindashboard', label: 'Overview', path: '/admin' },
   { route: 'adminactiveorders', label: 'Active Orders', path: '/admin/active-orders' },
   { route: 'admincompanies', label: 'Companies', path: '/admin/companies' },
-  { route: 'admindiscounts', label: 'Discounts', path: '/admin/discounts' },
   { route: 'adminnotifications', label: 'Notifications', path: '/admin/notifications' },
   { route: 'adminmenu', label: 'Menu Catalog', path: '/admin/menu' },
   { route: 'adminusers', label: 'Users', path: '/admin/users' },
@@ -39,7 +37,7 @@ const clock = () => {
 };
 
 export function AdminNavStrip({ activeRoute }: { activeRoute: AdminRoute }) {
-  const { colors, signOut } = useApp();
+  const { colors, signOut, enterCustomerView } = useApp();
   const router = useRouter();
   const [time, setTime] = useState(clock);
 
@@ -83,11 +81,22 @@ export function AdminNavStrip({ activeRoute }: { activeRoute: AdminRoute }) {
             </Pressable>
           );
         })}
-        <Pressable onPress={() => signOut()} accessibilityRole="button" style={({ pressed }) => [styles.pill, styles.logout, pressed && styles.pressed]}>
-          <Text style={[styles.pillText, { color: fixed.dangerBright }]}>Logout</Text>
+        <Pressable
+          onPress={enterCustomerView}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.pill, { backgroundColor: colors.brandGold, borderColor: 'transparent' }, pressed && styles.pressed]}
+        >
+          <Text style={[styles.pillText, { color: colors.onBrandGold }]}>👤 Customer View</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => signOut()}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.pill, { borderColor: colors.error }, pressed && styles.pressed]}
+        >
+          <Text style={[styles.pillText, { color: colors.error }]}>Logout</Text>
         </Pressable>
       </ScrollView>
-      <View style={[styles.divider, { backgroundColor: colors.navDivider }]} />
+      <View style={[styles.divider, { backgroundColor: colors.surfaceBorder }]} />
     </View>
   );
 }
@@ -97,14 +106,13 @@ const styles = StyleSheet.create({
   brand: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   brandIcon: { fontSize: 14 },
   brandText: { fontSize: 14, fontWeight: '700' },
-  cutoff: { backgroundColor: fixed.amberBg, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
-  cutoffText: { fontSize: 9, fontWeight: '700', color: fixed.amber },
+  cutoff: { backgroundColor: 'rgba(245,158,11,0.10)', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
+  cutoffText: { fontSize: 9, fontWeight: '700', color: '#B45309' },
   clock: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   clockText: { fontSize: 11, fontWeight: '700', fontVariant: ['tabular-nums'] },
   pills: { gap: 8, paddingHorizontal: 16, paddingVertical: 10 },
   pill: { height: 36, borderRadius: 18, paddingHorizontal: 16, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   pillText: { fontSize: 12, fontWeight: '700' },
-  logout: { borderColor: fixed.dangerBright },
   pressed: { opacity: 0.88, transform: [{ scale: 0.96 }] },
   divider: { height: 1 },
 });

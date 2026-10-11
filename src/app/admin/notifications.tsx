@@ -13,7 +13,7 @@ import { fmtSentAt } from '../../services/scheduling';
 import type { NotificationLog } from '../../models';
 
 export default function AdminNotificationsScreen() {
-  const { colors, isDark } = useApp();
+  const { colors } = useApp();
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
   const [audience, setAudience] = useState('All Customers');
@@ -49,14 +49,13 @@ export default function AdminNotificationsScreen() {
     }
   };
 
-  const cardBg = isDark ? '#1E1E1E' : '#FFFFFF';
-  const fieldLabel = (text: string) => <Text style={[styles.fieldLabel, { color: colors.primary }]}>{text}</Text>;
+  const fieldLabel = (text: string) => <Text style={[styles.fieldLabel, { color: colors.brandGold }]}>{text}</Text>;
 
   return (
     <Page>
       <AdminNavStrip activeRoute="adminnotifications" />
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Card radius={12} bg={cardBg}>
+        <Card radius={12}>
           <View style={styles.form}>
             <Text style={[styles.heading, { color: colors.text }]}>Compose Broadcast</Text>
             <View style={styles.field}>
@@ -71,24 +70,24 @@ export default function AdminNotificationsScreen() {
               {fieldLabel('Message Body')}
               <PlainEntry value={message} onChangeText={setMessage} placeholder="Write broadcast details here..." multiline height={90} />
             </View>
-            <Btn title="Send Push Broadcast" onPress={send} disabled={isBusy} bold radius={8} style={styles.send} />
-            {isBusy && <ActivityIndicator color={colors.primary} />}
+            <Btn title="Send Push Broadcast" onPress={send} disabled={isBusy} bg={colors.brandGold} color={colors.onBrandGold} bold radius={8} style={styles.send} />
+            {isBusy && <ActivityIndicator color={colors.brandGold} />}
           </View>
         </Card>
 
         <Text style={[styles.heading, styles.historyHeading, { color: colors.text }]}>Sent History</Text>
 
         {history.map(log => (
-          <Card key={log.id} radius={10} padding={14} bg={cardBg}>
+          <Card key={log.id} radius={10} padding={14}>
             <View style={styles.stack4}>
               <View style={styles.row}>
                 <Text style={[styles.logTitle, { color: colors.text }]}>{log.title}</Text>
-                <Text style={[styles.audience, { color: colors.primary }]}>{log.targetAudience}</Text>
+                <Text style={[styles.audience, { color: colors.brandGold }]}>{log.targetAudience}</Text>
               </View>
-              <Text style={styles.body}>{log.body}</Text>
+              <Text style={[styles.body, { color: colors.mutedText }]}>{log.body}</Text>
               <View style={styles.row}>
-                <Text style={styles.meta}>{fmtSentAt(log.sentAt)}</Text>
-                <Text style={styles.meta}>{log.recipientCount} recipients</Text>
+                <Text style={[styles.meta, { color: colors.mutedText }]}>{fmtSentAt(log.sentAt)}</Text>
+                <Text style={[styles.meta, { color: colors.mutedText }]}>{log.recipientCount} recipients</Text>
               </View>
             </View>
           </Card>
@@ -110,6 +109,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
   logTitle: { flex: 1, fontSize: 14, fontWeight: '700' },
   audience: { fontSize: 11, fontWeight: '700' },
-  body: { fontSize: 13, color: '#888888' },
-  meta: { fontSize: 10, color: '#AAAAAA' },
+  body: { fontSize: 13 },
+  meta: { fontSize: 10 },
 });

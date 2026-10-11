@@ -22,7 +22,6 @@ export default function AdminLayout() {
       <Stack.Screen name="index" options={{ title: 'Kitchen Operations Hub' }} />
       <Stack.Screen name="active-orders" options={{ title: 'Active Orders' }} />
       <Stack.Screen name="companies" options={{ title: 'Companies & Locations' }} />
-      <Stack.Screen name="discounts" options={{ title: 'Discount Codes' }} />
       <Stack.Screen name="notifications" options={{ title: 'Broadcast Notifications' }} />
       <Stack.Screen name="menu" options={{ title: 'Menu Catalog' }} />
       <Stack.Screen name="users" options={{ title: 'User Management' }} />

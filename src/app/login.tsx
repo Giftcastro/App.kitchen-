@@ -43,16 +43,12 @@ export default function LoginScreen() {
   return (
     <Page>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <View style={styles.logoGrid}>
-          <View style={[styles.glowOuter, { backgroundColor: colors.brandPopGlowOuter }]} pointerEvents="none" />
-          <View style={[styles.glowInner, { backgroundColor: colors.brandPopGlowInner }]} pointerEvents="none" />
-          <Image
-            source={isDark ? require('../../assets/images/yourkcodark.png') : require('../../assets/images/yourkcolight.png')}
-            style={styles.logo}
-            resizeMode="contain"
-            accessibilityLabel="Your Kitchen Co."
-          />
-        </View>
+        <Image
+          source={isDark ? require('../../assets/images/yourkcodark.png') : require('../../assets/images/yourkcolight.png')}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel="Your Kitchen Co."
+        />
 
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Sign in to continue</Text>
 
@@ -83,7 +79,12 @@ export default function LoginScreen() {
           />
           <View style={styles.signupRow}>
             <Text style={{ color: colors.textSecondary, fontSize: 14 }}>Don&apos;t have an account?</Text>
-            <Pressable onPress={() => router.push('/register')} hitSlop={8} accessibilityRole="button">
+            {/* Outlined so it reads as a button in every theme, not just coloured text. */}
+            <Pressable
+              onPress={() => router.push('/register')}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.signUp, { borderColor: colors.primary }, pressed && styles.pressed]}
+            >
               <Text style={[styles.bold, { color: colors.primary, fontSize: 14 }]}>Sign Up</Text>
             </Pressable>
           </View>
@@ -95,10 +96,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   scroll: { flexGrow: 1, justifyContent: 'center', padding: 30, gap: 20 },
-  logoGrid: { height: 350, alignItems: 'center', justifyContent: 'center', marginBottom: 5 },
-  glowOuter: { position: 'absolute', width: 130, height: 130, borderRadius: 65 },
-  glowInner: { position: 'absolute', width: 78, height: 78, borderRadius: 39 },
-  logo: { width: '100%', height: 350 },
+  logo: { width: '100%', height: 110, marginBottom: 5 },
   subtitle: { fontSize: 14, textAlign: 'center', marginTop: -10, marginBottom: 15 },
   form: { gap: 14 },
   row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 2, marginVertical: 4 },
@@ -108,4 +106,6 @@ const styles = StyleSheet.create({
   actions: { gap: 16, marginTop: 10 },
   loginShadow: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.09, shadowRadius: 6, elevation: 3 },
   signupRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5 },
+  signUp: { height: 34, borderWidth: 1.5, borderRadius: 16, paddingHorizontal: 14, justifyContent: 'center' },
+  pressed: { opacity: 0.88, transform: [{ scale: 0.96 }] },
 });

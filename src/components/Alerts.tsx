@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 22,
     paddingHorizontal: 20,
     paddingTop: 22,
-    paddingBottom: 30,
+    paddingBottom: 52,
     gap: 14,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },

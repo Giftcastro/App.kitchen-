@@ -7,10 +7,9 @@ import { alerts } from '../../components/Alerts';
 import { AdminNavStrip } from '../../components/AdminNavStrip';
 import { Btn, Card, Divider, EmptyState, Page } from '../../components/ui';
 import { useApp } from '../../state/AppState';
-import { addCompany, addLocation, getCompanies, setCompanyDomains, updateCompany, updateLocation } from '../../services/directory';
-import { financialsSummary } from '../../models';
-import type { Company, CompanyLocation, DiscountType } from '../../models';
-import { fixed } from '../../utils/theme';
+import { addCompany, addLocation, getCompanies, setCompanyDomains, updateCompany, updateCompanyDelivery, updateLocation } from '../../services/directory';
+import { deliveryFeeSummary, financialsSummary } from '../../models';
+import type { Company, CompanyLocation, DeliveryFeeMode, DiscountType } from '../../models';
 
 const parseNumber = (value: string | null) => {
   const n = parseFloat(String(value ?? '').replace(',', '.'));
@@ -18,7 +17,7 @@ const parseNumber = (value: string | null) => {
 };
 
 export default function AdminCompaniesScreen() {
-  const { colors, isDark } = useApp();
+  const { colors } = useApp();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [isBusy, setIsBusy] = useState(false);
 
@@ -188,11 +187,52 @@ export default function AdminCompaniesScreen() {
     }
   };
 
-  const smallButton = (title: string, onPress: () => void, primary = false) => (
+  /** Free / flat fee / distance tiers — how this company's checkouts are charged for delivery (migration 0009). */
+  const manageDeliveryFee = async (company: Company) => {
+    const choice = await alerts.actionSheet(
+      `Delivery fee for ${company.name}\nCurrently: ${deliveryFeeSummary(company)}`,
+      'Cancel',
+      'Free delivery',
+      'Set a flat fee',
+      'Use distance tiers (default)'
+    );
+    if (!choice) return;
+
+    let mode: DeliveryFeeMode = 'DistanceTier';
+    let flatFee = 0;
+    if (choice === 'Free delivery') {
+      mode = 'Free';
+    } else if (choice === 'Set a flat fee') {
+      const feeStr = await alerts.prompt('Flat Delivery Fee', 'Amount charged per checkout, in Rand (0 makes delivery free):', {
+        initialValue: company.flatDeliveryFee > 0 ? company.flatDeliveryFee.toFixed(2) : '',
+        keyboard: 'decimal-pad',
+      });
+      if (feeStr === null) return;
+      const fee = parseNumber(feeStr);
+      if (fee === null || fee < 0) {
+        await alerts.show('Invalid Amount', 'Please enter a number of 0 or more.', 'OK');
+        return;
+      }
+      mode = fee === 0 ? 'Free' : 'Flat';
+      flatFee = fee;
+    }
+
+    try {
+      await updateCompanyDelivery(company.id, mode, flatFee);
+      await load();
+      await alerts.show('Delivery Updated', `${company.name}: ${deliveryFeeSummary({ ...company, deliveryFeeMode: mode, flatDeliveryFee: flatFee })}.`, 'OK');
+    } catch (err) {
+      await alerts.show('Not Saved', (err as Error)?.message ?? 'Could not update the delivery fee.', 'OK');
+    }
+  };
+
+  const smallButton = (title: string, onPress: () => void, accent = false) => (
     <Btn
       title={title}
       onPress={onPress}
-      variant={primary ? 'primary' : 'neutral'}
+      variant="neutral"
+      bg={accent ? colors.brandGold : undefined}
+      color={accent ? colors.onBrandGold : undefined}
       fontSize={10}
       height={28}
       paddingH={8}
@@ -205,36 +245,38 @@ export default function AdminCompaniesScreen() {
       <AdminNavStrip activeRoute="admincompanies" />
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Client Companies</Text>
-        <Btn title="+ Add Company" onPress={add} bold radius={8} height={38} />
+        <Btn title="+ Add Company" onPress={add} bg={colors.brandGold} color={colors.onBrandGold} bold radius={8} height={38} />
       </View>
       <FlatList
         data={companies}
         keyExtractor={c => c.id}
         contentContainerStyle={styles.list}
-        refreshControl={<RefreshControl refreshing={isBusy} onRefresh={load} tintColor="#121212" />}
+        refreshControl={<RefreshControl refreshing={isBusy} onRefresh={load} tintColor={colors.primary} colors={[colors.primary]} />}
         ListEmptyComponent={isBusy ? null : <EmptyState emoji="🏢" message="No companies yet. Tap + Add Company to create one." />}
         renderItem={({ item: company }) => (
-          <Card radius={14} padding={14} bg={isDark ? '#1E1E1E' : '#FFFFFF'} style={styles.companyCard}>
+          <Card radius={14} padding={14} style={styles.companyCard}>
             <View style={styles.stack10}>
               <View style={styles.companyHeader}>
                 <View style={styles.flex}>
                   <Text style={[styles.companyName, { color: colors.text }]}>{company.name}</Text>
-                  {!!company.billingEmail && <Text style={styles.muted12}>{company.billingEmail}</Text>}
+                  {!!company.billingEmail && <Text style={[styles.muted12, { color: colors.mutedText }]}>{company.billingEmail}</Text>}
                 </View>
-                <View style={[styles.statusChip, { backgroundColor: fixed.badgeBg }]}>
-                  <Text style={[styles.statusText, { color: colors.primary }]}>{company.isActive ? 'Active' : 'Suspended'}</Text>
+                <View style={[styles.statusChip, { backgroundColor: colors.subtleFillStrong }]}>
+                  <Text style={[styles.statusText, { color: colors.brandGold }]}>{company.isActive ? 'Active' : 'Suspended'}</Text>
                 </View>
                 <Btn title="Edit" onPress={() => edit(company)} variant="neutral" fontSize={11} height={30} paddingH={10} />
               </View>
-              <Text style={styles.muted11}>{financialsSummary(company)}</Text>
+              <Text style={[styles.muted11, { color: colors.mutedText }]}>{financialsSummary(company)}</Text>
+              <Text style={[styles.muted11, styles.bold, { color: colors.brandGold }]}>🚚 {deliveryFeeSummary(company)}</Text>
               <View style={styles.buttonRow}>
                 {smallButton('Toggle Active', () => toggleActive(company))}
                 {smallButton('Financials', () => manageFinancials(company))}
+                {smallButton('Delivery', () => manageDeliveryFee(company))}
                 {smallButton('Domains', () => manageDomains(company))}
                 {smallButton('+ Add Location', () => addCompanyLocation(company), true)}
               </View>
-              <Divider color={isDark ? '#2A2A2A' : '#EEEEEE'} />
-              <Text style={[styles.muted11, styles.bold]}>Delivery Locations</Text>
+              <Divider />
+              <Text style={[styles.muted11, styles.bold, { color: colors.mutedText }]}>Delivery Locations</Text>
               {company.locations.length === 0 ? (
                 <Text style={styles.noLocations}>No locations yet for this company.</Text>
               ) : (
@@ -242,8 +284,8 @@ export default function AdminCompaniesScreen() {
                   <View key={location.id} style={styles.locationRow}>
                     <View style={styles.flex}>
                       <Text style={[styles.locationName, { color: colors.text }]}>{location.name}</Text>
-                      <Text style={styles.muted11}>{location.address}</Text>
-                      <Text style={[styles.distance, { color: colors.primary }]}>
+                      <Text style={[styles.muted11, { color: colors.mutedText }]}>{location.address}</Text>
+                      <Text style={[styles.distance, { color: colors.brandGold }]}>
                         {location.distanceKnown ? `${location.distanceKm.toFixed(1)}km from kitchen` : 'Distance not set'}
                       </Text>
                     </View>
@@ -271,8 +313,9 @@ const styles = StyleSheet.create({
   companyName: { fontSize: 16, fontWeight: '700' },
   statusChip: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 },
   statusText: { fontSize: 10, fontWeight: '700' },
-  muted12: { fontSize: 12, color: '#888888' },
-  muted11: { fontSize: 11, color: '#888888' },
+  muted12: { fontSize: 12 },
+  muted11: { fontSize: 11 },
+  // Wraps onto a second row on narrow screens (five actions).
   buttonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   smallButton: { minHeight: 28 },
   noLocations: { fontSize: 12, color: 'gray', marginVertical: 4 },

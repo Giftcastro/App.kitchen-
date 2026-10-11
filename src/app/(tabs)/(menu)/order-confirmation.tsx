@@ -3,12 +3,12 @@ import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Text } from '../components/AppText';
-import { Btn, Card, Page } from '../components/ui';
-import { useApp } from '../state/AppState';
-import { getNavParam, setNavParam } from '../state/navParams';
-import { fmtLongDate } from '../services/scheduling';
-import { fixed } from '../utils/theme';
+import { Text } from '../../../components/AppText';
+import { Btn, Card, Page } from '../../../components/ui';
+import { useApp } from '../../../state/AppState';
+import { getNavParam, setNavParam } from '../../../state/navParams';
+import { fmtLongDate } from '../../../services/scheduling';
+import { fixed } from '../../../utils/theme';
 
 export default function OrderConfirmationScreen() {
   const { colors } = useApp();

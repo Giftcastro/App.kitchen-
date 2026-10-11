@@ -1,12 +1,17 @@
-/** ProductDetailPage.xaml + ProductDetailViewModel. */
+/**
+ * ProductDetailPage.xaml + ProductDetailViewModel. After Add to Basket an
+ * action sheet offers checkout, keep ordering for the same day, or a
+ * different day (the in-page DeliveryDayOverlay, then back to the Menu).
+ */
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
-import { Text, TextInput } from '../components/AppText';
-import { alerts } from '../components/Alerts';
-import { Btn, CheckBox, Page } from '../components/ui';
-import { useApp } from '../state/AppState';
-import { getNavParam } from '../state/navParams';
+import { Text, TextInput } from '../../../components/AppText';
+import { alerts } from '../../../components/Alerts';
+import { Btn, CheckBox, Page } from '../../../components/ui';
+import { DeliveryDayOverlay } from '../../../components/DeliveryDayPicker';
+import { useApp } from '../../../state/AppState';
+import { getNavParam } from '../../../state/navParams';
 import {
   CYCLE_WINDOW,
   fmtDayLabel,
@@ -14,20 +19,22 @@ import {
   getOrderableDeliveryDates,
   isValidDeliveryDate,
   STATIC_WINDOW,
-} from '../services/scheduling';
-import { fixed } from '../utils/theme';
-import type { Option, Product } from '../models';
+} from '../../../services/scheduling';
+import type { Option, Product } from '../../../models';
+
+const ALLERGY_WORDS = ['allerg', 'intoleran', 'anaphyla', 'coeliac', 'celiac'];
+/** Unique per add, so the same dish can sit in the basket twice with different options. */
+const newCartKey = (productId: string) => `${productId}:${Date.now()}`;
+const mentionsAllergy = (notes: string) => ALLERGY_WORDS.some(word => notes.toLowerCase().includes(word));
 
 export default function ProductDetailScreen() {
-  const { colors, isDark, selectedOrderingDate, hasSeenCutoffNotice, markCutoffNoticeSeen, addCartItem } = useApp();
+  const { colors, selectedOrderingDate, setSelectedOrderingDate, hasSeenCutoffNotice, markCutoffNoticeSeen, addCartItem } = useApp();
   const router = useRouter();
   const navigation = useNavigation();
   const [product] = useState<Product | undefined>(() => getNavParam('SelectedProduct'));
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [specialRequests, setSpecialRequests] = useState('');
-  const [allergyNotes, setAllergyNotes] = useState('');
-  const [requestsFocused, setRequestsFocused] = useState(false);
-  const [allergyFocused, setAllergyFocused] = useState(false);
+  const [dayPickerOpen, setDayPickerOpen] = useState(false);
   const window = product?.menuType === 'cycle' ? CYCLE_WINDOW : STATIC_WINDOW;
 
   const loadDates = useCallback((): string[] => {
@@ -105,34 +112,49 @@ export default function ProductDetailScreen() {
       return;
     }
     addCartItem({
-      key: `${product.id}:${Date.now()}`,
+      key: newCartKey(product.id),
       product,
       selectedOptions: selectedOptions.map(o => ({ ...o })),
       specialRequests,
-      allergyNotes,
+      // One notes box: if it mentions an allergy, the whole note also travels as the chef alert.
+      allergyNotes: mentionsAllergy(specialRequests) ? specialRequests : '',
       deliveryDate: selectedDate,
       menuType: product.menuType,
       quantity: 1,
       unitPrice: totalPrice,
     });
-    const changeDay = await alerts.confirm(
-      'Added to Basket',
-      `${product.name} has been added for ${fmtDayLabel(selectedDate)}.`,
-      'Order for a different day',
-      `Continue with ${fmtWeekday(selectedDate)}`
+    const checkoutChoice = 'Continue to checkout';
+    const changeDayChoice = 'Order for a different day';
+    // "Keep ordering" is the cancel slot: it's also what dismissing the sheet does.
+    const choice = await alerts.actionSheet(
+      `Added to Basket\n${product.name} for ${fmtDayLabel(selectedDate)}`,
+      `Keep ordering for ${fmtWeekday(selectedDate)}`,
+      checkoutChoice,
+      changeDayChoice
     );
-    if (changeDay) {
-      router.push('/select-date');
+    if (choice === checkoutChoice) {
+      router.push('/cart');
       return;
     }
-    router.back();
+    if (choice === changeDayChoice) {
+      // Confirming a day returns to the Menu; ✕ leaves them here.
+      setDayPickerOpen(true);
+      return;
+    }
+    returnToMenu();
+  };
+
+  /** Back to the Menu tab's root, however deep the stack is. */
+  const returnToMenu = () => {
+    if (router.canDismiss()) router.dismissAll();
+    else router.navigate('/');
   };
 
   return (
     <Page>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.stack10}>
-          <View style={[styles.photo, { backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF' }]}>
+          <View style={[styles.photo, { backgroundColor: colors.cardBg }]}>
             <Image source={{ uri: product.imageUrl }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           </View>
           <Text style={[styles.name, { color: colors.text }]}>{product.name}</Text>
@@ -153,7 +175,7 @@ export default function ProductDetailScreen() {
                   onPress={() => setSelectedDate(date)}
                   accessibilityRole="radio"
                   aria-checked={isSel}
-                  style={[styles.dateOption, { borderColor: colors.primary, backgroundColor: isSel ? colors.primary : 'transparent' }]}
+                  style={[styles.dateOption, { borderColor: colors.primary, backgroundColor: isSel ? colors.primary : colors.cardBg }]}
                 >
                   <Text style={[styles.dateText, { color: isSel ? colors.onPrimary : colors.text }]} numberOfLines={1}>
                     {fmtDayLabel(date)}
@@ -202,38 +224,33 @@ export default function ProductDetailScreen() {
         {product.customizationGroups.length > 0 && <View style={styles.line} />}
 
         <View style={styles.stack5}>
-          <Text style={[styles.heading, { color: colors.text }]}>Special Requests</Text>
+          <Text style={[styles.heading, { color: colors.text }]}>Special Requests & Allergy Notes</Text>
+          <Text style={[styles.helper, { color: colors.textSecondary }]}>
+            Preferences, or anything the chef must know — e.g. no onions, severe nut allergy.
+          </Text>
           <TextInput
             value={specialRequests}
             onChangeText={setSpecialRequests}
-            placeholder="e.g., No onions, sauce on the side..."
+            placeholder="e.g., No onions, sauce on the side, peanut allergy..."
             placeholderTextColor={colors.placeholder}
             multiline
-            onFocus={() => setRequestsFocused(true)}
-            onBlur={() => setRequestsFocused(false)}
-            style={[styles.editor, { height: 70, color: colors.text, backgroundColor: requestsFocused ? colors.tan : colors.editorBg }]}
-          />
-        </View>
-
-        <View style={styles.stack5}>
-          <View style={styles.allergyHeader}>
-            <Text style={{ fontSize: 14 }}>⚠️</Text>
-            <Text style={[styles.heading, { color: fixed.amber }]}>Allergy Notes (Chef Alert)</Text>
-          </View>
-          <TextInput
-            value={allergyNotes}
-            onChangeText={setAllergyNotes}
-            placeholder="e.g., Severe peanut allergy — chef alert only"
-            placeholderTextColor={colors.placeholder}
-            multiline
-            onFocus={() => setAllergyFocused(true)}
-            onBlur={() => setAllergyFocused(false)}
-            style={[styles.editor, { height: 60, color: colors.text, backgroundColor: allergyFocused ? fixed.amberBgStrong : fixed.amberBg }]}
+            style={[styles.editor, { color: colors.text, backgroundColor: colors.chipBg }]}
           />
         </View>
 
         <Btn testID="add-to-basket" title="Add to Basket" onPress={addToCart} height={50} radius={10} style={styles.addButton} />
       </ScrollView>
+
+      <DeliveryDayOverlay
+        visible={dayPickerOpen}
+        windowDays={STATIC_WINDOW}
+        onConfirm={date => {
+          setSelectedOrderingDate(date);
+          setDayPickerOpen(false);
+          returnToMenu();
+        }}
+        onClose={() => setDayPickerOpen(false)}
+      />
     </Page>
   );
 }
@@ -257,7 +274,7 @@ const styles = StyleSheet.create({
   optionText: { fontSize: 14 },
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
   radioDot: { width: 10, height: 10, borderRadius: 5 },
-  editor: { fontSize: 14, padding: 8, textAlignVertical: 'top', borderRadius: 4 },
-  allergyHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  helper: { fontSize: 12 },
+  editor: { height: 90, fontSize: 14, padding: 8, textAlignVertical: 'top', borderRadius: 4 },
   addButton: { marginTop: 20 },
 });

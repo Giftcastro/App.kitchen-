@@ -5,8 +5,9 @@
  * RLS decides what comes back: an admin sees every company and profile; a
  * customer sees only their own company and their own profile row.
  */
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase/client';
-import type { Company, CompanyLocation, DiscountType, Role, UserAccount } from '../models';
+import type { Company, CompanyLocation, DeliveryFeeMode, DiscountType, Role, UserAccount } from '../models';
 
 function joinAddress(parts: (string | null | undefined)[]): string {
   return parts.filter(p => p && String(p).trim()).join(', ');
@@ -32,6 +33,8 @@ export function mapLocation(row: Record<string, any>, companyId?: string): Compa
 }
 
 const DISCOUNT_FROM_DB: Record<string, DiscountType> = { percentage: 'Percentage', fixed: 'FixedZar' };
+const DELIVERY_FROM_DB: Record<string, DeliveryFeeMode> = { flat: 'Flat', free: 'Free' };
+const DELIVERY_TO_DB: Record<DeliveryFeeMode, string> = { DistanceTier: 'distance', Flat: 'flat', Free: 'free' };
 const DISCOUNT_TO_DB: Record<DiscountType, string> = { None: 'none', Percentage: 'percentage', FixedZar: 'fixed' };
 
 function mapCompany(row: Record<string, any>): Company {
@@ -48,6 +51,8 @@ function mapCompany(row: Record<string, any>): Company {
       .slice()
       .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
       .map(a => mapLocation(a, row.id)),
+    deliveryFeeMode: DELIVERY_FROM_DB[row.delivery_fee_mode] ?? 'DistanceTier',
+    flatDeliveryFee: row.flat_delivery_fee != null ? Number(row.flat_delivery_fee) : 0,
   };
 }
 
@@ -85,6 +90,15 @@ export async function updateCompany(company: Company): Promise<void> {
       discount_value: company.discountValue,
     })
     .eq('id', company.id);
+  if (error) throw error;
+}
+
+/** Admin > Companies > Delivery. Separate from updateCompany so it only touches the two delivery columns. */
+export async function updateCompanyDelivery(companyId: string, mode: DeliveryFeeMode, flatFee: number): Promise<void> {
+  const { error } = await supabase
+    .from('companies')
+    .update({ delivery_fee_mode: DELIVERY_TO_DB[mode], flat_delivery_fee: mode === 'Flat' ? flatFee : 0 })
+    .eq('id', companyId);
   if (error) throw error;
 }
 
@@ -156,6 +170,8 @@ export async function listRegistrationCompanies(): Promise<Company[]> {
         discountValue: 0,
         whitelistedDomains: (domains ?? []).filter((d: Record<string, any>) => d.company_id === row.company_id).map((d: Record<string, any>) => d.domain),
         locations: [],
+        deliveryFeeMode: 'DistanceTier',
+        flatDeliveryFee: 0,
       });
     }
     byCompany.get(key)!.locations.push(mapLocation(row, row.company_id ?? ''));
@@ -197,9 +213,73 @@ export async function updateUser(user: UserAccount): Promise<void> {
   if (error) throw error;
 }
 
+/** Admin > Users > + Add User: the temporary password the new account signs in with. */
+export const TEMP_PASSWORD = 'Welcome123';
+
+export interface NewUserInput {
+  fullName: string;
+  email: string;
+  role: Role;
+  companyId?: string;
+  locationId?: string;
+  deliveryFloor?: string;
+}
+
+/**
+ * Creates a sign-in for someone else. The sign-up runs on a throwaway,
+ * non-persisting client so the admin's own session is untouched; the
+ * handle_new_user trigger makes the profile row, which the admin (allowed
+ * past guard_profile_privilege_columns) then fills in. Returns whether the
+ * project needs the address confirmed before the first sign-in.
+ */
+export async function createUserAccount(input: NewUserInput): Promise<{ needsConfirmation: boolean }> {
+  const url = process.env.EXPO_PUBLIC_SUPABASE_URL!;
+  const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+  const scratch = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
+  const { data, error } = await scratch.auth.signUp({
+    email: input.email,
+    password: TEMP_PASSWORD,
+    options: { data: { name: input.fullName } },
+  });
+  if (error) throw error;
+  const newUser = data.user;
+  // Supabase answers an existing address with an obfuscated user that has no identities.
+  if (!newUser || (newUser.identities && newUser.identities.length === 0)) {
+    throw new Error(`${input.email} already has an account.`);
+  }
+  if (data.session) await scratch.auth.signOut().catch(() => {});
+
+  const isCompany = !!input.companyId;
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .update({
+      name: input.fullName,
+      role: ROLE_TO_DB[input.role],
+      account_type: isCompany ? 'company' : 'individual',
+      company_id: isCompany ? input.companyId : null,
+      company_address_id: isCompany && input.locationId ? input.locationId : null,
+      delivery_floor: input.deliveryFloor ?? '',
+      is_active: true,
+    })
+    .eq('id', newUser.id);
+  if (profileError) throw profileError;
+  return { needsConfirmation: !data.session };
+}
+
 export async function updateDeliveryFloor(userId: string, floor: string): Promise<void> {
   const { error } = await supabase.from('profiles').update({ delivery_floor: floor }).eq('id', userId);
   if (error) throw error;
+}
+
+/** An order's drop-off: a company site, or an individual's own address (same id space as Order.locationId). */
+export async function getLocationById(locationId: string): Promise<CompanyLocation | null> {
+  if (!locationId) return null;
+  const [{ data: site }, { data: own }] = await Promise.all([
+    supabase.from('company_addresses').select('*').eq('id', locationId).maybeSingle(),
+    supabase.from('addresses').select('*').eq('id', locationId).maybeSingle(),
+  ]);
+  const row = site ?? own;
+  return row ? mapLocation(row) : null;
 }
 
 /** The location a user's orders deliver to: their company site, or (individuals) their own default address. */

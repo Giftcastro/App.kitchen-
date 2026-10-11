@@ -70,6 +70,18 @@ const clickTab = async (page, href, wait = 3500) => {
   await sleep(wait);
   return true;
 };
+const clickLabel = async (page, label, wait = 1500) => {
+  const box = await page.evaluate(l => {
+    const el = Array.from(document.querySelectorAll(`[aria-label="${l}"]`)).find(e => e.getBoundingClientRect().width > 0);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  }, label);
+  if (!box) return console.log('  MISSING label:', label), false;
+  await page.mouse.click(box.x, box.y);
+  await sleep(wait);
+  return true;
+};
 const has = (page, t) => page.evaluate(s => document.body.textContent.includes(s), t);
 const signIn = async (page, email) => {
   await page.goto('http://localhost:8081/login', { waitUntil: 'networkidle2', timeout: 180000 });
@@ -81,6 +93,8 @@ const signIn = async (page, email) => {
 
 (async () => {
   const { browser, page } = await open();
+  // Optional offline backend (a module exporting install(page)) for when the Supabase project is unreachable.
+  if (process.env.MOCK) await require(process.env.MOCK)(page);
   const results = [];
   const check = async (label, ok) => {
     results.push([label, ok]);
@@ -104,8 +118,13 @@ const signIn = async (page, email) => {
     await check('customer lands on delivery-day picker', await has(page, 'Which day are you ordering for?'));
     await clickTestId(page, 'confirm-day', 5000);
     await shot(page, '04-menu');
-    await check('menu shows Explore Our Menu', await has(page, 'Explore Our Menu'));
+    await check('menu shows the cutoff notice', await has(page, 'Orders close at 9:00 AM'));
     await check('menu loads dishes from Supabase', await has(page, 'Large R'));
+
+    await clickLabel(page, 'Change delivery day', 1500);
+    await shot(page, '04b-day-overlay');
+    await check('date pill opens the in-page day overlay', await has(page, 'This sets the default delivery day for everything you add to your basket.'));
+    await clickLabel(page, 'Close', 1200);
 
     await clickText(page, 'Cycling Menu', 4000);
     await shot(page, '05-cycling-menu');
@@ -117,12 +136,12 @@ const signIn = async (page, email) => {
     await check('one-time 9AM cutoff popup', await has(page, 'Order cutoff: 9:00 AM'));
     await clickText(page, 'Got it', 1200);
     await shot(page, '07-product-detail');
-    await check('product detail has allergy chef alert', await has(page, 'Allergy Notes (Chef Alert)'));
+    await check('product detail has the single notes box', await has(page, 'Special Requests & Allergy Notes'));
     await clickTestId(page, 'add-to-basket', 1500);
     await shot(page, '08-added-to-basket');
     await check('added-to-basket prompt', await has(page, 'Order for a different day'));
     const continueLabel = await page.evaluate(
-      () => (Array.from(document.querySelectorAll('*')).map(e => (e.textContent || '').trim()).find(t => /^Continue with \w+$/.test(t)) || '')
+      () => (Array.from(document.querySelectorAll('*')).map(e => (e.textContent || '').trim()).find(t => /^Keep ordering for \w+$/.test(t)) || '')
     );
     await clickText(page, continueLabel, 2500);
     await shot(page, '09-menu-with-cart-bar');
@@ -134,9 +153,7 @@ const signIn = async (page, email) => {
     await check('cart shows Ecogra subsidy line', await has(page, 'per meal (incl. VAT)'));
     await clickTestId(page, 'proceed-to-payment', 2500);
     await shot(page, '11-payment');
-    await check('payment screen (not submitted)', await has(page, 'Choose Payment Method'));
-    await clickText(page, 'PayFast', 800);
-    await shot(page, '12-payment-payfast');
+    await check('payment screen is PayFast-only (not submitted)', (await has(page, 'Payment Method')) && !(await has(page, 'Choose Payment Method')));
     await page.goBack();
     await sleep(1200);
     await page.goBack();
@@ -144,8 +161,8 @@ const signIn = async (page, email) => {
 
     await clickTab(page, '/orders', 4500);
     await shot(page, '13-orders-active');
-    await check('orders tab active view', await has(page, 'Active Orders'));
-    await clickText(page, 'History', 3500);
+    await check('orders tab has the 50/50 toggle', (await has(page, 'Active Orders')) && (await has(page, 'Order History')));
+    await clickText(page, 'Order History', 3500);
     await shot(page, '14-orders-history');
     await check('history has Report an Issue / Invoice', (await has(page, 'Invoice')) || (await has(page, 'No Order History')));
 
@@ -154,6 +171,16 @@ const signIn = async (page, email) => {
     await check('profile shows company', await has(page, 'Ecogra'));
     await clickText(page, 'Settings', 2000);
     await shot(page, '16-settings');
+    await check('settings has App Theme', await has(page, 'App Theme'));
+    await clickText(page, 'Mediterranean Pantry', 1200);
+    await clickText(page, 'Apply', 1500);
+    await shot(page, '16b-settings-pantry');
+    await clickTab(page, '/', 3500);
+    await shot(page, '16c-menu-pantry');
+    await clickTab(page, '/profile', 2500);
+    await clickText(page, 'Settings', 2000);
+    await clickText(page, 'Ink & Cream', 1200);
+    await clickText(page, 'Apply', 1500);
     await page.goBack();
     await sleep(1200);
     await clickText(page, 'Help & Support', 2000);
@@ -185,15 +212,15 @@ const signIn = async (page, email) => {
     await sleep(3000);
     await shot(page, '20-admin-overview');
     await check('admin lands on Overview hub', await has(page, 'Upcoming Deliveries'));
+    await check('overview shows all-time revenue', await has(page, 'Total Revenue (all time)'));
     for (const [label, name, marker] of [
-      ['Active Orders', '21-admin-active-orders', 'Mark All Filtered As'],
-      ['Companies', '22-admin-companies', 'Client Companies'],
-      ['Discounts', '23-admin-discounts', 'New Discount Code'],
+      ['Active Orders', '21-admin-active-orders', 'Production Sheet (PDF)'],
+      ['Companies', '22-admin-companies', '🚚'],
       ['Notifications', '24-admin-notifications', 'Compose Broadcast'],
       ['Menu Catalog', '25-admin-menu', 'Menu Inventory'],
-      ['Users', '26-admin-users', 'Role Filter:'],
-      ['Reports', '27-admin-reports', 'Revenue Over Time'],
-      ['Settings', '28-admin-settings', 'App Preferences'],
+      ['Users', '26-admin-users', '+ Add User'],
+      ['Reports', '27-admin-reports', 'Download as Excel'],
+      ['Settings', '28-admin-settings', 'App Theme'],
     ]) {
       // Nav pills sit in a horizontal scroller; the label is unique there.
       await clickText(page, label, 4500);
@@ -207,6 +234,11 @@ const signIn = async (page, email) => {
     await clickText(page, 'Active Orders', 3500);
     await clickText(page, '🍳  Prep Summary', 1500);
     await shot(page, '30-admin-prep-summary');
+    await clickText(page, '👤 Customer View', 5000);
+    await shot(page, '31-admin-customer-view');
+    await check('Customer View opens the customer app with the preview banner', await has(page, 'Previewing as a customer'));
+    await clickText(page, '← Back to Admin', 4000);
+    await check('Back to Admin returns to the hub', await has(page, 'Upcoming Deliveries'));
   } catch (err) {
     console.log('ERROR', err);
   } finally {

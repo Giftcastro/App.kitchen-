@@ -1,68 +1,48 @@
-/** TaxInvoicePage.xaml + TaxInvoiceViewModel. */
+/**
+ * TaxInvoicePage.xaml + TaxInvoiceViewModel. Download PDF and Share as Text
+ * both come from the shared InvoiceDocument (services/export), the same
+ * document the admin's daily invoice batch prints.
+ */
 import React, { useEffect, useState } from 'react';
-import { ScrollView, Share, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { Text } from '../components/AppText';
+import { alerts } from '../components/Alerts';
 import { Btn, Card, Page } from '../components/ui';
 import { useApp } from '../state/AppState';
 import { getNavParam } from '../state/navParams';
-import { getCompany, mapLocation } from '../services/directory';
 import { fmtLongDate } from '../services/scheduling';
-import { supabase } from '../lib/supabase/client';
+import { InvoiceDocument, invoiceText, loadInvoiceDocument, mealSubtotal as subtotalOf, PdfWriter, sharePdf, shareText, writeInvoice } from '../services/export';
 
 export default function TaxInvoiceScreen() {
   const { colors } = useApp();
   const [order] = useState(() => getNavParam('Order'));
-  const [customerCompanyName, setCustomerCompanyName] = useState('');
-  const [customerLocationName, setCustomerLocationName] = useState('');
+  const [doc, setDoc] = useState<InvoiceDocument | null>(null);
 
   useEffect(() => {
-    if (!order) return;
-    getCompany(order.companyId)
-      .then(c => setCustomerCompanyName(c?.name ?? 'Individual Customer'))
-      .catch(() => setCustomerCompanyName('Individual Customer'));
-    (async () => {
-      const [{ data: site }, { data: own }] = await Promise.all([
-        supabase.from('company_addresses').select('*').eq('id', order.locationId).maybeSingle(),
-        supabase.from('addresses').select('*').eq('id', order.locationId).maybeSingle(),
-      ]);
-      const row = site ?? own;
-      const location = row ? mapLocation(row) : null;
-      setCustomerLocationName(location?.address || location?.name || '—');
-    })().catch(() => setCustomerLocationName('—'));
+    if (order) loadInvoiceDocument(order).then(setDoc).catch(() => setDoc(null));
   }, [order]);
 
   if (!order) return null;
 
-  // Order keeps only the final total, so the meal subtotal is backed out of
-  // its known parts rather than stored separately.
-  const mealSubtotal = order.totalAmount - order.deliveryFee + order.subsidyAmount + order.discountAmount;
+  const mealSubtotal = subtotalOf(order);
+  const getDoc = async () => doc ?? (await loadInvoiceDocument(order));
 
   const share = async () => {
-    const lines = [
-      'YOUR KITCHEN CO. (PTY) LTD',
-      'SARS Compliant Tax Invoice',
-      `Invoice: ${order.taxInvoiceNumber}`,
-      'VAT Reg No: 4910298412',
-      'Corporate Culinary Hub, Sandton, 2196',
-      '',
-      `Customer: ${customerCompanyName}`,
-      `Delivery: ${customerLocationName}`,
-      `Delivery Date: ${fmtLongDate(order.deliveryDate)}`,
-      '',
-      'LINE ITEMS',
-      ...order.lines.map(l => `  ${l.quantity > 1 ? `${l.quantity}x ` : ''}${l.name} — R${(l.unitPrice * l.quantity).toFixed(2)}`),
-      ...order.lines.filter(l => l.allergyNotes).map(l => `  ⚠️ Allergy (${l.name}): ${l.allergyNotes}`),
-      '',
-      `Meal Subtotal:          R ${mealSubtotal.toFixed(2)}`,
-      ...(order.subsidyAmount > 0 ? [`Company Subsidy:       -R ${order.subsidyAmount.toFixed(2)}`] : []),
-      ...(order.discountAmount > 0 ? [`Corporate Discount:    -R ${order.discountAmount.toFixed(2)}`] : []),
-      `Delivery Fee:           R ${order.deliveryFee.toFixed(2)}`,
-      '--------------------------------',
-      `Total Paid (ZAR):       R ${order.totalAmount.toFixed(2)}`,
-      '',
-      'VAT: Not applicable (zero-rated corporate catering).',
-    ];
-    await Share.share({ message: lines.join('\n'), title: `Tax Invoice ${order.taxInvoiceNumber}` });
+    try {
+      await shareText(invoiceText(await getDoc()), `Invoice ${order.taxInvoiceNumber}`);
+    } catch (err) {
+      await alerts.show('Share Failed', (err as Error)?.message ?? 'The invoice could not be shared.', 'OK');
+    }
+  };
+
+  const downloadPdf = async () => {
+    try {
+      const pdf = new PdfWriter();
+      writeInvoice(pdf, await getDoc());
+      await sharePdf(`Invoice_${order.taxInvoiceNumber}`, pdf, `Invoice ${order.taxInvoiceNumber}`);
+    } catch (err) {
+      await alerts.show('Download Failed', (err as Error)?.message ?? 'The invoice PDF could not be created.', 'OK');
+    }
   };
 
   const amountRow = (label: string, value: string, bold = false) => (
@@ -76,7 +56,7 @@ export default function TaxInvoiceScreen() {
     <Page>
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.stack2}>
-          <Text style={[styles.title, { color: colors.text }]}>SARS Tax Invoice</Text>
+          <Text style={[styles.title, { color: colors.text }]}>Invoice</Text>
           <Text style={[styles.invoiceNo, { color: colors.primary }]}>{order.taxInvoiceNumber}</Text>
         </View>
 
@@ -91,8 +71,10 @@ export default function TaxInvoiceScreen() {
             <View style={[styles.divider, { backgroundColor: colors.surfaceBorder }]} />
             <View style={styles.stack2}>
               <Text style={[styles.caption, { color: colors.primary }]}>CUSTOMER &amp; DROP-OFF</Text>
-              <Text style={[styles.strong, { color: colors.text }]}>{customerCompanyName}</Text>
-              <Text style={[styles.small, { color: colors.textSecondary }]}>{customerLocationName}</Text>
+              <Text style={[styles.strong, { color: colors.text }]}>{order.customerName}</Text>
+              <Text style={[styles.small, { color: colors.textSecondary }]}>Order #{order.orderNumber}</Text>
+              <Text style={[styles.strong, { color: colors.text }]}>{doc?.companyName ?? ''}</Text>
+              <Text style={[styles.small, { color: colors.textSecondary }]}>{doc ? doc.locationAddress : ''}</Text>
               {!!order.deliveryFloor && <Text style={[styles.small, { color: colors.textSecondary }]}>{order.deliveryFloor}</Text>}
               <Text style={[styles.small, { color: colors.textSecondary }]}>Scheduled Delivery: {fmtLongDate(order.deliveryDate)}</Text>
             </View>
@@ -125,13 +107,18 @@ export default function TaxInvoiceScreen() {
           </View>
         </Card>
 
-        <Btn title="Share / Save Invoice" onPress={share} bold radius={10} height={48} />
+        <View style={styles.buttons}>
+          <Btn title="Download PDF" onPress={downloadPdf} bold radius={10} height={48} style={styles.flex} />
+          <Btn title="Share as Text" onPress={share} bold radius={10} height={48} style={styles.flex} />
+        </View>
       </ScrollView>
     </Page>
   );
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  buttons: { flexDirection: 'row', gap: 10 },
   scroll: { padding: 20, gap: 16 },
   stack2: { gap: 2 },
   stack10: { gap: 10 },
