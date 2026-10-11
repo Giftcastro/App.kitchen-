@@ -4,7 +4,6 @@
  * CartService (the basket), plus the persisted Settings preferences.
  */
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CartItem, Company, CompanyLocation, UserAccount } from '../models';
 import { lineTotal } from '../models';
@@ -61,7 +60,6 @@ interface AppStateValue {
 const AppStateContext = createContext<AppStateValue | null>(null);
 
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
-  const systemScheme = useColorScheme();
   const [user, setUserState] = useState<UserAccount | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [selectedOrderingDate, setSelectedOrderingDate] = useState<string | null>(null);
@@ -149,7 +147,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   );
   const clearCart = useCallback(() => setCartItems([]), []);
 
-  const isDark = darkPref ?? systemScheme === 'dark';
+  // First run is Ink & Cream in light mode whatever the phone's system setting; Settings > Dark Interface Mode overrides it.
+  const isDark = darkPref ?? false;
   const colors = useMemo(() => getThemeColors(isDark ? 'dark' : 'light', brandTheme), [isDark, brandTheme]);
 
   const setBrandTheme = (theme: BrandTheme) => {
