@@ -7,6 +7,10 @@
  *   await alerts.confirm(title, message, acceptText, cancelText) -> boolean
  *   await alerts.prompt(title, message, { initialValue, keyboard }) -> string | null
  *   await alerts.actionSheet(title, cancelText, ...options) -> string | null
+ *   await alerts.choose({ title, message, icon, options, cancel, primary }) -> string | null
+ *
+ * In a sheet, a title's first line is the heading and any further lines are
+ * its supporting message; `primary` marks the one option drawn filled.
  *
  * Callable from anywhere (screens, handlers) — <AlertHost/> is mounted once
  * at the root and renders whichever popup is at the front of the queue.
@@ -19,7 +23,7 @@ import { useApp } from '../state/AppState';
 type Request =
   | { kind: 'alert'; title: string; message: string; buttons: string[]; resolve: (index: number) => void }
   | { kind: 'prompt'; title: string; message: string; initialValue: string; keyboard?: KeyboardTypeOptions; accept: string; cancel: string; resolve: (value: string | null) => void }
-  | { kind: 'sheet'; title: string; cancel: string; options: string[]; resolve: (value: string | null) => void };
+  | { kind: 'sheet'; title: string; message?: string; icon?: string; cancel: string; options: string[]; primary?: string; resolve: (value: string | null) => void };
 
 // Module-level, alongside the queue: <AlertHost/> is mounted exactly once.
 const queue: Request[] = [];
@@ -60,7 +64,15 @@ export const alerts = {
   actionSheet(title: string, cancelText: string, ...options: string[]): Promise<string | null> {
     return new Promise(resolve => enqueue({ kind: 'sheet', title, cancel: cancelText, options, resolve }));
   },
+  /** An action sheet with a clear heading / message split and one highlighted primary option. */
+  choose(sheet: { title: string; message?: string; icon?: string; options: string[]; cancel: string; primary?: string }): Promise<string | null> {
+    return new Promise(resolve => enqueue({ kind: 'sheet', ...sheet, resolve }));
+  },
 };
+
+/** First line of a sheet title is its heading; the rest (or an explicit message) supports it. */
+const sheetHeading = (r: { title: string }) => r.title.split('\n')[0];
+const sheetMessage = (r: { title: string; message?: string }) => r.message ?? r.title.split('\n').slice(1).join('\n');
 
 function resetClosing() {
   closing = false;
@@ -156,13 +168,23 @@ export function AlertHost() {
       <View style={[styles.backdrop, current.kind === 'sheet' && styles.backdropSheet]}>
         {current.kind === 'sheet' ? (
           <Animated.View style={[styles.sheet, { backgroundColor: colors.cardBg }, sheetAnim]}>
-            <Text style={[styles.sheetTitle, { color: colors.textSecondary }]}>{current.title}</Text>
+            <View style={styles.sheetHeader}>
+              {!!current.icon && (
+                <View style={styles.sheetIcon}>
+                  <Text style={styles.sheetIconText}>{current.icon}</Text>
+                </View>
+              )}
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>{sheetHeading(current)}</Text>
+              {!!sheetMessage(current) && <Text style={[styles.sheetMessage, { color: colors.textSecondary }]}>{sheetMessage(current)}</Text>}
+            </View>
             <View style={styles.stack8}>
               {current.options.map(option =>
-                outlineButton(option, () => close(() => current.resolve(option)), colors.text, false)
+                option === current.primary
+                  ? primaryButton(option, () => close(() => current.resolve(option)))
+                  : outlineButton(option, () => close(() => current.resolve(option)), colors.text, false)
               )}
             </View>
-            <View style={styles.sheetCancel}>{outlineButton(current.cancel, () => close(() => current.resolve(null)))}</View>
+            <View style={styles.sheetCancel}>{outlineButton(current.cancel, () => close(() => current.resolve(null)), colors.textSecondary, false)}</View>
           </Animated.View>
         ) : (
           <Animated.View style={[styles.card, { backgroundColor: colors.cardBg }, cardAnim]}>
@@ -238,7 +260,11 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 16,
   },
-  sheetTitle: { fontSize: 16, fontWeight: '700', textAlign: 'center' },
+  sheetHeader: { alignItems: 'center', gap: 4, marginBottom: 2 },
+  sheetIcon: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(5,150,105,0.12)', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  sheetIconText: { fontSize: 22, fontWeight: '700', color: '#059669' },
+  sheetTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
+  sheetMessage: { fontSize: 14, textAlign: 'center' },
   stack8: { gap: 8 },
   sheetCancel: { marginTop: 6 },
 });

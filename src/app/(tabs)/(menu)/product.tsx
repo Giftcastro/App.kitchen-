@@ -126,12 +126,15 @@ export default function ProductDetailScreen() {
     const checkoutChoice = 'Continue to checkout';
     const changeDayChoice = 'Order for a different day';
     // "Keep ordering" is the cancel slot: it's also what dismissing the sheet does.
-    const choice = await alerts.actionSheet(
-      `Added to Basket\n${product.name} for ${fmtDayLabel(selectedDate)}`,
-      `Keep ordering for ${fmtWeekday(selectedDate)}`,
-      checkoutChoice,
-      changeDayChoice
-    );
+    const choice = await alerts.choose({
+      icon: '✓',
+      title: 'Added to Basket',
+      // Non-breaking spaces keep "Thursday, 15 Oct" together on one line.
+      message: `${product.name}\nfor ${fmtDayLabel(selectedDate).replace(/ /g, ' ')}`,
+      options: [checkoutChoice, changeDayChoice],
+      primary: checkoutChoice,
+      cancel: `Keep ordering for ${fmtWeekday(selectedDate)}`,
+    });
     if (choice === checkoutChoice) {
       router.push('/cart');
       return;
