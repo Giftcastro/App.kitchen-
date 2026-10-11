@@ -14,7 +14,7 @@ import { Text } from './AppText';
 import { Btn } from './ui';
 import { useApp } from '../state/AppState';
 import { BrandLogo } from './BrandLogo';
-import { fmtDayLabel, getOrderableDeliveryDates } from '../services/scheduling';
+import { fmtDayMonth, fmtShortWeekday, getOrderableDeliveryDates } from '../services/scheduling';
 
 interface PanelProps {
   windowDays: number;
@@ -66,7 +66,9 @@ export function DeliveryDayPanel({ windowDays, titleSize, subtitle, onConfirm, o
               aria-checked={isSelected}
               style={[styles.option, { borderColor: colors.brandGold, backgroundColor: isSelected ? colors.primary : colors.cardBg }]}
             >
-              <Text style={[styles.optionText, { color: isSelected ? colors.onPrimary : colors.text }]}>{fmtDayLabel(date)}</Text>
+              <Text style={[styles.optionText, { color: isSelected ? colors.onPrimary : colors.text }]} numberOfLines={1}>
+                {`${fmtShortWeekday(date)}, ${fmtDayMonth(date)}`}
+              </Text>
             </Pressable>
           );
         })}
@@ -122,10 +124,11 @@ const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
   option: {
     width: '48.5%',
-    height: 66,
+    // Compact (MAUI's 66pt tiles wrapped long weekdays onto two lines on narrow phones).
+    height: 46,
     borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 14,
+    paddingHorizontal: 8,
     justifyContent: 'center',
   },
   optionText: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
