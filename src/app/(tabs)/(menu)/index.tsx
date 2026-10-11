@@ -7,7 +7,7 @@ import { Image, ImageBackground, Pressable, ScrollView, StyleSheet, View } from 
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Text } from '../../../components/AppText';
-import { Btn, Card, Page, SearchBar } from '../../../components/ui';
+import { Btn, Card, Page, SearchBar, HScroll } from '../../../components/ui';
 import { useApp } from '../../../state/AppState';
 import { setNavParam } from '../../../state/navParams';
 import { getProducts } from '../../../services/catalog';
@@ -187,10 +187,10 @@ export default function UserDashboardScreen() {
         </View>
 
         {/* Category slider */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.slider} style={styles.sliderWrap}>
+        <HScroll contentContainerStyle={styles.slider} style={styles.sliderWrap}>
           {chip('All', '', activeCategory === '')}
           {categories.map(c => chip(titleCase(c.name), c.name, activeCategory.toLowerCase() === c.name.toLowerCase()))}
-        </ScrollView>
+        </HScroll>
 
         {/* Cutoff message */}
         <View style={[styles.notice, { borderColor: colors.surfaceBorder, backgroundColor: colors.chipBg }]}>

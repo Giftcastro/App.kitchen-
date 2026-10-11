@@ -5,13 +5,15 @@
  * PageAnimation entrance (fade in + rise 18px over 260ms) every page runs
  * when it appears.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Easing,
   KeyboardTypeOptions,
   Platform,
   Pressable,
+  ScrollView,
+  ScrollViewProps,
   StyleProp,
   StyleSheet,
   Switch as RNSwitch,
@@ -372,6 +374,36 @@ export function SearchBar({
         </Pressable>
       )}
     </View>
+  );
+}
+
+/**
+ * A sideways-scrolling row (category slider, date chips, admin pills). Touch
+ * swipes work everywhere; on the web a mouse wheel has no sideways axis, so
+ * vertical wheel movement is turned into horizontal scrolling while the row
+ * can still move, and the scrollbar is shown as a drag handle.
+ */
+export function HScroll({ children, ...props }: ScrollViewProps & { children: React.ReactNode }) {
+  const ref = useRef<ScrollView>(null);
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const node = (ref.current as unknown as { getScrollableNode?: () => HTMLElement } | null)?.getScrollableNode?.();
+    if (!node) return;
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+      const max = node.scrollWidth - node.clientWidth;
+      const canMove = e.deltaY > 0 ? node.scrollLeft < max - 1 : node.scrollLeft > 0;
+      if (max <= 0 || !canMove) return; // let the page scroll instead
+      node.scrollLeft += e.deltaY;
+      e.preventDefault();
+    };
+    node.addEventListener('wheel', onWheel, { passive: false });
+    return () => node.removeEventListener('wheel', onWheel);
+  }, []);
+  return (
+    <ScrollView ref={ref} horizontal showsHorizontalScrollIndicator={Platform.OS === 'web'} {...props}>
+      {children}
+    </ScrollView>
   );
 }
 

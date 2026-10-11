@@ -8,7 +8,7 @@ import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { Text, TextInput } from '../../../components/AppText';
 import { alerts } from '../../../components/Alerts';
-import { Btn, CheckBox, Page } from '../../../components/ui';
+import { Btn, CheckBox, Page, HScroll } from '../../../components/ui';
 import { DeliveryDayOverlay } from '../../../components/DeliveryDayPicker';
 import { useApp } from '../../../state/AppState';
 import { getNavParam } from '../../../state/navParams';
@@ -166,7 +166,7 @@ export default function ProductDetailScreen() {
 
         <View style={styles.stack10}>
           <Text style={[styles.heading, { color: colors.text }]}>Choose a delivery day</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dateRow}>
+          <HScroll contentContainerStyle={styles.dateRow}>
             {dates.map(date => {
               const isSel = date === selectedDate;
               return (
@@ -183,7 +183,7 @@ export default function ProductDetailScreen() {
                 </Pressable>
               );
             })}
-          </ScrollView>
+          </HScroll>
         </View>
 
         <View style={styles.line} />
@@ -266,10 +266,10 @@ const styles = StyleSheet.create({
   description: { fontSize: 14, color: 'gray' },
   line: { height: 1, backgroundColor: 'lightgray' },
   heading: { fontSize: 16, fontWeight: '700' },
-  dateRow: { gap: 10 },
-  // The horizontal CollectionView is 88pt tall and stretches each item to it; content sits at the top.
-  dateOption: { width: 130, height: 88, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8 },
-  dateText: { fontSize: 12, fontWeight: '700', textAlign: 'center' },
+  dateRow: { gap: 8, paddingBottom: 4 },
+  // Sized to the date (MAUI's 130x88 boxes truncated the label and wasted space).
+  dateOption: { height: 44, borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, justifyContent: 'center' },
+  dateText: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
   optionRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 5 },
   optionText: { fontSize: 14 },
   radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },

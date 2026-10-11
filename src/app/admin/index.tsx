@@ -5,7 +5,7 @@ import { useFocusEffect } from 'expo-router';
 import { Text } from '../../components/AppText';
 import { alerts } from '../../components/Alerts';
 import { AdminNavStrip } from '../../components/AdminNavStrip';
-import { Btn, Card, Page, Picker } from '../../components/ui';
+import { Btn, Card, Page, Picker, HScroll } from '../../components/ui';
 import { useApp } from '../../state/AppState';
 import {
   ALL_COMPANIES,
@@ -133,12 +133,12 @@ export default function AdminDashboardScreen() {
           <Btn title="Refresh" onPress={refresh} variant="ghost" color={colors.text} fontSize={12} height={32} paddingH={10} />
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filters}>
+        <HScroll contentContainerStyle={styles.filters}>
           <Text style={[styles.filterLabel, { color: colors.brandGold }]}>Company:</Text>
           <Picker title="Filter Company" options={companyFilterOptions(companies, rows)} selected={companyFilter} onSelect={setCompanyFilter} width={170} />
           <Text style={[styles.filterLabel, styles.filterGap, { color: colors.brandGold }]}>Date:</Text>
           <Picker title="Filter Date" options={dateFilterOptions(rows)} selected={dateFilter} onSelect={setDateFilter} width={160} />
-        </ScrollView>
+        </HScroll>
 
         <Btn title={`📤  Bulk Update Status (${upcoming.length} orders)`} onPress={bulkUpdate} bold fontSize={13} height={40} radius={8} />
 

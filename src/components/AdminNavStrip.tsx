@@ -5,9 +5,10 @@
  * customer app as this admin, AdminCustomerSwitch) and Logout.
  */
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text } from './AppText';
+import { HScroll } from './ui';
 import { useApp } from '../state/AppState';
 
 export type AdminRoute =
@@ -62,7 +63,7 @@ export function AdminNavStrip({ activeRoute }: { activeRoute: AdminRoute }) {
           </View>
         </View>
       </View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pills}>
+      <HScroll contentContainerStyle={styles.pills}>
         {TABS.map(tab => {
           const active = tab.route === activeRoute;
           return (
@@ -95,7 +96,7 @@ export function AdminNavStrip({ activeRoute }: { activeRoute: AdminRoute }) {
         >
           <Text style={[styles.pillText, { color: colors.error }]}>Logout</Text>
         </Pressable>
-      </ScrollView>
+      </HScroll>
       <View style={[styles.divider, { backgroundColor: colors.surfaceBorder }]} />
     </View>
   );

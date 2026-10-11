@@ -4,12 +4,12 @@
  * kitchenExports); PDF / Excel go to the share sheet, or download on web.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { FlatList, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Text } from '../../components/AppText';
 import { alerts } from '../../components/Alerts';
 import { AdminNavStrip } from '../../components/AdminNavStrip';
-import { Btn, Card, EmptyState, Page, Picker, Stars } from '../../components/ui';
+import { Btn, Card, EmptyState, Page, Picker, Stars, HScroll } from '../../components/ui';
 import { useApp } from '../../state/AppState';
 import {
   ALL_COMPANIES,
@@ -110,12 +110,12 @@ export default function AdminActiveOrdersScreen() {
   return (
     <Page>
       <AdminNavStrip activeRoute="adminactiveorders" />
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filtersWrap} contentContainerStyle={styles.filters}>
+      <HScroll style={styles.filtersWrap} contentContainerStyle={styles.filters}>
         <Text style={[styles.filterLabel, { color: colors.brandGold }]}>Company:</Text>
         <Picker title="Filter Company" options={companyFilterOptions(companies, rows)} selected={companyFilter} onSelect={setCompanyFilter} width={180} />
         <Text style={[styles.filterLabel, styles.filterGap, { color: colors.brandGold }]}>Date:</Text>
         <Picker title="Filter Date" options={dateFilterOptions(rows)} selected={dateFilter} onSelect={setDateFilter} width={170} />
-      </ScrollView>
+      </HScroll>
 
       <View style={styles.controls}>
         <View style={styles.toggleRow}>
