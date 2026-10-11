@@ -37,7 +37,7 @@ export function DeliveryDayPanel({ windowDays, titleSize, subtitle, onConfirm, o
     <View style={[styles.root, { backgroundColor: colors.pageBg }]}>
       <View style={styles.header}>
         <View style={styles.logoRow}>
-          <BrandLogo size={24} align="left" />
+          <BrandLogo size={24} />
           {onClose && (
             <Pressable
               onPress={onClose}
@@ -111,8 +111,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, paddingHorizontal: 24 },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 20 },
   header: { gap: 16, marginTop: 20, marginBottom: 24 },
-  logoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  close: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  // Logo centred on the page; the overlay's ✕ is pinned right so it doesn't push the logo off-centre.
+  logoRow: { minHeight: 32, alignItems: 'center', justifyContent: 'center' },
+  close: { position: 'absolute', right: 0, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
   closeText: { fontSize: 14, fontWeight: '700' },
   pressed: { opacity: 0.88, transform: [{ scale: 0.96 }] },
   titles: { gap: 4 },
