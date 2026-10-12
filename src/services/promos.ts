@@ -1,5 +1,6 @@
 /**
- * Discount codes (MAUI IDiscountService) and broadcast notifications (MAUI
+ * Discount codes (MAUI IDiscountService; read-only here — checkout applies
+ * them, codes are managed in the database) and broadcast notifications (MAUI
  * AdminNotificationsViewModel's sent history), backed by Supabase.
  */
 import { supabase } from '../lib/supabase/client';
@@ -28,30 +29,6 @@ export async function getDiscounts(): Promise<Discount[]> {
     .order('created_at', { ascending: false });
   if (error) throw error;
   return (data ?? []).map(mapDiscount).sort((a, b) => Number(b.active) - Number(a.active));
-}
-
-export async function addDiscount(code: string, percentage: number, expires: Date | null, companyId: string | null): Promise<void> {
-  const { error } = await supabase.from('discounts').insert({
-    code,
-    percentage,
-    active: true,
-    expires_at: expires ? expires.toISOString() : null,
-    company_id: companyId,
-  });
-  if (error) {
-    if (error.code === '23505') throw new Error(`A discount code "${code}" already exists.`);
-    throw error;
-  }
-}
-
-export async function setDiscountActive(discountId: string, active: boolean): Promise<void> {
-  const { error } = await supabase.from('discounts').update({ active }).eq('id', discountId);
-  if (error) throw error;
-}
-
-export async function deleteDiscount(discountId: string): Promise<void> {
-  const { error } = await supabase.from('discounts').delete().eq('id', discountId);
-  if (error) throw error;
 }
 
 // ── Notifications ───────────────────────────────────────────────────────

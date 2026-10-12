@@ -13,6 +13,7 @@ export const PAYFAST = {
   CANCEL_URL: 'https://www.example.com/payment-cancelled',
 };
 
+/** Unique-enough payment reference, e.g. "KC-LZ3K9Q1A". */
 export const newPaymentReference = (prefix: string) => `${prefix}-${Date.now().toString(36).toUpperCase()}`;
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);

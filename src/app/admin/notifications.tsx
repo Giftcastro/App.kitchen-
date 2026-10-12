@@ -28,6 +28,10 @@ export default function AdminNotificationsScreen() {
     }, [])
   );
 
+  /**
+   * Counts the recipients for the chosen audience, logs the broadcast and
+   * prepends it to Sent History, then clears the form.
+   */
   const send = async () => {
     if (!title.trim() || !message.trim()) {
       await alerts.show('Missing Information', 'Please provide both a title and message body.', 'OK');

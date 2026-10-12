@@ -9,7 +9,6 @@
  * `onPrimary` = the Light=White / Dark=PrimaryDarkText pairing every
  * button on the accent uses, `brandGold` = BrandGold/BrandGoldDark, etc.
  */
-export type ThemeMode = 'light' | 'dark' | 'system';
 export type ResolvedScheme = 'light' | 'dark';
 export type BrandTheme = 'Current' | 'MediterraneanPantry';
 

@@ -414,6 +414,7 @@ const MIME = {
 const sanitizeFileName = (name: string) => name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/ /g, '_');
 const ensureExtension = (name: string, ext: string) => (name.toLowerCase().endsWith(ext) ? name : name + ext);
 
+/** Saves bytes to a file and opens the share sheet; on web, downloads it instead. */
 export async function shareFile(fileName: string, bytes: Uint8Array, mimeType: string, title: string): Promise<void> {
   const safeName = sanitizeFileName(fileName);
   if (Platform.OS === 'web') {
@@ -457,14 +458,6 @@ export async function shareText(text: string, title: string): Promise<void> {
   await Share.share({ message: text, title });
 }
 
-/** "2026-10-02" */
-export const dateStamp = (iso: string) => iso.slice(0, 10);
-/** "2026-10-02_0915" */
-export function nowStamp(d: Date = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
-}
-
 // ── Invoice ─────────────────────────────────────────────────────────────
 
 export const SUPPLIER_NAME = 'Your Kitchen Co. (Pty) Ltd';
@@ -490,6 +483,7 @@ export function fmtIssued(ts: string): string {
 /** Order keeps only the final total; the meal subtotal is backed out of its known parts. */
 export const mealSubtotal = (o: Order) => o.totalAmount - o.deliveryFee + o.subsidyAmount + o.discountAmount;
 
+/** Gathers the company / location details an invoice prints. */
 export async function loadInvoiceDocument(order: Order): Promise<InvoiceDocument> {
   const [company, location] = await Promise.all([
     order.companyId ? getCompany(order.companyId).catch(() => null) : Promise.resolve(null),
@@ -505,6 +499,7 @@ export async function loadInvoiceDocument(order: Order): Promise<InvoiceDocument
 
 const lineLabel = (l: Order['lines'][number]) => `  ${l.quantity} x ${l.name}`;
 
+/** The invoice as plain text, for sharing without a PDF. */
 export function invoiceText(doc: InvoiceDocument): string {
   const o = doc.order;
   const lines = [

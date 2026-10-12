@@ -14,11 +14,14 @@ export default function OrderConfirmationScreen() {
   const { colors } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // The order just placed, handed over by the Payment page (an array, so the
+  // page can show a batch; checkout currently places one order).
   const [orders] = useState(() => getNavParam('Orders') ?? []);
   const firstOrder = orders[0];
   const totalPaid = orders.reduce((sum, o) => sum + o.totalAmount, 0);
   const lines = orders.flatMap(o => o.lines);
 
+  /** Closes the checkout stack (cart → payment → here) before switching tab. */
   const backToTabs = (path: '/' | '/orders') => {
     router.dismissAll();
     router.navigate(path);

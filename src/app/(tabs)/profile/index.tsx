@@ -16,6 +16,7 @@ export default function ProfileScreen() {
   const [mealSubsidyLabel, setMealSubsidyLabel] = useState('');
   const [locationName, setLocationName] = useState('—');
 
+  // Company name / subsidy and delivery location are looked up on each visit.
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
@@ -38,6 +39,7 @@ export default function ProfileScreen() {
 
   if (!user) return null;
 
+  /** The floor/desk is the only profile field a customer can edit themselves. */
   const editDeliveryFloor = async () => {
     const newFloor = await alerts.prompt('Delivery Floor', 'Which floor or pantry drop-off point should your order be delivered to?', {
       initialValue: user.deliveryFloor,
@@ -56,6 +58,7 @@ export default function ProfileScreen() {
     if (confirmed) await signOut();
   };
 
+  /** Read-only label/value row. */
   const detailRow = (emoji: string, label: string, value: string, valueColor = colors.brandGold) => (
     <View style={styles.detailRow}>
       <View style={styles.detailLeft}>
@@ -68,6 +71,7 @@ export default function ProfileScreen() {
     </View>
   );
 
+  /** Row that opens another page. */
   const navRow = (emoji: string, label: string, onPress: () => void) => (
     <Pressable onPress={onPress} style={styles.detailRow} accessibilityRole="button">
       <View style={styles.detailLeft}>

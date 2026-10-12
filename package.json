@@ -12,10 +12,8 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@expo-google-fonts/montserrat": "^0.4.2",
     "@expo-google-fonts/open-sans": "^0.4.2",
     "@expo-google-fonts/playfair-display": "^0.4.2",
-    "@expo-google-fonts/roboto-condensed": "^0.4.2",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@supabase/supabase-js": "^2.45.4",
@@ -24,11 +22,8 @@
     "expo-constants": "~57.0.17",
     "expo-file-system": "~57.0.7",
     "expo-font": "~57.0.3",
-    "expo-haptics": "~57.0.2",
     "expo-linking": "~57.0.9",
     "expo-mail-composer": "~57.0.1",
-    "expo-notifications": "~57.0.17",
-    "expo-print": "~57.0.1",
     "expo-router": "~57.0.19",
     "expo-sharing": "~57.0.18",
     "expo-splash-screen": "~57.0.8",

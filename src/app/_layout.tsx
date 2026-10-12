@@ -9,7 +9,7 @@
  * (SelectDeliveryDayPage) before reaching AppShell's tabs.
  */
 import React, { useEffect } from 'react';
-import { ActivityIndicator, LogBox, Platform, StatusBar, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Platform, StatusBar, StyleSheet, View } from 'react-native';
 import { Redirect, Stack, useSegments } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
@@ -33,7 +33,6 @@ import { native } from '../utils/theme';
 import { stackHeader } from '../utils/stackHeader';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
-LogBox.ignoreLogs(['expo-notifications: Android Push notifications']);
 
 const PUBLIC_ROUTES = ['login', 'register'];
 

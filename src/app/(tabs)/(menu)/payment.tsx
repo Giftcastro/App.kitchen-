@@ -20,15 +20,18 @@ import { buildPayFastHtml, newPaymentReference, PAYFAST } from '../../../service
 export default function PaymentScreen() {
   const { colors, cartItems, clearCart } = useApp();
   const router = useRouter();
+  // Amount, delivery fee and address chosen on the Cart page.
   const [params] = useState(() => getNavParam('Payment'));
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingMessage, setProcessingMessage] = useState('Processing your payment…');
   const [payFastReference, setPayFastReference] = useState<string | null>(null);
+  // Guards against placing the order twice (e.g. the WebView reporting the return URL more than once).
   const placing = useRef(false);
 
   const amountDue = params?.amountDue ?? 0;
   const deliveryFee = params?.deliveryFee ?? 0;
 
+  /** Places the order for the cart once payment succeeded, then shows the confirmation. */
   const completeOrder = async (paymentReference: string) => {
     if (placing.current || !params) return;
     placing.current = true;
@@ -46,6 +49,7 @@ export default function PaymentScreen() {
     }
   };
 
+  /** Web: fake a short redirect and place the order. Native: open the PayFast WebView. */
   const payWithPayFast = async () => {
     const reference = newPaymentReference('KC');
     if (Platform.OS === 'web') {
@@ -58,6 +62,7 @@ export default function PaymentScreen() {
     setPayFastReference(reference);
   };
 
+  /** Watches the WebView for PayFast's return (paid) or cancel URL. */
   const onPayFastNavigation = (nav: WebViewNavigation) => {
     if (!payFastReference) return;
     if (nav.url.startsWith(PAYFAST.RETURN_URL)) {

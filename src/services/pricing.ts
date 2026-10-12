@@ -16,6 +16,7 @@
 import type { CartItem, Company, CompanyLocation, Discount, UserAccount } from '../models';
 import { lineTotal } from '../models';
 
+/** Distance-band delivery fee in Rand; null beyond the 50km delivery range. */
 export function deliveryFeeFor(distanceKm: number): number | null {
   if (distanceKm <= 15) return 100;
   if (distanceKm <= 20) return 140;
@@ -24,6 +25,7 @@ export function deliveryFeeFor(distanceKm: number): number | null {
   return null;
 }
 
+/** Human-readable band for deliveryFeeFor's distance, shown in the basket. */
 export function deliveryTierLabel(distanceKm: number): string {
   if (distanceKm <= 15) return '0–15km';
   if (distanceKm <= 20) return '15.01–20km';
@@ -46,6 +48,7 @@ export interface CartQuote {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+/** Everything the Cart shows and Payment charges, from the basket and the customer's company / location. */
 export function quoteCart(
   items: CartItem[],
   user: UserAccount | null,

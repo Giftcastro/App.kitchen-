@@ -11,6 +11,7 @@ import { addCompany, addLocation, getCompanies, setCompanyDomains, updateCompany
 import { deliveryFeeSummary, financialsSummary } from '../../models';
 import type { Company, CompanyLocation, DeliveryFeeMode, DiscountType } from '../../models';
 
+/** Parses prompt input as a number, accepting a comma decimal ("12,50"); null if not a number. */
 const parseNumber = (value: string | null) => {
   const n = parseFloat(String(value ?? '').replace(',', '.'));
   return Number.isFinite(n) ? n : null;
@@ -38,8 +39,10 @@ export default function AdminCompaniesScreen() {
     }, [load])
   );
 
+  /** Shared error popup for every save below. */
   const failed = (err: unknown) => alerts.show('Not Saved', (err as Error)?.message ?? 'Check your connection and try again.', 'OK');
 
+  /** + Add Company: name and billing email; locations are added separately. */
   const add = async () => {
     const name = await alerts.prompt('New Company', 'Company name:');
     if (!name?.trim()) return;
@@ -53,6 +56,7 @@ export default function AdminCompaniesScreen() {
     }
   };
 
+  /** Rename a company / change its billing email. */
   const edit = async (company: Company) => {
     const name = await alerts.prompt('Edit Company', 'Company name:', { initialValue: company.name });
     if (!name?.trim()) return;
@@ -65,6 +69,7 @@ export default function AdminCompaniesScreen() {
     }
   };
 
+  /** Suspend or re-activate; suspended companies are hidden from the sign-up pickers. */
   const toggleActive = async (company: Company) => {
     if (company.isActive) {
       const confirmed = await alerts.confirm(
@@ -85,6 +90,10 @@ export default function AdminCompaniesScreen() {
     }
   };
 
+  /**
+   * Per-meal subsidy, then an optional order discount (percentage or fixed Rand).
+   * Cancelling the discount step still saves the subsidy that was entered.
+   */
   const manageFinancials = async (company: Company) => {
     const subsidyStr = await alerts.prompt('Per-Meal Subsidy', 'Amount the company covers per meal, in Rand (0 for none):', {
       initialValue: company.mealSubsidyAmount.toFixed(2),
@@ -132,6 +141,7 @@ export default function AdminCompaniesScreen() {
     }
   };
 
+  /** Add/remove whitelisted email domains, which auto-match new sign-ups to this company. */
   const manageDomains = async (company: Company) => {
     const current = company.whitelistedDomains.join(', ');
     const action = await alerts.actionSheet(current ? `Current domains: ${current}` : 'No domains whitelisted yet', 'Cancel', 'Add a Domain', 'Remove a Domain');
@@ -164,6 +174,7 @@ export default function AdminCompaniesScreen() {
     }
   };
 
+  /** New delivery location; its distance drives the distance-tier delivery fee. */
   const addCompanyLocation = async (company: Company) => {
     const name = await alerts.prompt('New Location', `Location name for ${company.name} (e.g. "Building 2 — Sandton"):`);
     if (!name?.trim()) return;
@@ -179,6 +190,7 @@ export default function AdminCompaniesScreen() {
     }
   };
 
+  /** Edit a location; blank answers keep the current address/distance. */
   const editLocation = async (location: CompanyLocation) => {
     const name = await alerts.prompt('Edit Location', 'Location name:', { initialValue: location.name });
     if (!name?.trim()) return;
@@ -235,6 +247,7 @@ export default function AdminCompaniesScreen() {
     }
   };
 
+  /** Compact action button used in each company card's button row. */
   const smallButton = (title: string, onPress: () => void, accent = false) => (
     <Btn
       title={title}

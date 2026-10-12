@@ -24,6 +24,7 @@ interface CategoryChip {
   imageUrl: string;
 }
 
+/** "BURGER BAR" -> "Burger Bar" (categories are stored upper-case). */
 const titleCase = (value: string) =>
   value
     .toLowerCase()
@@ -40,8 +41,10 @@ export default function UserDashboardScreen() {
   const [searchText, setSearchText] = useState('');
   const [activeCategory, setActiveCategory] = useState('');
   const [dayPickerOpen, setDayPickerOpen] = useState(false);
+  // Drops overlapping loads (focus + menu switch can fire together).
   const busyRef = useRef(false);
 
+  /** Loads the Main (static) or Cycling menu; the cycling one depends on the chosen delivery day. */
   const loadData = useCallback(
     async (menu: MenuKind) => {
       if (busyRef.current) return;
@@ -65,6 +68,7 @@ export default function UserDashboardScreen() {
     }, [loadData, currentMenu])
   );
 
+  /** Main <-> Cycling: resets search and category so the new menu starts unfiltered. */
   const switchMenu = (menu: MenuKind) => {
     if (menu === currentMenu) return;
     setSearchText('');
@@ -73,6 +77,7 @@ export default function UserDashboardScreen() {
     setCurrentMenu(menu);
   };
 
+  /** One chip per category present in the loaded menu, A–Z; the first dish supplies its hero image. */
   const categories: CategoryChip[] = useMemo(() => {
     const seen = new Map<string, CategoryChip>();
     for (const p of products) {
@@ -81,6 +86,7 @@ export default function UserDashboardScreen() {
     return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [products]);
 
+  /** Dishes matching the category chip + search, grouped under their category heroes. */
   const grouped = useMemo(() => {
     const query = searchText.trim().toLowerCase();
     const filtered = products.filter(
@@ -93,6 +99,7 @@ export default function UserDashboardScreen() {
       .filter(section => section.products.length > 0);
   }, [products, categories, activeCategory, searchText]);
 
+  /** Tapping the active chip again clears the filter. */
   const filterCategory = (category: string) => setActiveCategory(prev => (prev === category ? '' : category));
 
   const openProduct = (product: Product) => {

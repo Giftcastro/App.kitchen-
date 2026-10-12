@@ -22,6 +22,7 @@ import {
 } from '../../../services/scheduling';
 import type { Option, Product } from '../../../models';
 
+/** Word stems that flag a special request as an allergy note for the chef. */
 const ALLERGY_WORDS = ['allerg', 'intoleran', 'anaphyla', 'coeliac', 'celiac'];
 /** Unique per add, so the same dish can sit in the basket twice with different options. */
 const newCartKey = (productId: string) => `${productId}:${Date.now()}`;
@@ -37,6 +38,7 @@ export default function ProductDetailScreen() {
   const [dayPickerOpen, setDayPickerOpen] = useState(false);
   const window = product?.menuType === 'cycle' ? CYCLE_WINDOW : STATIC_WINDOW;
 
+  /** Delivery days this dish can be ordered for: a cycle dish is tied to one day, static dishes to the next two weeks. */
   const loadDates = useCallback((): string[] => {
     if (!product) return [];
     return product.lockedDeliveryDate ? [product.lockedDeliveryDate] : getOrderableDeliveryDates(window);
@@ -73,6 +75,7 @@ export default function ProductDetailScreen() {
 
   const optionKey = (groupTitle: string, option: Option) => `${groupTitle}::${option.name}`;
 
+  /** Selects an option: radio behaviour for single-choice groups, checkbox for multi-select ones. */
   const toggleOption = (groupTitle: string, option: Option, isMultiSelect: boolean) => {
     const key = optionKey(groupTitle, option);
     setSelected(prev => {

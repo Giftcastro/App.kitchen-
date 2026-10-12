@@ -1,3 +1,9 @@
+/**
+ * The one Supabase client the whole app shares. Credentials come from .env
+ * (EXPO_PUBLIC_* vars are inlined into the bundle at build time), and the
+ * session is persisted in AsyncStorage so sign-in survives app restarts.
+ */
+// supabase-js needs a WHATWG URL implementation, which React Native lacks.
 import 'react-native-url-polyfill/auto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
@@ -17,6 +23,7 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     storage: AsyncStorage,
     autoRefreshToken: true,
     persistSession: true,
+    // No OAuth redirects in this app, so never parse tokens out of the URL.
     detectSessionInUrl: false,
   },
 });

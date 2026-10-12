@@ -22,6 +22,8 @@ export default function CartScreen() {
   const [location, setLocation] = useState<CompanyLocation | null>(null);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
 
+  // Everything the price quote depends on besides the cart itself; refreshed on every visit.
+  // Individuals have no company, so '' makes getCompany resolve to null.
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
@@ -31,11 +33,18 @@ export default function CartScreen() {
     }, [user])
   );
 
+  /** Subtotal, subsidy, discount, delivery fee and amount due — see services/pricing. */
   const quote = useMemo(() => quoteCart(cartItems, user, company, location, discounts), [cartItems, user, company, location, discounts]);
   const hasItems = cartItems.length > 0;
 
+  /** Stepping below 1 removes the line. */
   const decrease = (key: string, quantity: number) => (quantity > 1 ? setCartQuantity(key, quantity - 1) : removeCartItem(key));
 
+  /**
+   * Pre-flight checks before payment: every item's delivery date must still be
+   * before its cutoff, the user must be signed in, and the delivery location
+   * must exist and be within range. The quote is handed to the Payment page.
+   */
   const checkout = async () => {
     if (!hasItems) return;
     const invalid = cartItems.filter(i => !isValidDeliveryDate(i.deliveryDate, i.menuType === 'cycle' ? CYCLE_WINDOW : STATIC_WINDOW));
@@ -126,6 +135,7 @@ export default function CartScreen() {
           )}
         />
 
+        {/* Totals board, pinned under the list */}
         {hasItems && (
           <View style={[styles.board, { backgroundColor: colors.cardBg }]}>
             <View style={styles.row}>

@@ -23,6 +23,7 @@ export const rand = (n: number) => `R${n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d)
 /** Fewer ratings than this and an average says more about one diner than about the dish. */
 export const MIN_RATINGS = 3;
 
+/** ISO date shifted by a number of days (negative goes back). */
 export const addDays = (iso: string, days: number) => {
   const d = fromIso(iso);
   d.setDate(d.getDate() + days);
@@ -30,8 +31,11 @@ export const addDays = (iso: string, days: number) => {
 };
 const daysBetween = (a: string, b: string) => Math.round((fromIso(b).getTime() - fromIso(a).getTime()) / DAY);
 
+/** Cancelled orders are excluded from every figure. */
 export const isLive = (o: Order) => o.status !== 'Cancelled';
+/** Meals in an order = sum of line quantities. */
 export const meals = (o: Order) => sum(o.lines, l => l.quantity);
+/** Revenue of one order: what the customer paid + the subsidy billed to their company. */
 export const revenueOf = (o: Order) => o.totalAmount + o.subsidyAmount;
 
 export interface Headline {
@@ -47,6 +51,7 @@ export interface Headline {
   cancelled: number;
 }
 
+/** Top-line Sales figures for a set of orders. */
 export function headline(orders: Order[]): Headline {
   const live = orders.filter(isLive);
   const revenue = sum(live, revenueOf);
@@ -70,11 +75,13 @@ export function change(current: number, previous: number): number | null {
   return Math.round(((current - previous) / previous) * 1000) / 10;
 }
 
+/** The equally long period immediately before [start, end], for the comparison. */
 export function previousRange(start: string, end: string): [string, string] {
   const length = daysBetween(start, end) + 1;
   return [addDays(start, -length), addDays(start, -1)];
 }
 
+/** Orders whose delivery date falls in [start, end] (inclusive). */
 export const inRange = (orders: Order[], start: string, end: string) => orders.filter(o => o.deliveryDate >= start && o.deliveryDate <= end);
 
 // ── Menu ────────────────────────────────────────────────────────────────
@@ -90,6 +97,7 @@ export interface DishStat {
   ratings: number;
 }
 
+/** Per-dish units, revenue, average price and rating, best sellers first; optionally one category only. */
 export function dishStats(orders: Order[], category?: string): DishStat[] {
   const map = new Map<string, DishStat & { ratingSum: number; orderIds: Set<string> }>();
   for (const o of orders.filter(isLive)) {
@@ -129,6 +137,7 @@ export const QUADRANTS: { key: Quadrant; emoji: string; hint: string }[] = [
   { key: 'Dogs', emoji: '🐕', hint: 'Low sales, low price — candidates to rework or drop' },
 ];
 
+/** Sorts dishes into Stars / Workhorses / Puzzles / Dogs by popularity x average price. */
 export function menuMatrix(dishes: DishStat[]): { quadrant: Record<string, Quadrant>; popularityLine: number; priceLine: number } {
   const totalUnits = sum(dishes, d => d.units);
   // Popular = at least 70% of an equal share of units (the standard menu-engineering threshold).
@@ -150,6 +159,7 @@ export interface MixRow {
   detail?: string;
 }
 
+/** Meals and food revenue per menu category. */
 export function categoryMix(orders: Order[]): MixRow[] {
   const map = new Map<string, MixRow>();
   for (const o of orders.filter(isLive))
@@ -224,6 +234,7 @@ export function companyAdoption(periodOrders: Order[], companies: Company[], use
     .sort((a, b) => b.revenue - a.revenue);
 }
 
+/** Highest-revenue customers (by name), with their company as the detail line. */
 export function topCustomers(orders: Order[], companyName: (id: string) => string, limit = 10): MixRow[] {
   const map = new Map<string, Order[]>();
   for (const o of orders.filter(isLive)) {
@@ -236,6 +247,7 @@ export function topCustomers(orders: Order[], companyName: (id: string) => strin
     .slice(0, limit);
 }
 
+/** Revenue per company, with the subsidy / discount it received. */
 export function byCompany(orders: Order[], companyName: (id: string) => string): MixRow[] {
   const map = new Map<string, Order[]>();
   for (const o of orders.filter(isLive)) {
@@ -304,6 +316,7 @@ export function leadTimes(orders: Order[]): { avg: number; buckets: MixRow[] } {
 }
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+/** Meals per delivery weekday, Monday–Friday. */
 export function weekdayDemand(orders: Order[]): { day: string; meals: number }[] {
   const counts = new Array(7).fill(0) as number[];
   for (const o of orders.filter(isLive)) counts[fromIso(o.deliveryDate).getDay()] += meals(o);
@@ -321,6 +334,7 @@ export interface QualityStats {
   openDisputes: number;
 }
 
+/** Rating average / spread / coverage and dispute counts. */
 export function quality(orders: Order[]): QualityStats {
   const live = orders.filter(isLive);
   const ratable = live.filter(o => o.status === 'Delivered');

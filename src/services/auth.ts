@@ -38,6 +38,7 @@ async function resolveCompany(email: string, preferredAddressId?: string) {
   return data as { company_id: string } | null;
 }
 
+/** Password sign-in; refreshes company membership and refuses suspended accounts. */
 export async function signIn(email: string, password: string): Promise<UserAccount> {
   const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
   if (error) throw error;
@@ -120,6 +121,3 @@ export async function restoreSession(): Promise<UserAccount | null> {
   }
 }
 
-export async function reloadUser(userId: string): Promise<UserAccount> {
-  return loadUser(userId);
-}

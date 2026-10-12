@@ -19,12 +19,11 @@ import {
 } from '../../services/adminOrders';
 import { getAllOrders } from '../../services/orders';
 import { todayIso } from '../../services/scheduling';
+import { rand } from '../../services/analytics';
 import type { Company, Order } from '../../models';
 
+/** Month names for the "Month to Date (October)" card. */
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-
-/** C#'s {0:N2}: thousands separators, two decimals. */
-const n2 = (value: number) => value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 export default function AdminDashboardScreen() {
   const { colors } = useApp();
@@ -35,6 +34,7 @@ export default function AdminDashboardScreen() {
   const [dateFilter, setDateFilter] = useState(ALL_DATES);
   const [isBusy, setIsBusy] = useState(false);
 
+  /** Loads active orders (the queue) and all orders (revenue cards); stale filters fall back to "All". */
   const refresh = useCallback(async () => {
     setIsBusy(true);
     try {
@@ -59,6 +59,7 @@ export default function AdminDashboardScreen() {
     }, [refresh])
   );
 
+  // ── KPI figures ──
   const upcoming = useMemo(() => filterRows(rows, companyFilter, dateFilter), [rows, companyFilter, dateFilter]);
   const today = todayIso();
   const todaysRevenue = rows.filter(r => r.order.deliveryDate === today).reduce((sum, r) => sum + r.order.totalAmount, 0);
@@ -68,6 +69,7 @@ export default function AdminDashboardScreen() {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const monthToDate = allOrders.filter(o => new Date(o.orderDate).getTime() >= monthStart).reduce((sum, o) => sum + o.totalAmount, 0);
 
+  /** Quick-status button handler for one order. */
   const setStatus = async (row: AdminOrderRow, status: string) => {
     try {
       await updateRowsStatus([row], status);
@@ -77,6 +79,7 @@ export default function AdminDashboardScreen() {
     }
   };
 
+  /** Sets one status on every order matching the filters (pick status, then confirm). */
   const bulkUpdate = async () => {
     if (upcoming.length === 0) {
       await alerts.show('Nothing to Update', 'No orders match the current filters.', 'OK');
@@ -126,6 +129,7 @@ export default function AdminDashboardScreen() {
     );
   };
 
+  /** One revenue / count card in the 2x2 KPI grid. */
   const kpi = (emoji: string, label: string, value: string) => (
     <Card radius={16} border={colors.surfaceBorder} shadow="card" style={styles.kpi}>
       <View style={styles.kpiLabelRow}>
@@ -145,8 +149,8 @@ export default function AdminDashboardScreen() {
         <View style={styles.kpiGrid}>
           {kpi('💰', "Today's Deliveries Revenue", `R${todaysRevenue.toFixed(2)}`)}
           {kpi('🔥', 'Active Orders', String(rows.length))}
-          {kpi('💰', 'Total Revenue (all time)', `R${n2(totalRevenue)}`)}
-          {kpi('📈', `Month to Date (${MONTHS[now.getMonth()]})`, `R${n2(monthToDate)}`)}
+          {kpi('💰', 'Total Revenue (all time)', rand(totalRevenue))}
+          {kpi('📈', `Month to Date (${MONTHS[now.getMonth()]})`, rand(monthToDate))}
         </View>
 
         <View style={styles.queueHeader}>

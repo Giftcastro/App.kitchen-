@@ -59,6 +59,7 @@ interface AppStateValue {
 
 const AppStateContext = createContext<AppStateValue | null>(null);
 
+/** Holds session, cart and settings state for the whole app; mounted once in the root layout. */
 export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [user, setUserState] = useState<UserAccount | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -198,6 +199,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
 }
 
+/** Access app state from any screen or component. */
 export function useApp(): AppStateValue {
   const ctx = useContext(AppStateContext);
   if (!ctx) throw new Error('useApp must be used inside AppStateProvider');

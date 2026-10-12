@@ -207,6 +207,7 @@ export async function getAllWeeks(): Promise<Record<string, CycleMenuDay[]>> {
   return weeks;
 }
 
+/** The cycle week (1–8) running this calendar week. */
 export async function getActiveWeekNumber(): Promise<number> {
   return weekNumberFor(toIso(new Date()), await getRotation());
 }
@@ -272,6 +273,7 @@ export async function getCycleProducts(selectedDate: string | null): Promise<Pro
   return products;
 }
 
+/** The customer Menu's source: the static catalog, or the cycle dishes for the chosen delivery day. */
 export async function getProducts(menu: 'Main' | 'Weekly', selectedDate: string | null): Promise<Product[]> {
   return menu === 'Weekly' ? getCycleProducts(selectedDate) : getStaticProducts();
 }
@@ -304,6 +306,7 @@ export interface ProductDraft {
   imageUrl?: string;
 }
 
+/** Creates a static-menu dish, creating its category first if it's new. */
 export async function addStaticProduct(draft: ProductDraft): Promise<void> {
   const categoryId = await ensureCategory(draft.category);
   const { data, error } = await supabase

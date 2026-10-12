@@ -20,6 +20,7 @@ export const ALL_DATES = 'All Dates';
 /** Orders from individual (non-company) accounts — they have no company to file under. */
 export const INDIVIDUAL = 'Individual';
 
+/** Every active order with its company / location names resolved, plus the company list for the filters. */
 export async function loadActiveOrderRows(): Promise<{ rows: AdminOrderRow[]; companies: Company[] }> {
   const [orders, companies] = await Promise.all([getAllActiveOrders(), getCompanies()]);
   const names = await getLocationNames(orders.map(o => o.locationId));
@@ -33,17 +34,20 @@ export async function loadActiveOrderRows(): Promise<{ rows: AdminOrderRow[]; co
   return { rows, companies };
 }
 
+/** "All Companies", each company, and "Individual" only if individuals have active orders. */
 export function companyFilterOptions(companies: Company[], rows: AdminOrderRow[]): string[] {
   const options = [ALL_COMPANIES, ...companies.map(c => c.name)];
   if (rows.some(r => r.companyName === INDIVIDUAL)) options.push(INDIVIDUAL);
   return options;
 }
 
+/** "All Dates" followed by each delivery day that has orders, earliest first. */
 export function dateFilterOptions(rows: AdminOrderRow[]): string[] {
   const dates = [...new Set(rows.map(r => r.order.deliveryDate))].sort();
   return [ALL_DATES, ...dates.map(fmtDayLabel)];
 }
 
+/** Applies the Company + Date picker values (as their display labels). */
 export function filterRows(rows: AdminOrderRow[], company: string, date: string): AdminOrderRow[] {
   return rows.filter(r => (company === ALL_COMPANIES || r.companyName === company) && (date === ALL_DATES || r.deliveryDateLabel === date));
 }

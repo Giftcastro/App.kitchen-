@@ -17,10 +17,12 @@ interface NavParams {
 
 const params: NavParams = {};
 
+/** Stores a value for the next page to read; call before router.push. */
 export function setNavParam<K extends keyof NavParams>(key: K, value: NavParams[K]): void {
   params[key] = value;
 }
 
+/** Reads the value the previous page stored. */
 export function getNavParam<K extends keyof NavParams>(key: K): NavParams[K] {
   return params[key];
 }

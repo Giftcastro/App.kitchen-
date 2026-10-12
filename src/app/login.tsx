@@ -17,6 +17,7 @@ export default function LoginScreen() {
   const [rememberMe, setRememberMe] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  /** Signs in and maps known auth errors (suspended, wrong password) to friendly messages. */
   const login = async () => {
     if (!email.trim()) {
       await alerts.show('Login Error', 'Please enter a valid email address.', 'OK');

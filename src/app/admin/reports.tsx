@@ -27,7 +27,7 @@ import { useApp } from '../../state/AppState';
 import { getCompanies, getUsers } from '../../services/directory';
 import { getAllOrders, updateDisputeStatus } from '../../services/orders';
 import { getStaticProducts } from '../../services/catalog';
-import { fmtDate, fmtDayLabel, fmtShortWeekday, fromIso, todayIso, toIso } from '../../services/scheduling';
+import { fmtDate, fmtDayLabel, fmtDayMonth, fmtShortWeekday, fromIso, todayIso, toIso } from '../../services/scheduling';
 import { fmtIssued, shareXlsx, XlsxWriter } from '../../services/export';
 import {
   byCompany,
@@ -61,11 +61,10 @@ const ALL_COMPANIES = 'All Companies';
 const ALL_CATEGORIES = 'All Categories';
 const TABS = ['Sales', 'Menu', 'Customers', 'Kitchen'] as const;
 type Tab = (typeof TABS)[number];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-const money = rand;
 const pct = (n: number) => `${n}%`;
 
+/** Turns a timeframe choice into an inclusive [start, end] ISO date range (weeks start on Monday). */
 function resolveRange(timeframe: string, customStart: string, customEnd: string): [string, string] {
   const today = new Date();
   const iso = toIso(today);
@@ -85,12 +84,10 @@ function resolveRange(timeframe: string, customStart: string, customEnd: string)
   }
 }
 
-/** "ddd dd MMM" */
-function shortDay(iso: string): string {
-  const d = fromIso(iso);
-  return `${fmtShortWeekday(iso)} ${String(d.getDate()).padStart(2, '0')} ${MONTHS[d.getMonth()]}`;
-}
+/** "ddd dd MMM" — e.g. "Wed 07 Oct" */
+const shortDay = (iso: string) => `${fmtShortWeekday(iso)} ${fmtDayMonth(iso)}`;
 
+/** [label, fromHour, toHour) groups for the "When orders come in" chart. */
 const HOUR_BUCKETS: [string, number, number][] = [
   ['<6', 0, 6],
   ['6–9', 6, 9],
@@ -114,6 +111,7 @@ export default function AdminReportsScreen() {
   const [customStart, setCustomStart] = useState(() => toIso(new Date(Date.now() - 7 * 86400000)));
   const [customEnd, setCustomEnd] = useState(() => toIso(new Date()));
 
+  // Everything is computed client-side from the full order history, reloaded on focus.
   useFocusEffect(
     useCallback(() => {
       Promise.all([getAllOrders(), getCompanies(), getUsers()])
@@ -159,6 +157,7 @@ export default function AdminReportsScreen() {
   const dishes = useMemo(() => dishStats(period, category), [period, category]);
   const matrix = useMemo(() => menuMatrix(dishes), [dishes]);
   const topPerformers = useMemo(() => dishes.slice(0, 10), [dishes]);
+  // Never-ordered menu items first, then the slowest sellers that aren't already in the top 10.
   const bottomPerformers = useMemo(() => {
     const sold = new Set(dishes.map(d => d.name));
     const best = new Set(topPerformers.map(d => d.name));
@@ -178,6 +177,7 @@ export default function AdminReportsScreen() {
     () => companyAdoption(period, companyFilter === ALL_COMPANIES ? companies : companies.filter(c => c.name === companyFilter), users),
     [period, companies, users, companyFilter]
   );
+  // Companies where fewer than 30% of registered staff ordered — flagged in an insight line.
   const lowAdoption = adoption.filter(r => r.rate < 30 && r.registered > 0);
   const top = useMemo(() => topCustomers(period, companyName), [period, companyName]);
   const revenueByCompany = useMemo(() => byCompany(period, companyName), [period, companyName]);
@@ -212,6 +212,7 @@ export default function AdminReportsScreen() {
   );
   const openDisputes = disputed.filter(o => o.disputeStatus === 'Investigating').length;
 
+  /** Revenue-over-time bars: one per day for ranges up to two weeks, otherwise one per week. */
   const bars: ChartDatum[] = useMemo(() => {
     const live = period.filter(isLive);
     const dayCount = Math.round((fromIso(end).getTime() - fromIso(start).getTime()) / 86400000) + 1;
@@ -232,6 +233,7 @@ export default function AdminReportsScreen() {
   }, [period, start, end, colors.primary]);
   const bestDay = [...bars].sort((a, b) => b.value - a.value)[0];
 
+  /** Moves a dispute ticket between Investigating / Refunded / Resolved. */
   const resolveDispute = async (order: Order) => {
     const status = await alerts.actionSheet(`Update dispute ${order.disputeTicketRef}`, 'Cancel', 'Investigating', 'Refunded', 'Resolved');
     if (!status) return;
@@ -243,6 +245,7 @@ export default function AdminReportsScreen() {
     }
   };
 
+  /** Custom-range date entry (a typed yyyy-mm-dd; anything else is ignored). */
   const pickDate = async (label: string, current: string, set: (iso: string) => void) => {
     const value = await alerts.prompt(label, 'Enter a date (yyyy-mm-dd):', { initialValue: current });
     if (value && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) set(value.trim());
@@ -253,6 +256,7 @@ export default function AdminReportsScreen() {
   const rangeText = start === end ? fmtDate(fromIso(start)) : `${fmtDate(fromIso(start))} – ${fmtDate(fromIso(end))}`;
   const filterDescription = `${timeframe} (${rangeText}) · ${companyFilter} · ${categoryFilter}`;
 
+  /** One writer per worksheet; the workbooks below are just different selections of these. */
   const sheets = {
     summary: (x: XlsxWriter) => {
       const s = x.addSheet('Summary').widths(32, 16, 16, 12);
@@ -361,6 +365,7 @@ export default function AdminReportsScreen() {
     },
   };
 
+  /** [menu label, file name, sheets] for each choice in the Export sheet. */
   const WORKBOOKS: [string, string, (keyof typeof sheets)[]][] = [
     ['📊 Everything (one workbook)', 'All_Reports', ['summary', 'daily', 'companies', 'dishes', 'mix', 'adoption', 'customers', 'demand', 'timing', 'quality', 'orders']],
     ['Sales', 'Sales', ['summary', 'daily', 'companies']],
@@ -385,6 +390,7 @@ export default function AdminReportsScreen() {
 
   // ===================== Rendering =====================
 
+  /** "▲ 12% vs previous" line under a KPI, coloured by direction. */
   const delta = (current: number, prev: number) => {
     const c = change(current, prev);
     if (c === null) return { text: 'new vs previous period', color: colors.mutedText };
@@ -392,6 +398,7 @@ export default function AdminReportsScreen() {
     return { text: `${c > 0 ? '▲' : '▼'} ${Math.abs(c)}% vs previous`, color: c > 0 ? colors.success : colors.error };
   };
 
+  /** KPI card: label, big value, optional change line and help text. */
   const kpi = (label: string, value: string, d?: { text: string; color: string }, help?: string) => (
     <Card radius={12} padding={14} style={styles.kpi}>
       <Text style={[styles.kpiLabel, { color: colors.mutedText }]} numberOfLines={1}>
@@ -413,6 +420,7 @@ export default function AdminReportsScreen() {
     </Card>
   );
 
+  /** Titled card that wraps each chart / list. */
   const section = (title: string, subtitle: string | null, children: React.ReactNode) => (
     <Card radius={14} padding={16} border={colors.surfaceBorder}>
       <View style={styles.sectionHead}>
@@ -429,13 +437,15 @@ export default function AdminReportsScreen() {
 
   const insight = (text: string) => <Text style={[styles.insight, { color: colors.textSecondary }]}>💡 {text}</Text>;
 
+  // ── Tab contents ──
+
   const salesTab = (
     <>
       <View style={styles.kpis}>
-        {kpi('Revenue', money(now.revenue), delta(now.revenue, before.revenue))}
+        {kpi('Revenue', rand(now.revenue), delta(now.revenue, before.revenue))}
         {kpi('Orders', String(now.orders), delta(now.orders, before.orders))}
         {kpi('Meals', String(now.meals), delta(now.meals, before.meals), `${now.mealsPerOrder} per order`)}
-        {kpi('Avg order value', money(now.aov), delta(now.aov, before.aov))}
+        {kpi('Avg order value', rand(now.aov), delta(now.aov, before.aov))}
       </View>
 
       {section(
@@ -444,8 +454,8 @@ export default function AdminReportsScreen() {
         <>
           {barList(
             [
-              { label: 'Paid by customers', value: now.customerPaid, display: money(now.customerPaid), sub: `incl. ${money(now.deliveryFees)} delivery fees` },
-              { label: 'Subsidies billed to companies', value: now.subsidies, display: money(now.subsidies) },
+              { label: 'Paid by customers', value: now.customerPaid, display: rand(now.customerPaid), sub: `incl. ${rand(now.deliveryFees)} delivery fees` },
+              { label: 'Subsidies billed to companies', value: now.subsidies, display: rand(now.subsidies) },
             ],
             colors.primary,
             now.revenue || 1
@@ -453,7 +463,7 @@ export default function AdminReportsScreen() {
           <View style={[styles.divider, { backgroundColor: colors.surfaceBorder }]} />
           <View style={styles.statRow}>
             <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Discounts given away</Text>
-            <Text style={[styles.statValue, { color: colors.error }]}>{money(now.discounts)}</Text>
+            <Text style={[styles.statValue, { color: colors.error }]}>{rand(now.discounts)}</Text>
           </View>
           {now.cancelled > 0 && (
             <View style={styles.statRow}>
@@ -469,14 +479,14 @@ export default function AdminReportsScreen() {
         `By delivery day · ${rangeText}`,
         <>
           <BarChart bars={bars} labelColor={colors.mutedText} height={190} />
-          {bestDay && bestDay.value > 0 && insight(`Best ${bars.length > 14 ? 'week' : 'day'}: ${bestDay.label}, ${money(bestDay.value)}.`)}
+          {bestDay && bestDay.value > 0 && insight(`Best ${bars.length > 14 ? 'week' : 'day'}: ${bestDay.label}, ${rand(bestDay.value)}.`)}
         </>
       )}
 
       {section(
         'Revenue by company',
         'Which accounts carry the business',
-        barList(revenueByCompany.map(r => ({ label: r.name, value: r.value, display: money(r.value), sub: `${r.count} ${r.count === 1 ? 'order' : 'orders'} · ${r.detail}` })))
+        barList(revenueByCompany.map(r => ({ label: r.name, value: r.value, display: rand(r.value), sub: `${r.count} ${r.count === 1 ? 'order' : 'orders'} · ${r.detail}` })))
       )}
     </>
   );
@@ -487,7 +497,7 @@ export default function AdminReportsScreen() {
     <>
       {section(
         'Menu engineering',
-        `Popular = ${matrix.popularityLine}+ meals · premium = above the ${money(matrix.priceLine)} average price`,
+        `Popular = ${matrix.popularityLine}+ meals · premium = above the ${rand(matrix.priceLine)} average price`,
         dishes.length === 0 ? (
           <Text style={[styles.sectionSub, { color: colors.mutedText }]}>No sales in this range.</Text>
         ) : (
@@ -521,7 +531,7 @@ export default function AdminReportsScreen() {
             label: r.name,
             value: r.value,
             display: `${mixTotal ? Math.round((r.value / mixTotal) * 100) : 0}%`,
-            sub: `${r.count} meals · ${money(r.value)}`,
+            sub: `${r.count} meals · ${rand(r.value)}`,
           }))
         )
       )}
@@ -530,7 +540,7 @@ export default function AdminReportsScreen() {
         'Top 10 best sellers',
         'By meals sold',
         barList(
-          topPerformers.map(d => ({ label: d.name, value: d.units, display: `${d.units} sold`, sub: `${money(d.revenue)}${d.avgRating != null ? ` · ★ ${d.avgRating} (${d.ratings} ${d.ratings === 1 ? 'rating' : 'ratings'})` : ''}` })),
+          topPerformers.map(d => ({ label: d.name, value: d.units, display: `${d.units} sold`, sub: `${rand(d.revenue)}${d.avgRating != null ? ` · ★ ${d.avgRating} (${d.ratings} ${d.ratings === 1 ? 'rating' : 'ratings'})` : ''}` })),
           colors.success,
           undefined,
           'No sales in this range.'
@@ -545,7 +555,7 @@ export default function AdminReportsScreen() {
             label: d.name,
             value: d.units,
             display: d.units === 0 ? 'none' : `${d.units} sold`,
-            sub: d.units === 0 ? 'Not ordered in this range' : money(d.revenue),
+            sub: d.units === 0 ? 'Not ordered in this range' : rand(d.revenue),
           })),
           colors.error,
           Math.max(...dishes.map(d => d.units), 1),
@@ -561,7 +571,7 @@ export default function AdminReportsScreen() {
         {kpi('Active customers', String(customers.active), delta(customers.active, customersBefore.active))}
         {kpi('New customers', String(customers.newCustomers), undefined, `${customers.returning} returning`)}
         {kpi('Repeat rate', pct(customers.repeatRate), undefined, 'ordered 2+ times in the period')}
-        {kpi('Revenue / customer', money(customers.revenuePerCustomer), undefined, `${customers.ordersPerCustomer} orders each`)}
+        {kpi('Revenue / customer', rand(customers.revenuePerCustomer), undefined, `${customers.ordersPerCustomer} orders each`)}
       </View>
 
       {section(
@@ -569,7 +579,7 @@ export default function AdminReportsScreen() {
         'Share of each company’s registered staff who ordered — the health of a corporate account',
         <>
           {barList(
-            adoption.map(r => ({ label: r.company, value: r.rate, display: pct(r.rate), sub: `${r.ordering} of ${r.registered} staff · ${money(r.revenue)}` })),
+            adoption.map(r => ({ label: r.company, value: r.rate, display: pct(r.rate), sub: `${r.ordering} of ${r.registered} staff · ${rand(r.revenue)}` })),
             colors.brandGold,
             100
           )}
@@ -581,7 +591,7 @@ export default function AdminReportsScreen() {
       {section(
         'Top customers',
         'By revenue in the period',
-        barList(top.map(r => ({ label: r.name, value: r.value, display: money(r.value), sub: `${r.detail} · ${r.count} ${r.count === 1 ? 'order' : 'orders'}` })))
+        barList(top.map(r => ({ label: r.name, value: r.value, display: rand(r.value), sub: `${r.detail} · ${r.count} ${r.count === 1 ? 'order' : 'orders'}` })))
       )}
     </>
   );

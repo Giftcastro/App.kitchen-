@@ -1,11 +1,11 @@
 /**
- * Graphics/BarChartDrawable + PieChartDrawable, drawn with react-native-svg.
- * Same geometry: bars with value labels above and day labels below (max bar
- * width 38, 6pt corners); a donut whose hole matches the card behind it.
+ * Report charts drawn with react-native-svg: BarChart (Graphics/BarChartDrawable
+ * geometry — value labels above, day labels below, max bar width 38, 6pt
+ * corners) and BarList, ranked horizontal bars for comparing named rows.
  */
 import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { Text } from './AppText';
 
 export interface ChartDatum {
@@ -14,6 +14,7 @@ export interface ChartDatum {
   color: string;
 }
 
+/** Placeholder the same height as the chart, so the layout doesn't jump. */
 function NoData({ height }: { height: number }) {
   return (
     <View style={[styles.noData, { height }]}>
@@ -22,6 +23,7 @@ function NoData({ height }: { height: number }) {
   );
 }
 
+/** Vertical bars sized to the container width (measured on layout, so nothing draws until then). */
 export function BarChart({ bars, height = 200, labelColor = 'gray' }: { bars: ChartDatum[]; height?: number; labelColor?: string }) {
   const [width, setWidth] = useState(0);
   if (bars.length === 0) return <NoData height={height} />;
@@ -57,40 +59,6 @@ export function BarChart({ bars, height = 200, labelColor = 'gray' }: { bars: Ch
         </Svg>
       )}
     </View>
-  );
-}
-
-function arcPath(cx: number, cy: number, r: number, startDeg: number, endDeg: number): string {
-  const toRad = (deg: number) => ((deg - 90) * Math.PI) / 180;
-  const sx = cx + r * Math.cos(toRad(startDeg));
-  const sy = cy + r * Math.sin(toRad(startDeg));
-  const ex = cx + r * Math.cos(toRad(endDeg));
-  const ey = cy + r * Math.sin(toRad(endDeg));
-  const large = endDeg - startDeg > 180 ? 1 : 0;
-  return `M ${cx} ${cy} L ${sx} ${sy} A ${r} ${r} 0 ${large} 1 ${ex} ${ey} Z`;
-}
-
-export function DonutChart({ slices, size = 180, holeColor }: { slices: ChartDatum[]; size?: number; holeColor: string }) {
-  const total = slices.reduce((sum, s) => sum + s.value, 0);
-  if (slices.length === 0 || total <= 0) return <NoData height={size} />;
-  const diameter = size - 16;
-  const r = diameter / 2;
-  const c = size / 2;
-  let start = 0;
-  return (
-    <Svg width={size} height={size}>
-      {slices.length === 1 ? (
-        <Circle cx={c} cy={c} r={r} fill={slices[0].color} />
-      ) : (
-        slices.map((slice, i) => {
-          const sweep = (slice.value / total) * 360;
-          const d = arcPath(c, c, r, start, start + sweep);
-          start += sweep;
-          return <Path key={`${slice.label}-${i}`} d={d} fill={slice.color} />;
-        })
-      )}
-      <Circle cx={c} cy={c} r={r * 0.45} fill={holeColor} />
-    </Svg>
   );
 }
 

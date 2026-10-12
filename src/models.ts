@@ -59,6 +59,7 @@ export interface CartItem {
   unitPrice: number;
 }
 
+/** Price of one basket line: unit price (incl. options) x quantity. */
 export const lineTotal = (item: CartItem) => item.unitPrice * item.quantity;
 
 export type DiscountType = 'None' | 'Percentage' | 'FixedZar';
@@ -100,12 +101,14 @@ export interface Company {
   flatDeliveryFee: number;
 }
 
+/** One-line delivery setting for a company card, e.g. "R50.00 flat delivery". */
 export function deliveryFeeSummary(c: Company): string {
   if (c.deliveryFeeMode === 'Free') return 'Free delivery';
   if (c.deliveryFeeMode === 'Flat') return `R${c.flatDeliveryFee.toFixed(2)} flat delivery`;
   return 'Delivery by distance tier';
 }
 
+/** One-line subsidy + discount summary for a company card. */
 export function financialsSummary(c: Company): string {
   const parts: string[] = [];
   if (c.mealSubsidyAmount > 0) parts.push(`R${c.mealSubsidyAmount.toFixed(2)}/meal subsidy`);
@@ -180,10 +183,11 @@ export interface Order {
   deliveryFloor: string;
 }
 
+/** 1–4 position on the order tracker (Received → Preparing → Out for Delivery → Delivered). */
 export const orderStage = (o: Order) =>
   o.status === 'Preparing' ? 2 : o.status === 'Out for Delivery' ? 3 : o.status === 'Delivered' ? 4 : 1;
+/** True once the customer has reported an issue (a support ticket exists). */
 export const hasDispute = (o: Order) => !!o.disputeTicketRef;
-export const hasRating = (o: Order) => o.rating > 0;
 /** Reorder only for the always-available static menu. */
 export const canReorder = (o: Order) => o.menuType === 'static';
 
@@ -218,7 +222,3 @@ export interface CycleMenuDay {
   categories: [string, string][];
 }
 
-export interface DeliveryDateOption {
-  date: string;
-  cycleMenu?: CycleMenuDay | null;
-}

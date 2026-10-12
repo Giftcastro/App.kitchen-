@@ -23,6 +23,7 @@ import type { Product } from '../../models';
 
 type MenuType = 'Static' | 'Cycle';
 
+/** One editable slot of the cycle menu: a single dish for one day + category of one week. */
 interface CycleMenuItemRow {
   weekKey: string;
   dayName: string;
@@ -31,6 +32,7 @@ interface CycleMenuItemRow {
 }
 
 const WEEK_OPTIONS = Array.from({ length: 8 }, (_, i) => `Week ${i + 1}`);
+/** "Vegetarian, Gluten-Free" -> ['Vegetarian', 'Gluten-Free']. */
 const splitTags = (value: string | null) =>
   (value ?? '')
     .split(',')
@@ -54,6 +56,7 @@ export default function AdminMenuScreen() {
     }
   }, []);
 
+  /** Flattens one week's days x categories into a list of editable rows. */
   const loadCycleItems = useCallback(async (weekKey: string) => {
     try {
       const weeks = await getAllWeeks();
@@ -65,6 +68,7 @@ export default function AdminMenuScreen() {
     }
   }, []);
 
+  // On focus: reload the catalog and open the cycle editor on the currently active week.
   useFocusEffect(
     useCallback(() => {
       loadProducts();
@@ -87,6 +91,7 @@ export default function AdminMenuScreen() {
 
   // ── Static menu CRUD ──
 
+  /** + Add Item: a chain of prompts; anything skipped falls back to a sensible default. */
   const addProduct = async () => {
     const name = await alerts.prompt('New Menu Item', 'Enter item name:');
     if (!name?.trim()) return;
@@ -130,6 +135,7 @@ export default function AdminMenuScreen() {
     }
   };
 
+  /** Optimistic toggle — flips the switch immediately and rolls back if the save fails. */
   const toggleAvailability = async (product: Product) => {
     const isAvailable = !product.isAvailable;
     setProducts(list => list.map(p => (p.id === product.id ? { ...p, isAvailable } : p)));
@@ -142,6 +148,7 @@ export default function AdminMenuScreen() {
     }
   };
 
+  /** Edit name/price/description/ingredients/tags; an unparseable price cancels the edit. */
   const editProduct = async (product: Product) => {
     const name = await alerts.prompt('Edit Item', 'Update item name:', { initialValue: product.name });
     if (!name?.trim()) return;
@@ -185,6 +192,7 @@ export default function AdminMenuScreen() {
     loadCycleItems(week);
   };
 
+  /** Makes the browsed week the active one; the rotation continues from it. */
   const activateWeek = async () => {
     const weekNumber = Number(selectedWeek.replace('Week ', ''));
     const confirmed = await alerts.confirm(
@@ -203,6 +211,7 @@ export default function AdminMenuScreen() {
     }
   };
 
+  /** Updates one slot locally after a successful save (avoids refetching the whole week). */
   const patchRow = (row: CycleMenuItemRow, value: string) =>
     setCycleItems(list => list.map(r => (r.dayName === row.dayName && r.categoryLabel === row.categoryLabel ? { ...r, value } : r)));
 
@@ -217,6 +226,7 @@ export default function AdminMenuScreen() {
     }
   };
 
+  /** "Removing" a dish saves an empty string — the day/category slot itself stays. */
   const removeCycleItem = async (row: CycleMenuItemRow) => {
     if (!row.value.trim()) {
       await alerts.show('Already Empty', 'This slot has no dish to remove.', 'OK');
@@ -237,6 +247,7 @@ export default function AdminMenuScreen() {
     }
   };
 
+  /** Static Menu / Cycle Menu segmented toggle. */
   const typeButton = (label: string, type: MenuType) => {
     const active = menuType === type;
     return (
@@ -253,6 +264,7 @@ export default function AdminMenuScreen() {
     );
   };
 
+  // Product cards use fixed light/dark colours rather than theme tokens (MAUI parity).
   const productText = isDark ? '#F7F2E8' : '#121212';
 
   return (

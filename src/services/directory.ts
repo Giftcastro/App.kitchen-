@@ -13,6 +13,7 @@ function joinAddress(parts: (string | null | undefined)[]): string {
   return parts.filter(p => p && String(p).trim()).join(', ');
 }
 
+/** Database address row (or RPC result) -> CompanyLocation. */
 export function mapLocation(row: Record<string, any>, companyId?: string): CompanyLocation {
   return {
     id: row.id ?? row.address_id,
@@ -184,6 +185,7 @@ export async function listRegistrationCompanies(): Promise<Company[]> {
 const ROLE_FROM_DB: Record<string, Role> = { admin: 'Admin', kitchen_staff: 'Kitchen Staff' };
 const ROLE_TO_DB: Record<Role, string> = { Customer: 'customer', 'Kitchen Staff': 'kitchen_staff', Admin: 'admin' };
 
+/** profiles row -> UserAccount (individuals' location is their personal address). */
 export function mapProfile(row: Record<string, any>, personalAddressId = ''): UserAccount {
   return {
     id: row.id,

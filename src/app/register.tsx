@@ -41,11 +41,13 @@ export default function RegisterScreen() {
     fetchCompanies();
   }, [fetchCompanies]);
 
+  /** Tapping the company box after a load error retries the fetch. */
   const retryCompanies = () => {
     setCompaniesState('loading');
     fetchCompanies();
   };
 
+  /** Placeholder for the company picker — doubles as the loading / error message. */
   const companyTitle =
     companiesState === 'loading'
       ? 'Loading companies…'
@@ -55,6 +57,7 @@ export default function RegisterScreen() {
           ? 'No companies available yet'
           : 'Select your company';
 
+  /** Changing company always clears the location, since locations belong to a company. */
   const selectCompany = (company: Company | null) => {
     setSelectedCompany(company);
     setSelectedLocation(null);
@@ -74,6 +77,7 @@ export default function RegisterScreen() {
     }
   };
 
+  /** Validates the form, then creates the account (AppState.register signs the user in). */
   const submit = async () => {
     if (!fullName.trim() || !email.trim()) {
       await alerts.show('Missing Information', 'Please enter your name and email address.', 'OK');

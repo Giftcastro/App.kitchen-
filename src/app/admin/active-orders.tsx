@@ -24,6 +24,7 @@ import {
 import { buildPrepSummary, KitchenExports } from '../../services/kitchenExports';
 import type { Company } from '../../models';
 
+/** The order lifecycle, in order — also the choices in the Update sheet. */
 const STATUSES = ['Received', 'Preparing', 'Out for Delivery', 'Delivered'];
 
 export default function AdminActiveOrdersScreen() {
@@ -35,6 +36,11 @@ export default function AdminActiveOrdersScreen() {
   const [isPrepViewActive, setIsPrepViewActive] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
 
+  /**
+   * Reloads every active order, sorted by delivery day, then company, then
+   * location (the order the kitchen packs them in). A date filter that no
+   * longer has orders falls back to All Dates.
+   */
   const refresh = useCallback(async () => {
     setIsBusy(true);
     try {
@@ -62,9 +68,11 @@ export default function AdminActiveOrdersScreen() {
     }, [refresh])
   );
 
+  // The filtered orders drive the list, the prep summary and every export.
   const orders = useMemo(() => filterRows(rows, companyFilter, dateFilter), [rows, companyFilter, dateFilter]);
   const prepSummary = useMemo(() => buildPrepSummary(orders), [orders]);
 
+  /** Status picker for a single order. */
   const updateStatus = async (row: AdminOrderRow) => {
     const action = await alerts.actionSheet(`Update Status for Order #${row.order.orderNumber}`, 'Cancel', ...STATUSES);
     if (!action) return;
@@ -89,6 +97,7 @@ export default function AdminActiveOrdersScreen() {
     }
   };
 
+  /** One half of the Orders / Prep Summary toggle. */
   const segment = (label: string, prep: boolean) => {
     const active = isPrepViewActive === prep;
     return (

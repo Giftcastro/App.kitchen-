@@ -15,10 +15,12 @@ export const STATIC_WINDOW = 10;
 /** Cycle menu: order across the coming week (5 weekdays). */
 export const CYCLE_WINDOW = 5;
 
+/** Date -> "yyyy-mm-dd" from local date parts. */
 export function toIso(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** "yyyy-mm-dd" -> local midnight Date. */
 export function fromIso(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -47,11 +49,7 @@ function addBusinessDays(d: Date, days: number): Date {
   return result;
 }
 
-/** Always true — kept, as in MAUI, so a future closure rule has somewhere to live. */
-export function isOrderingOpen(_now: Date = new Date()): boolean {
-  return true;
-}
-
+/** The day ordering counts from: today, or the next weekday if it's the weekend or past the 9:00 cutoff. */
 export function getEffectiveOrderDate(now: Date = new Date()): Date {
   const date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   // At/after 9:00 counts as past (MAUI uses strictly-after): place_order's
@@ -61,10 +59,12 @@ export function getEffectiveOrderDate(now: Date = new Date()): Date {
   return isWeekend(now) || pastCutoff ? nextWeekday(date) : date;
 }
 
+/** Earliest deliverable day: two business days after the effective order date. */
 export function getNextAvailableDeliveryDate(now: Date = new Date()): string {
   return toIso(addBusinessDays(getEffectiveOrderDate(now), 2));
 }
 
+/** The orderable delivery days: the next available one plus the following weekdays, `windowInWeekdays` in all. */
 export function getOrderableDeliveryDates(windowInWeekdays: number, now: Date = new Date()): string[] {
   const dates: string[] = [];
   let date = fromIso(getNextAvailableDeliveryDate(now));
@@ -75,6 +75,7 @@ export function getOrderableDeliveryDates(windowInWeekdays: number, now: Date = 
   return dates;
 }
 
+/** Whether a delivery day can still be ordered for (used to catch basket items that passed their cutoff). */
 export function isValidDeliveryDate(iso: string, windowInWeekdays: number, now: Date = new Date()): boolean {
   return getOrderableDeliveryDates(windowInWeekdays, now).includes(iso);
 }
@@ -146,5 +147,3 @@ export function fmtShortMonthYear(ts: string): string {
 export function fmtGenerated(d: Date = new Date()): string {
   return `${fmtLongDate(toIso(d))} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
-
-export const money = (n: number) => n.toFixed(2);

@@ -19,6 +19,7 @@ export default function AdminUsersScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
 
+  // Reload every time the tab is focused so changes made elsewhere show up.
   useFocusEffect(
     useCallback(() => {
       getUsers()
@@ -27,6 +28,7 @@ export default function AdminUsersScreen() {
     }, [])
   );
 
+  /** Name/email search combined with the role picker. */
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return users.filter(
@@ -34,11 +36,13 @@ export default function AdminUsersScreen() {
     );
   }, [users, searchQuery, roleFilter]);
 
+  /** Persists a user and patches it into the local list (no full reload). */
   const save = async (updated: UserAccount) => {
     await updateUser(updated);
     setUsers(list => list.map(u => (u.id === updated.id ? updated : u)));
   };
 
+  /** Suspend (with confirmation) or re-activate an account; admins can't suspend themselves. */
   const toggleStatus = async (account: UserAccount) => {
     if (account.id === me?.id) {
       await alerts.show('Not Allowed', "You can't suspend your own account.", 'OK');
@@ -115,6 +119,7 @@ export default function AdminUsersScreen() {
     }
   };
 
+  /** Role picker; blocks an admin from demoting their own account. */
   const changeRole = async (account: UserAccount) => {
     const action = await alerts.actionSheet(`Assign New Role for ${account.fullName}`, 'Cancel', 'Customer', 'Kitchen Staff', 'Admin');
     if (!action) return;
