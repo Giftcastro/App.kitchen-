@@ -10,7 +10,7 @@
  * open across a refresh (ActiveOrdersViewModel / ActiveOrderItem).
  */
 import React, { useCallback, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, SectionList, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, SectionList, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Text } from '../../../components/AppText';
 import { alerts } from '../../../components/Alerts';
@@ -74,6 +74,9 @@ interface DateGroup {
 
 export default function OrdersScreen() {
   const { colors, isDark, user, addCartItem } = useApp();
+  // On ~320px phones the status chip moves under the order number so the
+  // dish name and "Order #INV-…" each keep a full line.
+  const narrow = useWindowDimensions().width < 360;
   const router = useRouter();
   const [tab, setTab] = useState<TabKey>('Active');
   const [groups, setGroups] = useState<DateGroup[]>([]);
@@ -237,8 +240,9 @@ export default function OrdersScreen() {
               {item.itemName}
             </Text>
             <Text style={[styles.small, { color: colors.textSecondary }]}>Order #{item.orderNumber}</Text>
+            {narrow && <View style={styles.chipBelow}>{statusChip(item.status)}</View>}
           </View>
-          {statusChip(item.status)}
+          {!narrow && statusChip(item.status)}
           <Text style={[styles.chevron, { color: colors.textSecondary }]}>{open ? '▾' : '▸'}</Text>
         </Pressable>
 
@@ -462,6 +466,7 @@ const styles = StyleSheet.create({
   iconTile: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   itemName: { fontSize: 15, fontWeight: '700' },
   small: { fontSize: 12 },
+  chipBelow: { flexDirection: 'row', marginTop: 4 },
   dateRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 },
   statusChip: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   statusText: { fontSize: 11, fontWeight: '700' },

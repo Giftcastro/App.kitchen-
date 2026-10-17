@@ -4,7 +4,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function open() {
   const browser = await puppeteer.launch({ executablePath: EDGE, headless: 'new' });
   const page = await browser.newPage();
-  await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  // VIEW_W / VIEW_H override the default iPhone-14-sized viewport (e.g. VIEW_W=320 for small phones).
+  await page.setViewport({ width: +(process.env.VIEW_W || 390), height: +(process.env.VIEW_H || 844), deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   page.on('console', (m) => { if (m.type() === 'error') console.log('[console.error]', m.text().slice(0, 300)); });
   page.on('pageerror', (e) => console.log('[pageerror]', String(e).slice(0, 300)));
   return { browser, page };

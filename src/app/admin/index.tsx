@@ -1,6 +1,6 @@
 /** AdminDashboardPage.xaml + AdminDashboardViewModel — "Kitchen Operations Hub". */
 import React, { useCallback, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Text } from '../../components/AppText';
 import { alerts } from '../../components/Alerts';
@@ -26,6 +26,8 @@ import type { Company, Order } from '../../models';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 export default function AdminDashboardScreen() {
+  // Half-width KPI cards on a ~320px phone only fit "R42,834.50" at a smaller size.
+  const kpiFont = useWindowDimensions().width < 360 ? 16 : 20;
   const { colors } = useApp();
   const [rows, setRows] = useState<AdminOrderRow[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -138,7 +140,7 @@ export default function AdminDashboardScreen() {
           {label}
         </Text>
       </View>
-      <Text style={[styles.kpiValue, { color: colors.text }]}>{value}</Text>
+      <Text style={[styles.kpiValue, { color: colors.text, fontSize: kpiFont }]} numberOfLines={1}>{value}</Text>
     </Card>
   );
 

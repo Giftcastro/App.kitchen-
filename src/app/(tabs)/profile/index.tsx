@@ -65,7 +65,7 @@ export default function ProfileScreen() {
         <Text style={styles.emoji}>{emoji}</Text>
         <Text style={[styles.detailLabel, { color: colors.text }]}>{label}</Text>
       </View>
-      <Text style={[styles.detailValue, { color: valueColor }]} numberOfLines={1}>
+      <Text style={[styles.detailValue, { color: valueColor }]} numberOfLines={2}>
         {value}
       </Text>
     </View>
@@ -152,10 +152,10 @@ const styles = StyleSheet.create({
   name: { fontSize: 22, fontWeight: '700' },
   email: { fontSize: 14 },
   detailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, gap: 12 },
-  detailLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1 },
+  detailLeft: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 0, maxWidth: '55%' },
   emoji: { fontSize: 16 },
-  detailLabel: { fontSize: 14 },
-  detailValue: { fontSize: 13, fontWeight: '700', flexShrink: 1, textAlign: 'right' },
+  detailLabel: { fontSize: 14, flexShrink: 1 },
+  detailValue: { fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' },
   chevron: { fontSize: 18 },
   chevronSmall: { fontSize: 16 },
 });

@@ -1,6 +1,6 @@
 /** LoginPage.xaml + LoginViewModel. */
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text } from '../components/AppText';
 import { alerts } from '../components/Alerts';
@@ -16,6 +16,11 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Small phones (~320px) get tighter gutters and a wordmark scaled to fit;
+  // the full 40px lockup is ~7.6x its font size wide.
+  const { width } = useWindowDimensions();
+  const pad = width < 360 ? 20 : 30;
+  const logoSize = Math.min(40, Math.floor((width - pad * 2) / 7.6));
 
   /** Signs in and maps known auth errors (suspended, wrong password) to friendly messages. */
   const login = async () => {
@@ -44,8 +49,8 @@ export default function LoginScreen() {
 
   return (
     <Page>
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <BrandLogo size={40} style={styles.logo} />
+      <ScrollView contentContainerStyle={[styles.scroll, { padding: pad }]} keyboardShouldPersistTaps="handled">
+        <BrandLogo size={logoSize} style={styles.logo} />
 
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Sign in to continue</Text>
 
@@ -55,10 +60,10 @@ export default function LoginScreen() {
           <View style={styles.row}>
             <View style={styles.remember}>
               <CheckBox checked={rememberMe} onToggle={() => setRememberMe(v => !v)} />
-              <Text style={[styles.small, { color: colors.textSecondary }]}>Remember me</Text>
+              <Text style={[styles.small, styles.shrink, { color: colors.textSecondary }]}>Remember me</Text>
             </View>
-            <Pressable onPress={() => alerts.show('Help', 'Forgot password logic coming soon!', 'OK')} hitSlop={8}>
-              <Text style={[styles.small, styles.bold, { color: colors.primary }]}>Forgot Password?</Text>
+            <Pressable onPress={() => alerts.show('Help', 'Forgot password logic coming soon!', 'OK')} hitSlop={8} style={styles.shrink}>
+              <Text style={[styles.small, styles.bold, styles.end, { color: colors.primary }]}>Forgot Password?</Text>
             </Pressable>
           </View>
         </View>
@@ -92,17 +97,20 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  scroll: { flexGrow: 1, justifyContent: 'center', padding: 30, gap: 20 },
+  scroll: { flexGrow: 1, justifyContent: 'center', gap: 20 },
   logo: { marginTop: 24, marginBottom: 29 },
   subtitle: { fontSize: 14, textAlign: 'center', marginTop: -10, marginBottom: 15 },
   form: { gap: 14 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginHorizontal: 2, marginVertical: 4 },
-  remember: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginHorizontal: 2, marginVertical: 4 },
+  remember: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  shrink: { flexShrink: 1 },
+  end: { textAlign: 'right' },
   small: { fontSize: 13 },
   bold: { fontWeight: '700' },
   actions: { gap: 16, marginTop: 10 },
   loginShadow: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.09, shadowRadius: 6, elevation: 3 },
-  signupRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 5 },
+  // Wraps the button under the prompt on narrow screens instead of squeezing it.
+  signupRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', columnGap: 5, rowGap: 8 },
   signUp: { height: 34, borderWidth: 1.5, borderRadius: 16, paddingHorizontal: 14, justifyContent: 'center' },
   pressed: { opacity: 0.88, transform: [{ scale: 0.96 }] },
 });

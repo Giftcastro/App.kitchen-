@@ -107,7 +107,7 @@ export default function AdminActiveOrdersScreen() {
         aria-selected={active}
         style={[styles.segmentBtn, active && { backgroundColor: colors.primary }]}
       >
-        <Text style={[styles.segmentText, { color: active ? colors.onPrimary : colors.mutedText }]}>{label}</Text>
+        <Text style={[styles.segmentText, { color: active ? colors.onPrimary : colors.mutedText }]} numberOfLines={1}>{label}</Text>
       </Pressable>
     );
   };
@@ -148,7 +148,7 @@ ${count} ${count === 1 ? 'order' : 'orders'} · ${companyFilter} · ${dateFilter
           {segment('Orders', false)}
           {segment('Prep Summary', true)}
         </View>
-        <Btn title="⬇  Export" onPress={openExports} bold fontSize={13} height={44} radius={22} paddingH={16} />
+        <Btn title="⬇  Export" onPress={openExports} bold fontSize={13} height={44} radius={22} paddingH={12} />
       </View>
 
       {isPrepViewActive ? (
@@ -221,8 +221,8 @@ const styles = StyleSheet.create({
   filters: { flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, marginBottom: 10 },
   segmentTrack: { flex: 1, flexDirection: 'row', height: 44, borderRadius: 22, padding: 4 },
-  segmentBtn: { flex: 1, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  segmentText: { fontSize: 13, fontWeight: '700' },
+  segmentBtn: { flex: 1, borderRadius: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  segmentText: { fontSize: 12, fontWeight: '700' },
   list: { paddingHorizontal: 16, paddingBottom: 16, flexGrow: 1 },
   prepHeader: { fontSize: 12, marginBottom: 10 },
   prepCard: { marginBottom: 8 },
