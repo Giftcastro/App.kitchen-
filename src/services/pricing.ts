@@ -1,13 +1,15 @@
 /**
  * The basket's money, computed by the same rules place_order applies
  * (supabase/migrations/0009_company_delivery_fee.sql) so what the Cart and Payment
- * screens show is what the customer is actually charged:
+ * screens show is what the customer is actually charged. Checkout places one
+ * order per delivery day (place_orders, 0010), so each day is priced on its
+ * own and the days are summed:
  *
  *   subtotal   sum of unit price x quantity
  *   discount   the best active discount code that applies, % of subtotal,
  *              plus the company's own discount on what's left after subsidy
  *   subsidy    company accounts: per-meal subsidy x meals, capped
- *   delivery   one fee per checkout: the company's own setting (free / flat),
+ *   delivery   one fee per delivery day: the company's own setting (free / flat),
  *              otherwise the location's distance band
  *
  * Delivery fee bands are MAUI's DeliveryFeeCalculator (same as the
@@ -50,6 +52,36 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Everything the Cart shows and Payment charges, from the basket and the customer's company / location. */
 export function quoteCart(
+  items: CartItem[],
+  user: UserAccount | null,
+  company: Company | null,
+  location: CompanyLocation | null,
+  discounts: Discount[]
+): CartQuote {
+  const byDay = new Map<string, CartItem[]>();
+  for (const item of items) byDay.set(item.deliveryDate, [...(byDay.get(item.deliveryDate) ?? []), item]);
+  const days = [...byDay.values()].map(dayItems => quoteDay(dayItems, user, company, location, discounts));
+  if (days.length <= 1) return days[0] ?? quoteDay([], user, company, location, discounts);
+
+  const sum = (pick: (q: CartQuote) => number) => round2(days.reduce((total, q) => total + pick(q), 0));
+  const deliveryFee = sum(q => q.deliveryFee);
+  const outside = days.find(q => q.isOutsideDeliveryRange);
+  return {
+    cartTotal: sum(q => q.cartTotal),
+    discountAmount: sum(q => q.discountAmount),
+    discountLabel: [...new Set(days.flatMap(q => (q.discountLabel ? q.discountLabel.split(' + ') : [])))].join(' + '),
+    subsidyTotal: sum(q => q.subsidyTotal),
+    subsidyLabel: days.find(q => q.subsidyLabel)?.subsidyLabel ?? '',
+    deliveryFee,
+    // Same location and company every day, so every day carries the same label.
+    deliveryFeeLabel: outside?.deliveryFeeLabel ?? (deliveryFee > 0 ? `${days[0].deliveryFeeLabel} × ${days.length} days` : days[0].deliveryFeeLabel),
+    isOutsideDeliveryRange: !!outside,
+    amountDue: sum(q => q.amountDue),
+  };
+}
+
+/** One delivery day's quote — what place_order charges for that day's order. */
+function quoteDay(
   items: CartItem[],
   user: UserAccount | null,
   company: Company | null,

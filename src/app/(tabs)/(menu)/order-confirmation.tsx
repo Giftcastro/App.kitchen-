@@ -14,8 +14,8 @@ export default function OrderConfirmationScreen() {
   const { colors } = useApp();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  // The order just placed, handed over by the Payment page (an array, so the
-  // page can show a batch; checkout currently places one order).
+  // The orders just placed, handed over by the Payment page: one per
+  // delivery day in the basket, earliest first.
   const [orders] = useState(() => getNavParam('Orders') ?? []);
   const firstOrder = orders[0];
   const totalPaid = orders.reduce((sum, o) => sum + o.totalAmount, 0);
@@ -41,14 +41,24 @@ export default function OrderConfirmationScreen() {
             <Text style={styles.tick}>✓</Text>
           </View>
           <Text style={[styles.title, { color: colors.text }]}>Order Scheduled &amp; Paid!</Text>
-          {firstOrder && <Text style={[styles.orderNo, { color: colors.primary }]}>Order #{firstOrder.orderNumber}</Text>}
+          {orders.length === 1 && <Text style={[styles.orderNo, { color: colors.primary }]}>Order #{firstOrder.orderNumber}</Text>}
+          {orders.length > 1 && <Text style={[styles.orderNo, { color: colors.primary }]}>{orders.length} orders, one per delivery day</Text>}
         </View>
 
         {firstOrder && (
           <Card radius={14} border={colors.surfaceBorder}>
-            <View style={styles.stack4}>
-              <Text style={[styles.caption, { color: colors.textSecondary }]}>DELIVERY DATE</Text>
-              <Text style={[styles.value, { color: colors.text }]}>{fmtLongDate(firstOrder.deliveryDate)}</Text>
+            <View style={styles.stack10}>
+              <Text style={[styles.caption, { color: colors.textSecondary }]}>{orders.length > 1 ? 'DELIVERY DATES' : 'DELIVERY DATE'}</Text>
+              {orders.map(order => (
+                <View key={order.id} style={styles.stack4}>
+                  <Text style={[styles.value, { color: colors.text }]}>{fmtLongDate(order.deliveryDate)}</Text>
+                  {orders.length > 1 && (
+                    <Text style={[styles.dayItems, { color: colors.textSecondary }]}>
+                      #{order.orderNumber} · {order.itemName}
+                    </Text>
+                  )}
+                </View>
+              ))}
             </View>
           </Card>
         )}
@@ -98,6 +108,7 @@ const styles = StyleSheet.create({
   stack10: { gap: 10 },
   caption: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
   value: { fontSize: 14, fontWeight: '700' },
+  dayItems: { fontSize: 12 },
   row: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 4 },
   itemName: { flex: 1, fontSize: 13 },
   itemAmount: { fontSize: 13, fontWeight: '700' },

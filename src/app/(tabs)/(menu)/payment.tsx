@@ -14,7 +14,7 @@ import { alerts } from '../../../components/Alerts';
 import { Btn, Card, Page } from '../../../components/ui';
 import { useApp } from '../../../state/AppState';
 import { getNavParam, setNavParam } from '../../../state/navParams';
-import { placeCartOrder } from '../../../services/orders';
+import { placeCartOrders } from '../../../services/orders';
 import { buildPayFastHtml, newPaymentReference, PAYFAST } from '../../../services/payfast';
 
 export default function PaymentScreen() {
@@ -31,15 +31,15 @@ export default function PaymentScreen() {
   const amountDue = params?.amountDue ?? 0;
   const deliveryFee = params?.deliveryFee ?? 0;
 
-  /** Places the order for the cart once payment succeeded, then shows the confirmation. */
+  /** Places the cart's orders (one per delivery day) once payment succeeded, then shows the confirmation. */
   const completeOrder = async (paymentReference: string) => {
     if (placing.current || !params) return;
     placing.current = true;
     setIsProcessing(true);
     try {
-      const order = await placeCartOrder(cartItems, params.addressId, paymentReference);
+      const orders = await placeCartOrders(cartItems, params.addressId, paymentReference);
       clearCart();
-      setNavParam('Orders', [order]);
+      setNavParam('Orders', orders);
       router.push('/order-confirmation');
     } catch (err) {
       await alerts.show('Order Not Placed', (err as Error)?.message ?? 'Your order could not be placed.', 'OK');

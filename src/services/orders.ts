@@ -1,10 +1,11 @@
 /**
  * Orders — the MAUI IOrderService, backed by Supabase. All writes go through
- * the security-definer RPCs (place_order, update_order_status,
+ * the security-definer RPCs (place_orders, update_order_status,
  * submit_order_rating, report_order_dispute); the database prices every line
  * itself and never trusts the client's numbers.
  *
- * One Supabase order is one checkout (it can hold several lines); the
+ * One Supabase order is one checkout's delivery day (it can hold several
+ * lines; a basket spanning two days becomes two orders); the
  * screens show it the way MAUI shows an order, with ItemName summarising its
  * lines ("2x Classic Burger, Caesar Salad").
  */
@@ -154,10 +155,11 @@ export async function getAllActiveOrders(): Promise<Order[]> {
 }
 
 /**
- * Places the basket as one real order. Returns it so the confirmation screen
- * shows real details (invoice number, server-priced total).
+ * Places the basket as real orders, one per delivery day, all or nothing.
+ * Returns them (earliest day first) so the confirmation screen shows real
+ * details (invoice numbers, server-priced totals).
  */
-export async function placeCartOrder(items: CartItem[], addressId: string, paymentReference: string): Promise<Order> {
+export async function placeCartOrders(items: CartItem[], addressId: string, paymentReference: string): Promise<Order[]> {
   const payload = items.map(item => {
     const size = item.selectedOptions.find(o => o.sizeLabel);
     return {
@@ -175,15 +177,16 @@ export async function placeCartOrder(items: CartItem[], addressId: string, payme
       addons: item.selectedOptions.filter(o => o.isAddOn).map(o => ({ name: o.name })),
     };
   });
-  const { data, error } = await supabase.rpc('place_order', {
+  const { data, error } = await supabase.rpc('place_orders', {
     p_cart: payload,
     p_address_id: addressId,
     p_payment_reference: paymentReference,
   });
   if (error) throw friendlyError(error, 'Your order could not be placed — check your connection and try again.');
-  const { data: full, error: fetchErr } = await supabase.from('orders').select(ORDER_SELECT).eq('id', data.id).single();
+  const ids = (data as { id: string }[]).map(o => o.id);
+  const { data: full, error: fetchErr } = await supabase.from('orders').select(ORDER_SELECT).in('id', ids).order('delivery_date');
   if (fetchErr) throw fetchErr;
-  return mapOrder(full);
+  return (full ?? []).map(mapOrder);
 }
 
 /** Admin. The database applies it to the whole company + delivery-day batch. */
