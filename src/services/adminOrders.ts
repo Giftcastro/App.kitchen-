@@ -4,7 +4,7 @@
  * both MAUI view models (company + date pickers, "All ..." options first).
  */
 import type { Company, Order } from '../models';
-import { getAllActiveOrders, getLocationNames, updateOrderStatus } from './orders';
+import { getAllActiveOrders, getLocationNames, getOrderByInvoiceNumber, updateOrderStatus } from './orders';
 import { getCompanies } from './directory';
 import { fmtDayLabel } from './scheduling';
 
@@ -20,18 +20,28 @@ export const ALL_DATES = 'All Dates';
 /** Orders from individual (non-company) accounts — they have no company to file under. */
 export const INDIVIDUAL = 'Individual';
 
-/** Every active order with its company / location names resolved, plus the company list for the filters. */
-export async function loadActiveOrderRows(): Promise<{ rows: AdminOrderRow[]; companies: Company[] }> {
-  const [orders, companies] = await Promise.all([getAllActiveOrders(), getCompanies()]);
+/** Orders with their company / location names resolved. */
+async function toRows(orders: Order[], companies: Company[]): Promise<AdminOrderRow[]> {
   const names = await getLocationNames(orders.map(o => o.locationId));
   const companyName = new Map(companies.map(c => [c.id, c.name]));
-  const rows = orders.map(order => ({
+  return orders.map(order => ({
     order,
     companyName: order.companyId ? companyName.get(order.companyId) ?? 'Unknown Company' : INDIVIDUAL,
     locationName: names[order.locationId] ?? 'Unknown Location',
     deliveryDateLabel: fmtDayLabel(order.deliveryDate),
   }));
-  return { rows, companies };
+}
+
+/** Every active order with its company / location names resolved, plus the company list for the filters. */
+export async function loadActiveOrderRows(): Promise<{ rows: AdminOrderRow[]; companies: Company[] }> {
+  const [orders, companies] = await Promise.all([getAllActiveOrders(), getCompanies()]);
+  return { rows: await toRows(orders, companies), companies };
+}
+
+/** One order, past or upcoming, by invoice number — for printing a single delivery note on request. */
+export async function loadOrderRowByInvoice(invoiceNumber: string): Promise<AdminOrderRow | null> {
+  const [order, companies] = await Promise.all([getOrderByInvoiceNumber(invoiceNumber), getCompanies()]);
+  return order ? (await toRows([order], companies))[0] : null;
 }
 
 /** "All Companies", each company, and "Individual" only if individuals have active orders. */

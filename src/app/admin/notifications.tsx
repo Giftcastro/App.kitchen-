@@ -7,8 +7,8 @@ import { alerts } from '../../components/Alerts';
 import { AdminNavStrip } from '../../components/AdminNavStrip';
 import { Btn, Card, Page, Picker, PlainEntry } from '../../components/ui';
 import { useApp } from '../../state/AppState';
-import { getUsers } from '../../services/directory';
-import { AUDIENCE_OPTIONS, getRecipientCount, getSentHistory, sendNotification } from '../../services/promos';
+import { getCompanies, getUsers } from '../../services/directory';
+import { AUDIENCE_OPTIONS, COMPANY_AUDIENCE, getSentHistory, type MessageTarget, PERSON_AUDIENCE, sendNotification } from '../../services/promos';
 import { fmtSentAt } from '../../services/scheduling';
 import type { NotificationLog } from '../../models';
 
@@ -16,7 +16,7 @@ export default function AdminNotificationsScreen() {
   const { colors } = useApp();
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [audience, setAudience] = useState('All Customers');
+  const [target, setTarget] = useState<{ label: string; value: MessageTarget }>({ label: 'All Customers', value: { audience: 'All Customers' } });
   const [history, setHistory] = useState<NotificationLog[]>([]);
   const [isBusy, setIsBusy] = useState(false);
 
@@ -28,8 +28,41 @@ export default function AdminNotificationsScreen() {
     }, [])
   );
 
+  /** A group is picked straight from the list; "A Company…" and "One Person…" ask which one next. */
+  const pickAudience = async (choice: string) => {
+    try {
+      if (choice === COMPANY_AUDIENCE) {
+        const companies = (await getCompanies()).filter(c => c.isActive);
+        if (companies.length === 0) {
+          await alerts.show('No Companies', 'There are no active companies to message.', 'OK');
+          return;
+        }
+        const name = await alerts.choose({ title: 'Which company?', message: 'Everyone signed up under it gets the message.', options: companies.map(c => c.name), cancel: 'Cancel', compact: true });
+        const company = companies.find(c => c.name === name);
+        if (company) setTarget({ label: `Company: ${company.name}`, value: { audience: 'Company', companyId: company.id } });
+      } else if (choice === PERSON_AUDIENCE) {
+        const query = await alerts.prompt('One Person', 'Search by name or email.', { acceptText: 'Search' });
+        const q = query?.trim().toLowerCase();
+        if (!q) return;
+        const matches = (await getUsers()).filter(u => u.isActive && (u.fullName.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))).slice(0, 25);
+        if (matches.length === 0) {
+          await alerts.show('No Match', `Nobody active matches "${query!.trim()}".`, 'OK');
+          return;
+        }
+        const rowLabel = (u: (typeof matches)[number]) => `${u.fullName || u.email} · ${u.email}`;
+        const picked = await alerts.choose({ title: 'Send to', options: matches.map(rowLabel), cancel: 'Cancel', compact: true });
+        const person = matches.find(u => rowLabel(u) === picked);
+        if (person) setTarget({ label: `Person: ${person.fullName || person.email}`, value: { audience: 'Person', userId: person.id } });
+      } else {
+        setTarget({ label: choice, value: { audience: choice } as MessageTarget });
+      }
+    } catch (err) {
+      await alerts.show('Could Not Load', (err as Error)?.message ?? 'Check your connection and try again.', 'OK');
+    }
+  };
+
   /**
-   * Counts the recipients for the chosen audience, logs the broadcast and
+   * Delivers the message to each recipient's in-app inbox (Profile > Messages),
    * prepends it to Sent History, then clears the form.
    */
   const send = async () => {
@@ -39,14 +72,18 @@ export default function AdminNotificationsScreen() {
     }
     setIsBusy(true);
     try {
-      const users = await getUsers();
-      const recipientCount = await getRecipientCount(audience, users);
-      const log = await sendNotification(title.trim(), message.trim(), audience, recipientCount);
+      const log = await sendNotification(title.trim(), message.trim(), target.value);
       setHistory(list => [log, ...list]);
       setTitle('');
       setMessage('');
       setIsBusy(false);
-      await alerts.show('Success', `Notification broadcasted to ${log.targetAudience} (${log.recipientCount} recipients).`, 'OK');
+      await alerts.show(
+        log.recipientCount > 0 ? 'Sent' : 'Nobody to Send To',
+        log.recipientCount > 0
+          ? `Sent to ${log.targetAudience} (${log.recipientCount} ${log.recipientCount === 1 ? 'person' : 'people'}). They'll see it in Profile › Messages.`
+          : `No active accounts matched ${log.targetAudience}. It's saved in Sent History.`,
+        'OK'
+      );
     } catch (err) {
       setIsBusy(false);
       await alerts.show('Not Sent', (err as Error)?.message ?? 'Could not send this broadcast.', 'OK');
@@ -64,7 +101,7 @@ export default function AdminNotificationsScreen() {
             <Text style={[styles.heading, { color: colors.text }]}>Compose Broadcast</Text>
             <View style={styles.field}>
               {fieldLabel('Target Audience')}
-              <Picker title="Select Target Group" options={AUDIENCE_OPTIONS} selected={audience} onSelect={setAudience} />
+              <Picker title="Select Target Group" options={AUDIENCE_OPTIONS} selected={target.label} onSelect={pickAudience} />
             </View>
             <View style={styles.field}>
               {fieldLabel('Notification Title')}
@@ -82,7 +119,7 @@ export default function AdminNotificationsScreen() {
                 style={[styles.input, { borderColor: colors.surfaceBorder }]}
               />
             </View>
-            <Btn title="Send Push Broadcast" onPress={send} disabled={isBusy} bg={colors.brandGold} color={colors.onBrandGold} bold radius={8} style={styles.send} />
+            <Btn title="Send Message" onPress={send} disabled={isBusy} bg={colors.brandGold} color={colors.onBrandGold} bold radius={8} style={styles.send} />
             {isBusy && <ActivityIndicator color={colors.brandGold} />}
           </View>
         </Card>

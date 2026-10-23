@@ -84,6 +84,13 @@ const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
 // ── Static menu ─────────────────────────────────────────────────────────
 
+/** Static menu category names in menu order (the kitchen's COOK list follows it). */
+export async function getCategoryOrder(): Promise<string[]> {
+  const { data, error } = await supabase.from('menu_categories').select('name, sort_order').order('sort_order');
+  if (error) throw error;
+  return (data ?? []).map((c: { name: string }) => c.name);
+}
+
 /** Every static dish, available or not (the admin catalog needs both). */
 export async function getStaticProducts(): Promise<Product[]> {
   const [{ data: categories, error: catErr }, { data: items, error: itemErr }, { data: addons, error: addonErr }] = await Promise.all([

@@ -1,4 +1,4 @@
-/** The Profile tab's own stack: My Profile, then Settings / Help & Support / Cancellation Policy pushed from it. */
+/** The Profile tab's own stack: My Profile, then Messages / Settings / Help & Support / Cancellation Policy pushed from it. */
 import React from 'react';
 import { Stack } from 'expo-router';
 import { useApp } from '../../../state/AppState';
@@ -9,6 +9,7 @@ export default function ProfileStackLayout() {
   return (
     <Stack screenOptions={stackHeader(colors)}>
       <Stack.Screen name="index" options={{ title: 'My Profile' }} />
+      <Stack.Screen name="messages" options={{ title: 'Messages' }} />
       <Stack.Screen name="settings" options={{ title: 'Settings' }} />
       <Stack.Screen name="help" options={{ title: 'Help & Support' }} />
       <Stack.Screen name="cancellation-policy" options={{ title: 'Cancellation Policy' }} />

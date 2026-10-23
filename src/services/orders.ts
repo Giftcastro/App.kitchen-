@@ -97,6 +97,7 @@ function mapOrder(row: Record<string, any>): Order {
     disputeReportedAt: dispute?.reported_at ?? undefined,
     disputeStatus: dispute ? DISPUTE_FROM_DB[dispute.status] ?? 'Investigating' : '',
     deliveryDate: row.delivery_date,
+    deliveredAt: row.delivered_at ?? undefined,
     menuType: lines.length > 0 && lines.every(l => l.isCycle) ? 'cycle' : 'static',
     companyId: row.company_id ?? '',
     locationId: row.delivery_address_snapshot?.address_id ?? '',
@@ -152,6 +153,13 @@ export async function getAllActiveOrders(): Promise<Order[]> {
     .order('delivery_date');
   if (error) throw error;
   return (data ?? []).map(mapOrder);
+}
+
+/** Any order (past or upcoming) by its invoice number, e.g. "INV-00042" (admin); null if none. */
+export async function getOrderByInvoiceNumber(invoiceNumber: string): Promise<Order | null> {
+  const { data, error } = await supabase.from('orders').select(ORDER_SELECT).eq('invoice_number', invoiceNumber.trim().toUpperCase()).maybeSingle();
+  if (error) throw error;
+  return data ? mapOrder(data) : null;
 }
 
 /**

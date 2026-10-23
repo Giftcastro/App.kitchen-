@@ -8,6 +8,7 @@ import { Btn, Card, Divider, Page } from '../../../components/ui';
 import { useApp } from '../../../state/AppState';
 import { getCompany, getDeliveryLocation, updateDeliveryFloor } from '../../../services/directory';
 import { fmtMonthYear } from '../../../services/scheduling';
+import { refreshUnreadMessages, useUnreadMessages } from '../../../state/unreadMessages';
 
 export default function ProfileScreen() {
   const { colors, user, setUser, signOut } = useApp();
@@ -15,11 +16,13 @@ export default function ProfileScreen() {
   const [companyName, setCompanyName] = useState('—');
   const [mealSubsidyLabel, setMealSubsidyLabel] = useState('');
   const [locationName, setLocationName] = useState('—');
+  const unread = useUnreadMessages();
 
-  // Company name / subsidy and delivery location are looked up on each visit.
+  // Company name / subsidy, delivery location and unread messages are looked up on each visit.
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
+      refreshUnreadMessages(user.id);
       if (user.accountType === 'company' && user.companyId) {
         getCompany(user.companyId)
           .then(company => {
@@ -72,13 +75,20 @@ export default function ProfileScreen() {
   );
 
   /** Row that opens another page. */
-  const navRow = (emoji: string, label: string, onPress: () => void) => (
-    <Pressable onPress={onPress} style={styles.detailRow} accessibilityRole="button">
+  const navRow = (emoji: string, label: string, onPress: () => void, badge = 0) => (
+    <Pressable onPress={onPress} style={styles.detailRow} accessibilityRole="button" accessibilityLabel={badge > 0 ? `${label}, ${badge} unread` : label}>
       <View style={styles.detailLeft}>
         <Text style={styles.emoji}>{emoji}</Text>
         <Text style={[styles.detailLabel, { color: colors.text }]}>{label}</Text>
       </View>
-      <Text style={[styles.chevron, { color: colors.textSecondary }]}>›</Text>
+      <View style={styles.detailLeft}>
+        {badge > 0 && (
+          <View style={[styles.badge, { backgroundColor: colors.primary }]}>
+            <Text style={[styles.badgeText, { color: colors.onPrimary }]}>{badge > 9 ? '9+' : badge}</Text>
+          </View>
+        )}
+        <Text style={[styles.chevron, { color: colors.textSecondary }]}>›</Text>
+      </View>
     </Pressable>
   );
 
@@ -131,6 +141,8 @@ export default function ProfileScreen() {
         </Card>
 
         <Card radius={14} padding={[16, 4]} border={colors.surfaceBorder}>
+          {navRow('✉️', 'Messages', () => router.push('/profile/messages'), unread)}
+          <Divider />
           {navRow('⚙️', 'Settings', () => router.push('/profile/settings'))}
           <Divider />
           {navRow('❓', 'Help & Support', () => router.push('/profile/help'))}
@@ -158,4 +170,6 @@ const styles = StyleSheet.create({
   detailValue: { fontSize: 13, fontWeight: '700', flex: 1, textAlign: 'right' },
   chevron: { fontSize: 18 },
   chevronSmall: { fontSize: 16 },
+  badge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center' },
+  badgeText: { fontSize: 11, fontWeight: '700' },
 });

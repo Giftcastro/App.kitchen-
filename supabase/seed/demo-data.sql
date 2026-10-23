@@ -322,11 +322,20 @@ begin
    where id in (select order_id from order_disputes where status = 'refunded'
                 and order_id in (select o.id from orders o join profiles p on p.id = o.user_id where p.email = any(c_emails)));
 
-  -- ── Announcements (stored for when the app reads them from the DB) ──────
+  -- ── Announcements (Profile > Messages; needs migration 0012) ────────────
   delete from announcements where title in ('New winter soups are here', 'Ecogra: Friday team lunch');
-  insert into announcements (title, body, company_id, sent_at) values
-    ('New winter soups are here', 'Ginger & Honey Butternut and Pea, Tomato & Lentil — now on the menu.', null, now() - interval '2 days'),
-    ('Ecogra: Friday team lunch', 'Orders for Friday''s team lunch close Thursday at 14:00.', v_ecogra, now() - interval '1 day');
+  insert into announcements (title, body, company_id, target_audience, sent_at) values
+    ('New winter soups are here', 'Ginger & Honey Butternut and Pea, Tomato & Lentil — now on the menu.', null, 'All Users', now() - interval '2 days'),
+    ('Ecogra: Friday team lunch', 'Orders for Friday''s team lunch close Thursday at 14:00.', v_ecogra, 'Company: Ecogra', now() - interval '1 day');
+  insert into announcement_recipients (announcement_id, user_id)
+  select a.id, p.id
+    from announcements a
+    join profiles p on p.is_active and (a.company_id is null or p.company_id = a.company_id)
+   where a.title in ('New winter soups are here', 'Ecogra: Friday team lunch')
+  on conflict do nothing;
+  update announcements a
+     set recipient_count = (select count(*) from announcement_recipients r where r.announcement_id = a.id)
+   where a.title in ('New winter soups are here', 'Ecogra: Friday team lunch');
 
   raise notice 'Demo data loaded: % orders, % ratings, % disputes',
     (select count(*) from orders o join profiles p on p.id = o.user_id where p.email = any(c_emails)),

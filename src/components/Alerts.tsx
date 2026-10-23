@@ -16,14 +16,14 @@
  * at the root and renders whichever popup is at the front of the queue.
  */
 import React, { useEffect, useState } from 'react';
-import { Animated, Easing, KeyboardTypeOptions, Modal, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Easing, KeyboardTypeOptions, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { Text, TextInput } from './AppText';
 import { useApp } from '../state/AppState';
 
 type Request =
   | { kind: 'alert'; title: string; message: string; buttons: string[]; resolve: (index: number) => void }
   | { kind: 'prompt'; title: string; message: string; initialValue: string; keyboard?: KeyboardTypeOptions; accept: string; cancel: string; resolve: (value: string | null) => void }
-  | { kind: 'sheet'; title: string; message?: string; icon?: string; cancel: string; options: string[]; primary?: string; resolve: (value: string | null) => void };
+  | { kind: 'sheet'; title: string; message?: string; icon?: string; cancel: string; options: string[]; primary?: string; compact?: boolean; resolve: (value: string | null) => void };
 
 // Module-level, alongside the queue: <AlertHost/> is mounted exactly once.
 const queue: Request[] = [];
@@ -64,8 +64,11 @@ export const alerts = {
   actionSheet(title: string, cancelText: string, ...options: string[]): Promise<string | null> {
     return new Promise(resolve => enqueue({ kind: 'sheet', title, cancel: cancelText, options, resolve }));
   },
-  /** An action sheet with a clear heading / message split and one highlighted primary option. */
-  choose(sheet: { title: string; message?: string; icon?: string; options: string[]; cancel: string; primary?: string }): Promise<string | null> {
+  /**
+   * An action sheet with a clear heading / message split and one highlighted primary option.
+   * `compact` draws the options as one grouped list of thin rows, so long menus fit without scrolling.
+   */
+  choose(sheet: { title: string; message?: string; icon?: string; options: string[]; cancel: string; primary?: string; compact?: boolean }): Promise<string | null> {
     return new Promise(resolve => enqueue({ kind: 'sheet', ...sheet, resolve }));
   },
 };
@@ -177,13 +180,38 @@ export function AlertHost() {
               <Text style={[styles.sheetTitle, { color: colors.text }]}>{sheetHeading(current)}</Text>
               {!!sheetMessage(current) && <Text style={[styles.sheetMessage, { color: colors.textSecondary }]}>{sheetMessage(current)}</Text>}
             </View>
-            <View style={styles.stack8}>
-              {current.options.map(option =>
-                option === current.primary
-                  ? primaryButton(option, () => close(() => current.resolve(option)))
-                  : outlineButton(option, () => close(() => current.resolve(option)), colors.text, false)
-              )}
-            </View>
+            {/* Long option lists scroll inside the sheet instead of running off a short screen. */}
+            {current.compact ? (
+              <ScrollView
+                style={[styles.sheetOptions, styles.group, { borderColor: colors.surfaceBorder }]}
+                bounces={false}
+                showsVerticalScrollIndicator={false}
+              >
+                {current.options.map((option, index) => (
+                  <Pressable
+                    key={option}
+                    accessibilityRole="button"
+                    onPress={() => close(() => current.resolve(option))}
+                    style={({ pressed }) => [
+                      styles.row,
+                      index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.surfaceBorder },
+                      pressed && { backgroundColor: colors.chipBg },
+                    ]}
+                  >
+                    <Text style={[styles.rowText, { color: colors.text }]} numberOfLines={1}>{option}</Text>
+                    <Text style={[styles.rowChevron, { color: colors.mutedText }]}>›</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : (
+              <ScrollView style={styles.sheetOptions} contentContainerStyle={styles.stack8} bounces={false}>
+                {current.options.map(option =>
+                  option === current.primary
+                    ? primaryButton(option, () => close(() => current.resolve(option)))
+                    : outlineButton(option, () => close(() => current.resolve(option)), colors.text, false)
+                )}
+              </ScrollView>
+            )}
             <View style={styles.sheetCancel}>{outlineButton(current.cancel, () => close(() => current.resolve(null)), colors.textSecondary, false)}</View>
           </Animated.View>
         ) : (
@@ -248,6 +276,7 @@ const styles = StyleSheet.create({
   buttonText: { fontSize: 15, fontWeight: '700' },
   pressed: { opacity: 0.88, transform: [{ scale: 0.96 }] },
   sheet: {
+    maxHeight: '92%',
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     paddingHorizontal: 20,
@@ -266,5 +295,10 @@ const styles = StyleSheet.create({
   sheetTitle: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
   sheetMessage: { fontSize: 14, textAlign: 'center' },
   stack8: { gap: 8 },
+  sheetOptions: { flexGrow: 0, flexShrink: 1 },
+  group: { borderWidth: 1, borderRadius: 14, overflow: 'hidden' },
+  row: { minHeight: 44, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, gap: 10 },
+  rowText: { flex: 1, fontSize: 15 },
+  rowChevron: { fontSize: 20, lineHeight: 22 },
   sheetCancel: { marginTop: 6 },
 });

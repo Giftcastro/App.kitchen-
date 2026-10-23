@@ -216,9 +216,34 @@ export class PdfWriter {
 
 export type Cell = string | number | null | undefined;
 
+/** A cell format registered with XlsxWriter.style(); colours are hex ("#C62828"). Custom styles use Arial. */
+export interface XlsxStyle {
+  bold?: boolean;
+  italic?: boolean;
+  size?: number;
+  color?: string;
+  fill?: string;
+  /** Thin bottom border in this colour. */
+  borderBottom?: string;
+  align?: 'left' | 'center' | 'right';
+  valign?: 'top' | 'center' | 'bottom';
+  wrap?: boolean;
+}
+
+interface XlsxRow {
+  cells: Cell[];
+  bold: boolean;
+  /** One style id for the whole row, or one per cell. Styled empty cells are still written (for fill bands). */
+  styles?: number | number[];
+  height?: number;
+}
+
 export class XlsxSheet {
-  rows: { cells: Cell[]; bold: boolean }[] = [];
+  rows: XlsxRow[] = [];
   columnWidths: number[] = [];
+  showGridLines = true;
+  frozenRows = 0;
+  fitToWidth = false;
   constructor(public name: string) {}
   header(...cells: Cell[]) {
     this.rows.push({ cells, bold: true });
@@ -228,12 +253,24 @@ export class XlsxSheet {
     this.rows.push({ cells, bold: false });
     return this;
   }
+  /** A row with explicit style ids (from XlsxWriter.style) and an optional height in points. */
+  styled(cells: Cell[], styles: number | number[], height?: number) {
+    this.rows.push({ cells, bold: false, styles, height });
+    return this;
+  }
   blank() {
     this.rows.push({ cells: [], bold: false });
     return this;
   }
   widths(...widths: number[]) {
     this.columnWidths = widths;
+    return this;
+  }
+  /** Print-ready look: no gridlines, header rows frozen, A4 portrait fitted to one page wide. */
+  printLayout(frozenRows = 0) {
+    this.showGridLines = false;
+    this.frozenRows = frozenRows;
+    this.fitToWidth = true;
     return this;
   }
 }
@@ -252,8 +289,65 @@ function columnName(index: number): string {
 
 const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
+const argb = (hex: string) => 'FF' + hex.replace('#', '').toUpperCase();
+
+/** styles.xml: id 0 = default, id 1 = bold header (both Calibri), then one xf per registered XlsxStyle. */
+function stylesXml(custom: XlsxStyle[]): string {
+  const fonts = ['<font><sz val="11"/><name val="Calibri"/></font>', '<font><b/><sz val="11"/><name val="Calibri"/></font>'];
+  const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'];
+  const borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>'];
+  const xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>', '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'];
+  for (const s of custom) {
+    const fontId = fonts.length;
+    fonts.push(
+      `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}<sz val="${s.size ?? 11}"/>${s.color ? `<color rgb="${argb(s.color)}"/>` : ''}<name val="Arial"/></font>`
+    );
+    let fillId = 0;
+    if (s.fill) {
+      fillId = fills.length;
+      fills.push(`<fill><patternFill patternType="solid"><fgColor rgb="${argb(s.fill)}"/><bgColor indexed="64"/></patternFill></fill>`);
+    }
+    let borderId = 0;
+    if (s.borderBottom) {
+      borderId = borders.length;
+      borders.push(`<border><left/><right/><top/><bottom style="thin"><color rgb="${argb(s.borderBottom)}"/></bottom><diagonal/></border>`);
+    }
+    const align =
+      s.align || s.valign || s.wrap
+        ? `<alignment${s.align ? ` horizontal="${s.align}"` : ''}${s.valign ? ` vertical="${s.valign}"` : ''}${s.wrap ? ' wrapText="1"' : ''}/>`
+        : '';
+    xfs.push(
+      `<xf numFmtId="0" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0" applyFont="1"${fillId ? ' applyFill="1"' : ''}${borderId ? ' applyBorder="1"' : ''}${align ? ' applyAlignment="1">' + align + '</xf>' : '/>'}`
+    );
+  }
+  return (
+    XML_HEAD +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    `<fonts count="${fonts.length}">${fonts.join('')}</fonts>` +
+    `<fills count="${fills.length}">${fills.join('')}</fills>` +
+    `<borders count="${borders.length}">${borders.join('')}</borders>` +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    `<cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs>` +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'
+  );
+}
+
 export class XlsxWriter {
   private sheets: XlsxSheet[] = [];
+  private customStyles: XlsxStyle[] = [];
+  private styleKeys = new Map<string, number>();
+
+  /** Registers a cell format and returns its style id (identical formats share one id). */
+  style(s: XlsxStyle): number {
+    const key = JSON.stringify(s);
+    let id = this.styleKeys.get(key);
+    if (id == null) {
+      id = 2 + this.customStyles.length;
+      this.customStyles.push(s);
+      this.styleKeys.set(key, id);
+    }
+    return id;
+  }
 
   /** Excel sheet-name rules: max 31 chars, none of : \ / ? * [ ] */
   addSheet(name: string): XlsxSheet {
@@ -300,11 +394,7 @@ export class XlsxWriter {
     rels += `<Relationship Id="rId${n + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
     entries.push(['xl/_rels/workbook.xml.rels', rels]);
 
-    entries.push([
-      'xl/styles.xml',
-      XML_HEAD +
-        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>',
-    ]);
+    entries.push(['xl/styles.xml', stylesXml(this.customStyles)]);
 
     this.sheets.forEach((s, i) => entries.push([`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)]));
     return zipStore(entries.map(([path, xml]) => [path, utf8(xml)]));
@@ -313,24 +403,39 @@ export class XlsxWriter {
 
 function sheetXml(sheet: XlsxSheet): string {
   let x = XML_HEAD + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+  if (sheet.fitToWidth) x += '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>';
+  if (!sheet.showGridLines || sheet.frozenRows > 0) {
+    x += `<sheetViews><sheetView workbookViewId="0"${sheet.showGridLines ? '' : ' showGridLines="0"'}>`;
+    if (sheet.frozenRows > 0)
+      x += `<pane ySplit="${sheet.frozenRows}" topLeftCell="A${sheet.frozenRows + 1}" activePane="bottomLeft" state="frozen"/>`;
+    x += '</sheetView></sheetViews>';
+  }
   if (sheet.columnWidths.length > 0) {
     x += '<cols>';
     sheet.columnWidths.forEach((w, i) => (x += `<col min="${i + 1}" max="${i + 1}" width="${fmtPdfNum(w)}" customWidth="1"/>`));
     x += '</cols>';
   }
   x += '<sheetData>';
-  sheet.rows.forEach(({ cells, bold }, r) => {
-    x += `<row r="${r + 1}">`;
-    cells.forEach((value, c) => {
-      if (value == null) return;
+  sheet.rows.forEach(({ cells, bold, styles, height }, r) => {
+    x += `<row r="${r + 1}"${height ? ` ht="${fmtPdfNum(height)}" customHeight="1"` : ''}>`;
+    const width = Array.isArray(styles) ? Math.max(cells.length, styles.length) : cells.length;
+    for (let c = 0; c < width; c++) {
+      const value = cells[c];
+      const styleId = styles == null ? (bold ? 1 : 0) : Array.isArray(styles) ? styles[c] ?? 0 : styles;
       const ref = `${columnName(c + 1)}${r + 1}`;
-      const style = bold ? ' s="1"' : '';
-      if (typeof value === 'number' && Number.isFinite(value)) x += `<c r="${ref}"${style}><v>${value}</v></c>`;
+      const style = styleId ? ` s="${styleId}"` : '';
+      if (value == null || value === '') {
+        if (styleId) x += `<c r="${ref}"${style}/>`;
+      } else if (typeof value === 'number' && Number.isFinite(value)) x += `<c r="${ref}"${style}><v>${value}</v></c>`;
       else x += `<c r="${ref}" t="inlineStr"${style}><is><t xml:space="preserve">${escXml(String(value))}</t></is></c>`;
-    });
+    }
     x += '</row>';
   });
-  return x + '</sheetData></worksheet>';
+  x += '</sheetData>';
+  if (sheet.fitToWidth)
+    x +=
+      '<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>';
+  return x + '</worksheet>';
 }
 
 // ── ZIP (STORE, no compression) ──────────────────────────────────────────
@@ -436,6 +541,10 @@ export async function shareFile(fileName: string, bytes: Uint8Array, mimeType: s
 
 export const sharePdf = (fileName: string, pdf: PdfWriter, title: string) =>
   shareFile(ensureExtension(fileName, '.pdf'), pdf.build(), MIME.pdf, title);
+
+/** Shares an already-built PDF (e.g. PdfCanvas.build()). */
+export const sharePdfBytes = (fileName: string, bytes: Uint8Array, title: string) =>
+  shareFile(ensureExtension(fileName, '.pdf'), bytes, MIME.pdf, title);
 
 export const shareXlsx = (fileName: string, xlsx: XlsxWriter, title: string) =>
   shareFile(ensureExtension(fileName, '.xlsx'), xlsx.build(), MIME.xlsx, title);

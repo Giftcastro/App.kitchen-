@@ -177,6 +177,8 @@ export interface Order {
   disputeReportedAt?: string;
   disputeStatus: DisputeStatus | '';
   deliveryDate: string;
+  /** ISO timestamp the order was marked Delivered (migration 0011); unset before that. */
+  deliveredAt?: string;
   menuType: MenuType;
   companyId: string;
   locationId: string;
@@ -213,6 +215,16 @@ export interface NotificationLog {
   /** ISO timestamp */
   sentAt: string;
   recipientCount: number;
+}
+
+/** One message in a person's Profile > Messages inbox. */
+export interface InboxMessage {
+  id: string;
+  title: string;
+  body: string;
+  /** ISO timestamp */
+  sentAt: string;
+  isRead: boolean;
 }
 
 export interface CycleMenuDay {

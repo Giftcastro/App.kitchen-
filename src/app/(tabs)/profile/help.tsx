@@ -6,8 +6,7 @@ import Constants from 'expo-constants';
 import { Text } from '../../../components/AppText';
 import { Card, Page } from '../../../components/ui';
 import { useApp } from '../../../state/AppState';
-
-const SUPPORT_EMAIL = 'support@yourkitchenco.com';
+import { KITCHEN_SUPPORT_EMAIL as SUPPORT_EMAIL } from '../../../services/kitchenDocs';
 
 export default function HelpScreen() {
   const { colors } = useApp();

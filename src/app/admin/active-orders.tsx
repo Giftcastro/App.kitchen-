@@ -19,6 +19,7 @@ import {
   dateFilterOptions,
   filterRows,
   loadActiveOrderRows,
+  loadOrderRowByInvoice,
   updateRowsStatus,
 } from '../../services/adminOrders';
 import { buildPrepSummary, KitchenExports } from '../../services/kitchenExports';
@@ -26,6 +27,7 @@ import type { Company } from '../../models';
 
 /** The order lifecycle, in order — also the choices in the Update sheet. */
 const STATUSES = ['Received', 'Preparing', 'Out for Delivery', 'Delivered'];
+const PRINT_NOTE = '🧾 Print Delivery Note';
 
 export default function AdminActiveOrdersScreen() {
   const { colors } = useApp();
@@ -72,15 +74,52 @@ export default function AdminActiveOrdersScreen() {
   const orders = useMemo(() => filterRows(rows, companyFilter, dateFilter), [rows, companyFilter, dateFilter]);
   const prepSummary = useMemo(() => buildPrepSummary(orders), [orders]);
 
-  /** Status picker for a single order. */
-  const updateStatus = async (row: AdminOrderRow) => {
-    const action = await alerts.actionSheet(`Update Status for Order #${row.order.orderNumber}`, 'Cancel', ...STATUSES);
+  /**
+   * One order's sheet: move its batch to a status, or print this person's own
+   * delivery note (on request only — a query or expense claim).
+   */
+  const manageOrder = async (row: AdminOrderRow) => {
+    const action = await alerts.actionSheet(
+      `Order #${row.order.orderNumber} · ${row.order.customerName}
+Set the status, or print this person's delivery note.`,
+      'Cancel',
+      ...STATUSES,
+      PRINT_NOTE
+    );
     if (!action) return;
+    if (action === PRINT_NOTE) {
+      await printCustomerNote(row);
+      return;
+    }
     try {
       await updateRowsStatus([row], action);
       await refresh();
     } catch (err) {
       await alerts.show('Not Updated', (err as Error)?.message ?? 'Could not update this order.', 'OK');
+    }
+  };
+
+  const printCustomerNote = async (row: AdminOrderRow) => {
+    try {
+      await new KitchenExports([row], row.companyName, row.deliveryDateLabel).customerDeliveryNotesPdf();
+    } catch (err) {
+      await alerts.show('Export Failed', (err as Error)?.message ?? 'The file could not be created.', 'OK');
+    }
+  };
+
+  /** A delivery note for any order, past or upcoming, found by its invoice number. */
+  const noteByInvoice = async () => {
+    const entered = await alerts.prompt('Delivery Note', "Enter the invoice number from the person's sticker or invoice, e.g. INV-20261022-00042.");
+    if (!entered?.trim()) return;
+    try {
+      const row = await loadOrderRowByInvoice(entered);
+      if (!row) {
+        await alerts.show('Not Found', `No order has invoice number ${entered.trim()}.`, 'OK');
+        return;
+      }
+      await printCustomerNote(row);
+    } catch (err) {
+      await alerts.show('Could Not Load', (err as Error)?.message ?? 'Check your connection and try again.', 'OK');
     }
   };
 
@@ -112,27 +151,28 @@ export default function AdminActiveOrdersScreen() {
     );
   };
 
-  /** Every kitchen document for the filtered orders, behind one button instead of five. */
+  /** Every kitchen document for the filtered orders, behind one button instead of eight. */
   const openExports = async () => {
-    const options = [
-      '📄 Production Sheet (PDF)',
-      '📊 Production Sheet (Excel)',
-      '🏷️ Delivery Notes (PDF)',
-      '🧾 Invoices (PDF)',
-      isPrepViewActive ? '🖨️ Print Prep Sheet' : '🖨️ Print Order Sheet',
+    const options: [string, () => Promise<void>][] = [
+      ['📄 Production Sheet (PDF)', () => exportWith(e => e.productionSheetPdf())],
+      ['📊 Production Sheet (Excel)', () => exportWith(e => e.productionSheetExcel())],
+      ['🚚 Delivery Notes (PDF)', () => exportWith(e => e.deliveryNotesPdf())],
+      ['🏷️ Meal Stickers (PDF)', () => exportWith(e => e.mealStickersPdf())],
+      ['✅ Delivery Report (PDF)', () => exportWith(e => e.deliveryReportPdf())],
+      ['🧾 Invoices (PDF)', () => exportWith(e => e.invoicesPdf())],
+      ['📈 Detailed Report (PDF)', () => exportWith(e => e.detailedReportPdf())],
+      ["🔎 One Person's Delivery Note…", noteByInvoice],
+      ...(isPrepViewActive ? [['🖨️ Print Prep Sheet', () => exportWith(e => e.printPrepSheet(), 'Nothing to Print')] as [string, () => Promise<void>]] : []),
     ];
     const count = orders.length;
-    const choice = await alerts.actionSheet(
-      `Download or print
-${count} ${count === 1 ? 'order' : 'orders'} · ${companyFilter} · ${dateFilter}`,
-      'Cancel',
-      ...options
-    );
-    if (choice === options[0]) await exportWith(e => e.productionSheetPdf());
-    else if (choice === options[1]) await exportWith(e => e.productionSheetExcel());
-    else if (choice === options[2]) await exportWith(e => e.deliveryNotesPdf());
-    else if (choice === options[3]) await exportWith(e => e.invoicesPdf());
-    else if (choice === options[4]) await exportWith(e => (isPrepViewActive ? e.printPrepSheet() : e.printOrderSheet()), 'Nothing to Print');
+    const choice = await alerts.choose({
+      title: 'Download or print',
+      message: `${count} ${count === 1 ? 'order' : 'orders'} · ${companyFilter} · ${dateFilter}`,
+      options: options.map(o => o[0]),
+      cancel: 'Cancel',
+      compact: true,
+    });
+    await options.find(o => o[0] === choice)?.[1]();
   };
 
   return (
@@ -204,7 +244,7 @@ ${count} ${count === 1 ? 'order' : 'orders'} · ${companyFilter} · ${dateFilter
                   <View style={[styles.statusChip, { backgroundColor: colors.subtleFillStrong }]}>
                     <Text style={[styles.statusText, { color: colors.brandGold }]}>{row.order.status}</Text>
                   </View>
-                  <Btn title="Update" onPress={() => updateStatus(row)} variant="neutral" fontSize={12} height={36} paddingH={12} />
+                  <Btn title="Manage" onPress={() => manageOrder(row)} variant="neutral" fontSize={12} height={36} paddingH={12} />
                 </View>
               </View>
             </Card>
