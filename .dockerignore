@@ -1,0 +1,15 @@
+node_modules
+.expo
+dist
+web-build
+.git
+.idea
+android
+ios
+generated_docs_foramt
+*.log
+*.md
+
+.env
+.env.*
+supabase/functions/.env

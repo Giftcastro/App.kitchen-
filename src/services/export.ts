@@ -1,33 +1,20 @@
 /**
- * Services/Export — file downloads with no third-party document library:
+ * Services/Export — file downloads with pure JavaScript document writers:
  *
- *  - PdfWriter    (SimplePdfWriter): plain PDF 1.4, A4, the three base-14
- *                 fonts (Helvetica, Helvetica-Bold, Courier), automatic page
- *                 breaks, correct xref table. Text is ASCII-sanitised the
- *                 same way MAUI does it (— – × · • … mapped, the rest '?').
- *  - XlsxWriter   (SimpleXlsxWriter): a real Office Open XML workbook —
- *                 inline strings, a bold style for header rows, numbers kept
- *                 numeric, column widths. Zipped here with STORE entries.
- *  - shareFile    (ExportService): on a phone the file goes to the cache
- *                 folder and the system share sheet (Save to Files / Drive /
- *                 email / print); on the web it downloads.
- *  - Invoice*     (InvoiceDocument): the ONE definition of an invoice, used
- *                 by the customer's Invoice page and the admin's daily batch.
+ *  - PdfWriter: generates standard PDF 1.4 documents with vector graphics, colors,
+ *    tables, checkboxes, dashed cut-lines, and multi-column layouts without native dependencies
+ *  - XlsxWriter: generates valid Office Open XML (.xlsx) ZIP archives with full styles.xml
+ *    (colors, bold fonts, fills, borders, merged cells, formulas, and column widths)
+ *  - shareFile: handles Web blob downloads and Mobile Share sheets
  */
 import { Platform, Share } from 'react-native';
-import * as Sharing from 'expo-sharing';
-import { cacheDirectory, EncodingType, writeAsStringAsync } from 'expo-file-system/legacy';
-import type { Order } from '../models';
-import { getCompany, getLocationById } from './directory';
-import { fmtLongDate } from './scheduling';
 
-// ── Bytes helpers ───────────────────────────────────────────────────────
+// ── Bytes & ZIP helpers ──────────────────────────────────────────────────
 
 function utf8(s: string): Uint8Array {
   return new TextEncoder().encode(s);
 }
 
-/** Latin-1 bytes; every char reaching here is already ASCII or a deliberate raw byte. */
 function latin1(s: string): Uint8Array {
   const out = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
@@ -45,27 +32,111 @@ function concat(parts: Uint8Array[]): Uint8Array {
   return out;
 }
 
-const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-function toBase64(bytes: Uint8Array): string {
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const a = bytes[i];
-    const b = i + 1 < bytes.length ? bytes[i + 1] : 0;
-    const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
-    const n = (a << 16) | (b << 8) | c;
-    out += B64[(n >> 18) & 63] + B64[(n >> 12) & 63];
-    out += i + 1 < bytes.length ? B64[(n >> 6) & 63] : '=';
-    out += i + 2 < bytes.length ? B64[n & 63] : '=';
+// Standard CRC-32 for ZIP archive generation
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[i] = c >>> 0;
   }
-  return out;
+  return table;
+})();
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) {
+    crc = CRC_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
-/** C#'s {value,width:F2} — right-aligned fixed-point. */
-const num = (value: number, width: number) => value.toFixed(2).padStart(width);
+function u16(v: number): Uint8Array {
+  return new Uint8Array([v & 0xff, (v >>> 8) & 0xff]);
+}
 
-// ── PDF ────────────────────────────────────────────────────────────────
+function u32(v: number): Uint8Array {
+  return new Uint8Array([v & 0xff, (v >>> 8) & 0xff, (v >>> 16) & 0xff, (v >>> 24) & 0xff]);
+}
 
-type PdfFont = 'Normal' | 'Bold' | 'Mono';
+/**
+ * Packs a list of { path, data } files into a valid uncompressed ZIP archive (STORE method).
+ * Used to produce real Office Open XML (.xlsx) workbooks in pure JS.
+ */
+function buildZip(files: { path: string; data: Uint8Array }[]): Uint8Array {
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const nameBytes = utf8(file.path);
+    const crc = crc32(file.data);
+    const size = file.data.length;
+
+    const localHeader = concat([
+      u32(0x04034b50), // Local file header signature
+      u16(20),         // Version needed to extract (2.0)
+      u16(0),          // General purpose bit flag
+      u16(0),          // Compression method (0 = STORE)
+      u16(0),          // Last mod file time
+      u16(0x5421),     // Last mod file date
+      u32(crc),        // CRC-32
+      u32(size),       // Compressed size
+      u32(size),       // Uncompressed size
+      u16(nameBytes.length),
+      u16(0),          // Extra field length
+      nameBytes,
+    ]);
+
+    localParts.push(localHeader, file.data);
+
+    const centralHeader = concat([
+      u32(0x02014b50), // Central directory file header signature
+      u16(20),         // Version made by
+      u16(20),         // Version needed to extract
+      u16(0),          // General purpose bit flag
+      u16(0),          // Compression method (0 = STORE)
+      u16(0),          // Last mod file time
+      u16(0x5421),     // Last mod file date
+      u32(crc),        // CRC-32
+      u32(size),       // Compressed size
+      u32(size),       // Uncompressed size
+      u16(nameBytes.length),
+      u16(0),          // Extra field length
+      u16(0),          // File comment length
+      u16(0),          // Disk number start
+      u16(0),          // Internal file attributes
+      u32(0),          // External file attributes
+      u32(offset),     // Relative offset of local header
+      nameBytes,
+    ]);
+
+    centralParts.push(centralHeader);
+    offset += localHeader.length + size;
+  }
+
+  const centralDir = concat(centralParts);
+  const eocd = concat([
+    u32(0x06054b50), // End of central directory signature
+    u16(0),          // Number of this disk
+    u16(0),          // Disk where central directory starts
+    u16(files.length),
+    u16(files.length),
+    u32(centralDir.length),
+    u32(offset),
+    u16(0),          // Comment length
+  ]);
+
+  return concat([...localParts, centralDir, eocd]);
+}
+
+// ── PDF 1.4 Vector & Typography Engine ───────────────────────────────────
+
+export type PdfFont = 'Normal' | 'Bold' | 'Mono';
+export type PdfRGB = [number, number, number]; // 0..1 components
+
 interface PdfLine {
   text: string;
   font: PdfFont;
@@ -73,440 +144,646 @@ interface PdfLine {
   gapAfter: number;
 }
 
-const PAGE_W = 595;
-const PAGE_H = 842;
+export const PAGE_W = 595; // A4 width in pt
+export const PAGE_H = 842; // A4 height in pt
 const MARGIN_L = 40;
 const MARGIN_T = 50;
 const MARGIN_B = 50;
 const PAGE_BREAK = -1;
 
-function sanitizePdf(text: string): string {
+export const PDF_COLORS = {
+  black: [0.067, 0.067, 0.067] as PdfRGB,      // #111111
+  darkGrey: [0.2, 0.2, 0.2] as PdfRGB,         // #333333
+  midGrey: [0.4, 0.4, 0.4] as PdfRGB,          // #666666
+  lightGreyText: [0.55, 0.55, 0.55] as PdfRGB, // #8C8C8C
+  white: [1, 1, 1] as PdfRGB,                  // #FFFFFF
+  redBanner: [0.776, 0.157, 0.157] as PdfRGB,  // #C62828
+  pinkFill: [0.992, 0.925, 0.925] as PdfRGB,   // #FDECEC
+  greyFill: [0.949, 0.949, 0.949] as PdfRGB,   // #F2F2F2
+  stickerBar: [0.937, 0.937, 0.937] as PdfRGB, // #EFEFEF
+  greenFill: [0.91, 0.961, 0.914] as PdfRGB,   // #E8F5E9
+  greenText: [0.18, 0.49, 0.196] as PdfRGB,    // #2E7D32
+  borderLight: [0.878, 0.878, 0.878] as PdfRGB,// #E0E0E0
+  borderMid: [0.75, 0.75, 0.75] as PdfRGB,     // #BFBFBF
+};
+
+export function sanitizePdf(text: string): string {
   let out = '';
-  for (const raw of text) {
+  for (const raw of String(text ?? '')) {
     let ch = raw;
     if (ch === '—' || ch === '–') ch = '-';
     else if (ch === '×') ch = 'x';
-    else if (ch === '·' || ch === '•') ch = '-';
+    else if (ch === '·') ch = '\xB7'; // middle dot in WinAnsi
+    else if (ch === '•') ch = '\x95'; // bullet in WinAnsi
     else if (ch === '‘' || ch === '’') ch = "'";
     else if (ch === '“' || ch === '”') ch = '"';
-    else if (ch === ' ') ch = ' ';
-    if (ch === '…') {
-      out += '...';
-      continue;
-    }
+    else if (ch === '…') ch = '...';
+    else if (ch === '✓' || ch === '✔') ch = 'v';
     const code = ch.charCodeAt(0);
-    if (ch.length !== 1 || code < 32 || code > 126) {
-      out += '?';
-      continue;
+    if ((code >= 32 && code <= 126) || code === 0xb7 || code === 0x95 || (code >= 160 && code <= 255)) {
+      out += ch;
+    } else {
+      out += '';
     }
-    if (ch === '\\' || ch === '(' || ch === ')') out += '\\';
-    out += ch;
   }
   return out;
 }
 
-/** "0.##" */
-const fmtPdfNum = (n: number) => String(Math.round(n * 100) / 100);
+const escapePdf = (s: string) => s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+
+/**
+ * Estimates the width in points of a string in Helvetica / Helvetica-Bold / Courier
+ * so we can accurately right-align, center, and wrap text.
+ */
+export function measurePdfText(text: string, size: number, font: PdfFont = 'Normal'): number {
+  const clean = sanitizePdf(text);
+  if (font === 'Mono') return clean.length * size * 0.6;
+  let units = 0;
+  for (let i = 0; i < clean.length; i++) {
+    const ch = clean[i];
+    if ('ilI.,:;!| '.includes(ch)) units += 278;
+    else if ('ftj()[]"\'-'.includes(ch)) units += 333;
+    else if ('mwMW@%'.includes(ch)) units += 833;
+    else if (ch >= 'A' && ch <= 'Z') units += font === 'Bold' ? 680 : 650;
+    else units += font === 'Bold' ? 560 : 525;
+  }
+  return (units / 1000) * size;
+}
+
+/**
+ * Wraps text into lines that fit within `maxWidth` points.
+ */
+export function wrapPdfText(text: string, maxWidth: number, size: number, font: PdfFont = 'Normal'): string[] {
+  const clean = sanitizePdf(text);
+  if (!clean) return [''];
+  const words = clean.split(/\s+/);
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (measurePdfText(candidate, size, font) <= maxWidth || !current) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [''];
+}
 
 export class PdfWriter {
   private lines: PdfLine[] = [];
+  private rawPages: string[][] = [];
+  private useRawMode = false;
 
-  add(text: string, font: PdfFont, size: number, gapAfter: number): this {
-    this.lines.push({ text: text ?? '', font, size, gapAfter });
-    return this;
+  // ── Flow mode methods (legacy compatibility) ───────────────────────────
+
+  heading(text: string, size = 16, gapAfter = 4) {
+    this.lines.push({ text: sanitizePdf(text), font: 'Bold', size, gapAfter });
   }
-  heading(text: string, size = 16, gapAfter = 6) {
-    return this.add(text, 'Bold', size, gapAfter);
+
+  subHeading(text: string, size = 11, gapAfter = 2) {
+    this.lines.push({ text: sanitizePdf(text), font: 'Bold', size, gapAfter });
   }
-  subHeading(text: string, size = 12, gapAfter = 4) {
-    return this.add(text, 'Bold', size, gapAfter);
+
+  text(text: string, size = 9, gapAfter = 0) {
+    this.lines.push({ text: sanitizePdf(text), font: 'Normal', size, gapAfter });
   }
-  text(text: string, size = 10, gapAfter = 0) {
-    return this.add(text, 'Normal', size, gapAfter);
+
+  mono(text: string, size = 8, gapAfter = 0) {
+    this.lines.push({ text: sanitizePdf(text), font: 'Mono', size, gapAfter });
   }
-  mono(text: string, size = 9, gapAfter = 0) {
-    return this.add(text, 'Mono', size, gapAfter);
+
+  blank(gap = 8) {
+    this.lines.push({ text: '', font: 'Normal', size: 0, gapAfter: gap });
   }
-  blank(height = 8) {
-    return this.add('', 'Normal', height / 1.35, 0);
+
+  rule(len = 64) {
+    this.mono('-'.repeat(len), 8, 2);
   }
-  rule(width = 70) {
-    return this.mono('-'.repeat(width));
-  }
-  /** Forces the next line onto a new page (no-op at the very top of a page). */
+
   pageBreak() {
-    return this.add('', 'Normal', PAGE_BREAK, 0);
+    if (this.useRawMode) {
+      this.newPage();
+    } else {
+      this.lines.push({ text: '', font: 'Normal', size: 0, gapAfter: PAGE_BREAK });
+    }
   }
-  monoBlock(block: string, size = 9) {
-    for (const l of (block ?? '').replace(/\r\n/g, '\n').split('\n')) this.mono(l, size);
-    return this;
+
+  // ── Coordinate / Canvas mode methods (for YKC rich layouts) ────────────
+
+  private ensureRawPage() {
+    this.useRawMode = true;
+    if (this.rawPages.length === 0) {
+      this.rawPages.push([]);
+    }
+  }
+
+  newPage(): number {
+    this.useRawMode = true;
+    this.rawPages.push([]);
+    return this.rawPages.length - 1;
+  }
+
+  get pageCount(): number {
+    return this.useRawMode ? Math.max(1, this.rawPages.length) : 1;
+  }
+
+  private pushCmd(cmd: string) {
+    this.ensureRawPage();
+    this.rawPages[this.rawPages.length - 1].push(cmd);
+  }
+
+  /**
+   * Draws a filled rectangle where `topY` is distance from the TOP of the page (0 = top, 842 = bottom),
+   * or standard PDF bottom-up `y` if using `fillRectPdf`.
+   * Using top-down coordinates (`x` from left, `topY` from top) makes document layout much cleaner!
+   */
+  fillRect(x: number, topY: number, w: number, h: number, color: PdfRGB) {
+    const pdfY = PAGE_H - topY - h;
+    const [r, g, b] = color;
+    this.pushCmd(`${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} rg ${x.toFixed(2)} ${pdfY.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re f`);
+  }
+
+  strokeRect(x: number, topY: number, w: number, h: number, color: PdfRGB, lineWidth = 0.75) {
+    const pdfY = PAGE_H - topY - h;
+    const [r, g, b] = color;
+    this.pushCmd(`q ${lineWidth.toFixed(2)} w ${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} RG ${x.toFixed(2)} ${pdfY.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re S Q`);
+  }
+
+  fillAndStrokeRect(
+    x: number,
+    topY: number,
+    w: number,
+    h: number,
+    fillColor: PdfRGB,
+    strokeColor: PdfRGB,
+    lineWidth = 0.75
+  ) {
+    const pdfY = PAGE_H - topY - h;
+    const [fr, fg, fb] = fillColor;
+    const [sr, sg, sb] = strokeColor;
+    this.pushCmd(
+      `q ${lineWidth.toFixed(2)} w ${fr.toFixed(3)} ${fg.toFixed(3)} ${fb.toFixed(3)} rg ${sr.toFixed(3)} ${sg.toFixed(3)} ${sb.toFixed(3)} RG ${x.toFixed(2)} ${pdfY.toFixed(2)} ${w.toFixed(2)} ${h.toFixed(2)} re B Q`
+    );
+  }
+
+  drawLine(x1: number, topY1: number, x2: number, topY2: number, color: PdfRGB = PDF_COLORS.borderLight, lineWidth = 0.6) {
+    const y1 = PAGE_H - topY1;
+    const y2 = PAGE_H - topY2;
+    const [r, g, b] = color;
+    this.pushCmd(`q ${lineWidth.toFixed(2)} w ${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} RG ${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S Q`);
+  }
+
+  drawDashedLine(x1: number, topY1: number, x2: number, topY2: number, color: PdfRGB = PDF_COLORS.borderMid, lineWidth = 0.75) {
+    const y1 = PAGE_H - topY1;
+    const y2 = PAGE_H - topY2;
+    const [r, g, b] = color;
+    this.pushCmd(`q ${lineWidth.toFixed(2)} w [3 3] 0 d ${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} RG ${x1.toFixed(2)} ${y1.toFixed(2)} m ${x2.toFixed(2)} ${y2.toFixed(2)} l S Q`);
+  }
+
+  drawCheckbox(x: number, topY: number, size = 8.5, strokeColor: PdfRGB = PDF_COLORS.darkGrey, lineWidth = 0.85) {
+    this.strokeRect(x, topY, size, size, strokeColor, lineWidth);
+  }
+
+  /**
+   * Draws text with baseline at `topY` (measured from top of page).
+   */
+  textAt(
+    x: number,
+    topY: number,
+    text: string,
+    size = 9,
+    font: PdfFont = 'Normal',
+    color: PdfRGB = PDF_COLORS.black
+  ) {
+    const clean = sanitizePdf(text);
+    if (!clean) return;
+    const pdfY = PAGE_H - topY;
+    const fontName = font === 'Bold' ? 'F2' : font === 'Mono' ? 'F3' : 'F1';
+    const [r, g, b] = color;
+    this.pushCmd(
+      `BT ${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} rg /${fontName} ${size.toFixed(2)} Tf ${x.toFixed(2)} ${pdfY.toFixed(2)} Td (${escapePdf(clean)}) Tj ET`
+    );
+  }
+
+  rightTextAt(
+    rightX: number,
+    topY: number,
+    text: string,
+    size = 9,
+    font: PdfFont = 'Normal',
+    color: PdfRGB = PDF_COLORS.black
+  ) {
+    const w = measurePdfText(text, size, font);
+    this.textAt(rightX - w, topY, text, size, font, color);
+  }
+
+  centerTextAt(
+    centerX: number,
+    topY: number,
+    text: string,
+    size = 9,
+    font: PdfFont = 'Normal',
+    color: PdfRGB = PDF_COLORS.black
+  ) {
+    const w = measurePdfText(text, size, font);
+    this.textAt(centerX - w / 2, topY, text, size, font, color);
+  }
+
+  /**
+   * Renders the signature "your kitchen co." brand wordmark at the given right edge and baseline topY.
+   */
+  drawBrandLogo(rightX: number, topY: number, size = 16) {
+    const label = 'your kitchen co.';
+    const w = measurePdfText(label, size, 'Normal');
+    const startX = rightX - w;
+    this.textAt(startX, topY, label, size, 'Normal', PDF_COLORS.darkGrey);
+    // Subtle underline bar under "kitchen"
+    this.drawLine(startX + w * 0.25, topY + 3.5, startX + w * 0.78, topY + 3.5, PDF_COLORS.borderLight, 0.7);
   }
 
   build(): Uint8Array {
-    const pages: string[][] = [];
-    let current: string[] = [];
-    let y = PAGE_H - MARGIN_T;
+    let pages: string[][];
 
-    for (const line of this.lines) {
-      if (line.size === PAGE_BREAK) {
-        if (current.length > 0) {
-          pages.push(current);
-          current = [];
+    if (this.useRawMode) {
+      pages = this.rawPages.length > 0 ? this.rawPages : [[]];
+    } else {
+      pages = [[]];
+      let y = PAGE_H - MARGIN_T;
+
+      for (const l of this.lines) {
+        if (l.gapAfter === PAGE_BREAK) {
+          pages.push([]);
+          y = PAGE_H - MARGIN_T;
+          continue;
+        }
+        const fontName = l.font === 'Bold' ? 'F2' : l.font === 'Mono' ? 'F3' : 'F1';
+        const leading = l.size > 0 ? l.size * 1.25 : 0;
+        if (l.size > 0 && y - leading < MARGIN_B) {
+          pages.push([]);
           y = PAGE_H - MARGIN_T;
         }
-        continue;
+        if (l.size > 0) {
+          y -= leading;
+          pages[pages.length - 1].push(`BT /${fontName} ${l.size} Tf ${MARGIN_L} ${y.toFixed(1)} Td (${escapePdf(l.text)}) Tj ET`);
+        }
+        y -= l.gapAfter;
       }
-      const lineHeight = line.size * 1.35;
-      if (y - lineHeight < MARGIN_B) {
-        pages.push(current);
-        current = [];
-        y = PAGE_H - MARGIN_T;
-      }
-      y -= lineHeight;
-      const fontKey = line.font === 'Bold' ? 'F2' : line.font === 'Mono' ? 'F3' : 'F1';
-      current.push(`BT /${fontKey} ${fmtPdfNum(line.size)} Tf ${fmtPdfNum(MARGIN_L)} ${y.toFixed(1)} Td (${sanitizePdf(line.text)}) Tj ET`);
-      y -= line.gapAfter;
     }
-    pages.push(current);
 
-    const objects: string[] = [
-      '<< /Type /Catalog /Pages 2 0 R >>',
-      '',
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
-      '<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>',
-    ];
-    const pageIds: number[] = [];
-    for (const page of pages) {
-      const content = page.join('\n') + '\n';
-      const contentId = objects.length + 1;
-      objects.push(`<< /Length ${content.length} >>\nstream\n${content}endstream`);
-      pageIds.push(objects.length + 1);
-      objects.push(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] /Resources << /Font << /F1 3 0 R /F2 4 0 R /F3 5 0 R >> >> /Contents ${contentId} 0 R >>`
-      );
-    }
-    objects[1] = `<< /Type /Pages /Kids [${pageIds.map(id => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
-
-    const parts: Uint8Array[] = [];
-    let position = 0;
-    const write = (s: string) => {
-      const b = latin1(s);
-      parts.push(b);
-      position += b.length;
+    const objects: string[] = [];
+    const pushObj = (body: string) => {
+      objects.push(body);
+      return objects.length;
     };
-    write('%PDF-1.4\n');
-    parts.push(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]));
-    position += 6;
 
+    const pagesRootId = 1;
+    const font1Id = 2;
+    const font2Id = 3;
+    const font3Id = 4;
+    pushObj(''); // 1 placeholder
+    pushObj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>'); // 2
+    pushObj('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'); // 3
+    pushObj('<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>'); // 4
+
+    const pageIds: number[] = [];
+    for (const p of pages) {
+      const stream = p.join('\n');
+      const streamBytes = latin1(stream);
+      const contentId = pushObj(`<< /Length ${streamBytes.length} >>\nstream\n${stream}\nendstream`);
+      const pageId = pushObj(
+        `<< /Type /Page /Parent ${pagesRootId} 0 R /MediaBox [0 0 ${PAGE_W} ${PAGE_H}] ` +
+          `/Resources << /Font << /F1 ${font1Id} 0 R /F2 ${font2Id} 0 R /F3 ${font3Id} 0 R >> >> ` +
+          `/Contents ${contentId} 0 R >>`
+      );
+      pageIds.push(pageId);
+    }
+
+    objects[pagesRootId - 1] = `<< /Type /Pages /Kids [${pageIds.map((id) => `${id} 0 R`).join(' ')}] /Count ${pageIds.length} >>`;
+    const catalogId = pushObj(`<< /Type /Catalog /Pages ${pagesRootId} 0 R >>`);
+
+    const header = '%PDF-1.4\n%\xE2\xE3\xCF\xD3\n';
+    let pdf = header;
     const offsets: number[] = [];
-    objects.forEach((obj, i) => {
-      offsets.push(position);
-      write(`${i + 1} 0 obj\n${obj}\nendobj\n`);
-    });
-    const xref = position;
-    write(`xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`);
-    for (const off of offsets) write(`${String(off).padStart(10, '0')} 00000 n \n`);
-    write(`trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
-    return concat(parts);
+    for (let i = 0; i < objects.length; i++) {
+      offsets.push(pdf.length);
+      pdf += `${i + 1} 0 obj\n${objects[i]}\nendobj\n`;
+    }
+    const xrefOffset = pdf.length;
+    pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+    for (const off of offsets) pdf += `${String(off).padStart(10, '0')} 00000 n \n`;
+    pdf += `trailer\n<< /Size ${objects.length + 1} /Root ${catalogId} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+    return latin1(pdf);
   }
 }
 
-// ── XLSX ───────────────────────────────────────────────────────────────
+// ── XlsxWriter (Full Office Open XML .xlsx with YKC Styles) ──────────────
 
-export type Cell = string | number | null | undefined;
+const escapeXml = (s: string) =>
+  String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 
-/** A cell format registered with XlsxWriter.style(); colours are hex ("#C62828"). Custom styles use Arial. */
-export interface XlsxStyle {
-  bold?: boolean;
-  italic?: boolean;
-  size?: number;
-  color?: string;
-  fill?: string;
-  /** Thin bottom border in this colour. */
-  borderBottom?: string;
-  align?: 'left' | 'center' | 'right';
-  valign?: 'top' | 'center' | 'bottom';
-  wrap?: boolean;
+/**
+ * Style indices defined in `xl/styles.xml` matching `YKC_Daily_Kitchen_Documents.xlsx`:
+ *  0: Default (10pt Calibri/Arial, normal, bottom border #E5E5E5)
+ *  1: Black Header (#111111 fill, white bold 10pt)
+ *  2: Bold Cell (10pt bold #111111)
+ *  3: Red Text Cell (10pt normal #C62828, wrapText)
+ *  4: Red Bold Text Cell (10pt bold #C62828, wrapText)
+ *  5: Allergy Row Normal Cell (#FDECEC fill, 10pt normal #111111)
+ *  6: Allergy Row Bold Cell (#FDECEC fill, 10pt bold #111111)
+ *  7: Allergy Row Red Bold Cell (#FDECEC fill, 10pt bold #C62828, wrapText)
+ *  8: Title 20pt Bold (#111111)
+ *  9: Subtitle 10pt Grey (#666666)
+ * 10: Summary 13pt Bold (#111111)
+ * 11: Red Banner (#C62828 fill, white bold 11pt)
+ * 12: Category Grey Bar (#F2F2F2 fill, bold 11pt #111111)
+ * 13: Company Black Banner (#111111 fill, white bold 14pt)
+ * 14: Qty Bold 13pt Centered (#111111)
+ * 15: Delivery Report Grey Header (#F2F2F2 fill, bold 8pt #666666)
+ */
+export const XLSX_STYLE = {
+  DEFAULT: 0,
+  BLACK_HEADER: 1,
+  BOLD: 2,
+  RED_TEXT: 3,
+  RED_BOLD: 4,
+  ALLERGY_NORMAL: 5,
+  ALLERGY_BOLD: 6,
+  ALLERGY_RED_BOLD: 7,
+  TITLE_XL: 8,
+  SUBTITLE_GREY: 9,
+  SUMMARY_BOLD: 10,
+  RED_BANNER: 11,
+  GREY_BAR: 12,
+  COMPANY_BANNER: 13,
+  QTY_BOLD: 14,
+  REPORT_HEADER: 15,
+} as const;
+
+export interface XlsxCellInput {
+  value?: string | number | null;
+  formula?: string;
+  style?: number;
 }
 
-interface XlsxRow {
-  cells: Cell[];
-  bold: boolean;
-  /** One style id for the whole row, or one per cell. Styled empty cells are still written (for fill bands). */
-  styles?: number | number[];
-  height?: number;
-}
+export type XlsxRowCell = string | number | null | undefined | XlsxCellInput;
 
 export class XlsxSheet {
-  rows: XlsxRow[] = [];
-  columnWidths: number[] = [];
-  showGridLines = true;
-  frozenRows = 0;
-  fitToWidth = false;
-  constructor(public name: string) {}
-  header(...cells: Cell[]) {
-    this.rows.push({ cells, bold: true });
+  private colWidths: number[] = [];
+  private rows: string[] = [];
+  private merges: string[] = [];
+
+  constructor(public readonly name: string) {}
+
+  widths(...w: number[]) {
+    this.colWidths = w;
     return this;
   }
-  row(...cells: Cell[]) {
-    this.rows.push({ cells, bold: false });
+
+  get currentRow(): number {
+    return this.rows.length;
+  }
+
+  merge(range: string) {
+    this.merges.push(range);
     return this;
   }
-  /** A row with explicit style ids (from XlsxWriter.style) and an optional height in points. */
-  styled(cells: Cell[], styles: number | number[], height?: number) {
-    this.rows.push({ cells, bold: false, styles, height });
+
+  header(...cells: string[]) {
+    const rowNum = this.rows.length + 1;
+    this.rows.push(
+      `<row r="${rowNum}" ht="22" customHeight="1">` +
+        cells
+          .map(
+            (c, i) =>
+              `<c r="${this.col(i)}${rowNum}" s="${XLSX_STYLE.BLACK_HEADER}" t="inlineStr"><is><t>${escapeXml(c)}</t></is></c>`
+          )
+          .join('') +
+        '</row>'
+    );
     return this;
   }
-  blank() {
-    this.rows.push({ cells: [], bold: false });
+
+  styledRow(cells: XlsxRowCell[], defaultStyle: number = XLSX_STYLE.DEFAULT, height?: number) {
+    const rowNum = this.rows.length + 1;
+    const htAttr = height ? ` ht="${height}" customHeight="1"` : '';
+    this.rows.push(
+      `<row r="${rowNum}"${htAttr}>` +
+        cells
+          .map((cell, i) => {
+            const ref = `${this.col(i)}${rowNum}`;
+            const isObj = cell !== null && typeof cell === 'object' && ('value' in cell || 'formula' in cell || 'style' in cell);
+            const val = isObj ? (cell as XlsxCellInput).value : (cell as string | number | null | undefined);
+            const formula = isObj ? (cell as XlsxCellInput).formula : undefined;
+            const style = isObj && (cell as XlsxCellInput).style !== undefined ? (cell as XlsxCellInput).style! : defaultStyle;
+            const sAttr = style > 0 ? ` s="${style}"` : '';
+
+            if (formula) {
+              const cached = typeof val === 'number' ? `<v>${val}</v>` : '';
+              return `<c r="${ref}"${sAttr}><f>${escapeXml(formula)}</f>${cached}</c>`;
+            }
+            if (val === null || val === undefined || val === '') {
+              return style > 0 ? `<c r="${ref}"${sAttr}/>` : `<c r="${ref}"/>`;
+            }
+            if (typeof val === 'number') {
+              return `<c r="${ref}"${sAttr}><v>${val}</v></c>`;
+            }
+            return `<c r="${ref}"${sAttr} t="inlineStr"><is><t xml:space="preserve">${escapeXml(String(val))}</t></is></c>`;
+          })
+          .join('') +
+        '</row>'
+    );
     return this;
   }
-  widths(...widths: number[]) {
-    this.columnWidths = widths;
+
+  row(...cells: (string | number | null | undefined)[]) {
+    return this.styledRow(cells, XLSX_STYLE.DEFAULT);
+  }
+
+  blank(height?: number) {
+    const rowNum = this.rows.length + 1;
+    const htAttr = height ? ` ht="${height}" customHeight="1"` : '';
+    this.rows.push(`<row r="${rowNum}"${htAttr}/>`);
     return this;
   }
-  /** Print-ready look: no gridlines, header rows frozen, A4 portrait fitted to one page wide. */
-  printLayout(frozenRows = 0) {
-    this.showGridLines = false;
-    this.frozenRows = frozenRows;
-    this.fitToWidth = true;
-    return this;
+
+  col(idx: number): string {
+    let s = '';
+    idx += 1;
+    while (idx > 0) {
+      const rem = (idx - 1) % 26;
+      s = String.fromCharCode(65 + rem) + s;
+      idx = Math.floor((idx - 1) / 26);
+    }
+    return s;
+  }
+
+  buildXml(): string {
+    const cols =
+      this.colWidths.length === 0
+        ? ''
+        : '<cols>' +
+          this.colWidths
+            .map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`)
+            .join('') +
+          '</cols>';
+    const mergeXml =
+      this.merges.length === 0
+        ? ''
+        : `<mergeCells count="${this.merges.length}">` +
+          this.merges.map((ref) => `<mergeCell ref="${ref}"/>`).join('') +
+          '</mergeCells>';
+    return (
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+      cols +
+      '<sheetData>' +
+      this.rows.join('') +
+      '</sheetData>' +
+      mergeXml +
+      '</worksheet>'
+    );
   }
 }
 
-const escXml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-function columnName(index: number): string {
-  let s = '';
-  while (index > 0) {
-    index--;
-    s = String.fromCharCode(65 + (index % 26)) + s;
-    index = Math.floor(index / 26);
-  }
-  return s;
-}
-
-const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-
-const argb = (hex: string) => 'FF' + hex.replace('#', '').toUpperCase();
-
-/** styles.xml: id 0 = default, id 1 = bold header (both Calibri), then one xf per registered XlsxStyle. */
-function stylesXml(custom: XlsxStyle[]): string {
-  const fonts = ['<font><sz val="11"/><name val="Calibri"/></font>', '<font><b/><sz val="11"/><name val="Calibri"/></font>'];
-  const fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'];
-  const borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>'];
-  const xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>', '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>'];
-  for (const s of custom) {
-    const fontId = fonts.length;
-    fonts.push(
-      `<font>${s.bold ? '<b/>' : ''}${s.italic ? '<i/>' : ''}<sz val="${s.size ?? 11}"/>${s.color ? `<color rgb="${argb(s.color)}"/>` : ''}<name val="Arial"/></font>`
-    );
-    let fillId = 0;
-    if (s.fill) {
-      fillId = fills.length;
-      fills.push(`<fill><patternFill patternType="solid"><fgColor rgb="${argb(s.fill)}"/><bgColor indexed="64"/></patternFill></fill>`);
-    }
-    let borderId = 0;
-    if (s.borderBottom) {
-      borderId = borders.length;
-      borders.push(`<border><left/><right/><top/><bottom style="thin"><color rgb="${argb(s.borderBottom)}"/></bottom><diagonal/></border>`);
-    }
-    const align =
-      s.align || s.valign || s.wrap
-        ? `<alignment${s.align ? ` horizontal="${s.align}"` : ''}${s.valign ? ` vertical="${s.valign}"` : ''}${s.wrap ? ' wrapText="1"' : ''}/>`
-        : '';
-    xfs.push(
-      `<xf numFmtId="0" fontId="${fontId}" fillId="${fillId}" borderId="${borderId}" xfId="0" applyFont="1"${fillId ? ' applyFill="1"' : ''}${borderId ? ' applyBorder="1"' : ''}${align ? ' applyAlignment="1">' + align + '</xf>' : '/>'}`
-    );
-  }
+function buildStylesXml(): string {
   return (
-    XML_HEAD +
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
     '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
-    `<fonts count="${fonts.length}">${fonts.join('')}</fonts>` +
-    `<fills count="${fills.length}">${fills.join('')}</fills>` +
-    `<borders count="${borders.length}">${borders.join('')}</borders>` +
+    // Fonts (0..10)
+    '<fonts count="11">' +
+    '<font><sz val="10"/><color rgb="FF111111"/><name val="Calibri"/></font>' + // 0: normal 10pt
+    '<font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' + // 1: white bold 10pt
+    '<font><b/><sz val="10"/><color rgb="FF111111"/><name val="Calibri"/></font>' + // 2: black bold 10pt
+    '<font><sz val="10"/><color rgb="FFC62828"/><name val="Calibri"/></font>' + // 3: red normal 10pt
+    '<font><b/><sz val="10"/><color rgb="FFC62828"/><name val="Calibri"/></font>' + // 4: red bold 10pt
+    '<font><b/><sz val="18"/><color rgb="FF111111"/><name val="Calibri"/></font>' + // 5: title 18pt bold
+    '<font><sz val="10"/><color rgb="FF666666"/><name val="Calibri"/></font>' + // 6: subtitle grey 10pt
+    '<font><b/><sz val="12"/><color rgb="FF111111"/><name val="Calibri"/></font>' + // 7: summary 12pt bold
+    '<font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' + // 8: white bold 11pt
+    '<font><b/><sz val="14"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font>' + // 9: white bold 14pt
+    '<font><b/><sz val="8"/><color rgb="FF666666"/><name val="Calibri"/></font>' + // 10: grey bold 8pt
+    '</fonts>' +
+    // Fills (0..5) — 0 and 1 are reserved by Excel (none & gray125)
+    '<fills count="6">' +
+    '<fill><patternFill patternType="none"/></fill>' + // 0
+    '<fill><patternFill patternType="gray125"/></fill>' + // 1
+    '<fill><patternFill patternType="solid"><fgColor rgb="FF111111"/><bgColor indexed="64"/></patternFill></fill>' + // 2: #111111 black
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFFDECEC"/><bgColor indexed="64"/></patternFill></fill>' + // 3: #FDECEC light red
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFC62828"/><bgColor indexed="64"/></patternFill></fill>' + // 4: #C62828 red banner
+    '<fill><patternFill patternType="solid"><fgColor rgb="FFF2F2F2"/><bgColor indexed="64"/></patternFill></fill>' + // 5: #F2F2F2 light grey
+    '</fills>' +
+    // Borders (0..1)
+    '<borders count="2">' +
+    '<border><left/><right/><top/><bottom/><diagonal/></border>' + // 0: none
+    '<border><left/><right/><top/><bottom style="thin"><color rgb="FFE5E5E5"/></bottom><diagonal/></border>' + // 1: thin bottom line
+    '</borders>' +
     '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
-    `<cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs>` +
-    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>'
+    // Cell Xfs (0..15) matching XLSX_STYLE
+    '<cellXfs count="16">' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"><alignment vertical="center"/></xf>' + // 0: DEFAULT
+    '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment vertical="center"/></xf>' + // 1: BLACK_HEADER
+    '<xf numFmtId="0" fontId="2" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"><alignment vertical="center"/></xf>' + // 2: BOLD
+    '<xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"><alignment vertical="center" wrapText="1"/></xf>' + // 3: RED_TEXT
+    '<xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"><alignment vertical="center" wrapText="1"/></xf>' + // 4: RED_BOLD
+    '<xf numFmtId="0" fontId="0" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center"/></xf>' + // 5: ALLERGY_NORMAL
+    '<xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center"/></xf>' + // 6: ALLERGY_BOLD
+    '<xf numFmtId="0" fontId="4" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"><alignment vertical="center" wrapText="1"/></xf>' + // 7: ALLERGY_RED_BOLD
+    '<xf numFmtId="0" fontId="5" fillId="0" borderId="0" xfId="0" applyFont="1"><alignment vertical="center"/></xf>' + // 8: TITLE_XL
+    '<xf numFmtId="0" fontId="6" fillId="0" borderId="0" xfId="0" applyFont="1"><alignment vertical="center"/></xf>' + // 9: SUBTITLE_GREY
+    '<xf numFmtId="0" fontId="7" fillId="0" borderId="0" xfId="0" applyFont="1"><alignment vertical="center"/></xf>' + // 10: SUMMARY_BOLD
+    '<xf numFmtId="0" fontId="8" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment vertical="center"/></xf>' + // 11: RED_BANNER
+    '<xf numFmtId="0" fontId="7" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment vertical="center"/></xf>' + // 12: GREY_BAR
+    '<xf numFmtId="0" fontId="9" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment vertical="center"/></xf>' + // 13: COMPANY_BANNER
+    '<xf numFmtId="0" fontId="7" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1"><alignment horizontal="center" vertical="center"/></xf>' + // 14: QTY_BOLD
+    '<xf numFmtId="0" fontId="10" fillId="5" borderId="0" xfId="0" applyFont="1" applyFill="1"><alignment vertical="center"/></xf>' + // 15: REPORT_HEADER
+    '</cellXfs>' +
+    '</styleSheet>'
   );
 }
 
 export class XlsxWriter {
   private sheets: XlsxSheet[] = [];
-  private customStyles: XlsxStyle[] = [];
-  private styleKeys = new Map<string, number>();
 
-  /** Registers a cell format and returns its style id (identical formats share one id). */
-  style(s: XlsxStyle): number {
-    const key = JSON.stringify(s);
-    let id = this.styleKeys.get(key);
-    if (id == null) {
-      id = 2 + this.customStyles.length;
-      this.customStyles.push(s);
-      this.styleKeys.set(key, id);
-    }
-    return id;
-  }
-
-  /** Excel sheet-name rules: max 31 chars, none of : \ / ? * [ ] */
   addSheet(name: string): XlsxSheet {
-    let clean = '';
-    for (const ch of name) clean += ':\\/?*[]'.includes(ch) ? ' ' : ch;
-    clean = clean.trim().slice(0, 31);
-    if (!clean) clean = `Sheet${this.sheets.length + 1}`;
-    const sheet = new XlsxSheet(clean);
-    this.sheets.push(sheet);
-    return sheet;
-  }
-
-  get isEmpty() {
-    return this.sheets.length === 0;
+    const s = new XlsxSheet(name);
+    this.sheets.push(s);
+    return s;
   }
 
   build(): Uint8Array {
-    if (this.sheets.length === 0) this.addSheet('Sheet1');
-    const n = this.sheets.length;
-    const entries: [string, string][] = [];
-
-    let types =
-      XML_HEAD +
-      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
-    for (let i = 0; i < n; i++)
-      types += `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`;
-    entries.push(['[Content_Types].xml', types + '</Types>']);
-
-    entries.push([
-      '_rels/.rels',
-      XML_HEAD +
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
-    ]);
-
-    let workbook =
-      XML_HEAD +
-      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>';
-    this.sheets.forEach((s, i) => (workbook += `<sheet name="${escXml(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`));
-    entries.push(['xl/workbook.xml', workbook + '</sheets></workbook>']);
-
-    let rels = XML_HEAD + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
-    for (let i = 0; i < n; i++)
-      rels += `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`;
-    rels += `<Relationship Id="rId${n + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`;
-    entries.push(['xl/_rels/workbook.xml.rels', rels]);
-
-    entries.push(['xl/styles.xml', stylesXml(this.customStyles)]);
-
-    this.sheets.forEach((s, i) => entries.push([`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s)]));
-    return zipStore(entries.map(([path, xml]) => [path, utf8(xml)]));
-  }
-}
-
-function sheetXml(sheet: XlsxSheet): string {
-  let x = XML_HEAD + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
-  if (sheet.fitToWidth) x += '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>';
-  if (!sheet.showGridLines || sheet.frozenRows > 0) {
-    x += `<sheetViews><sheetView workbookViewId="0"${sheet.showGridLines ? '' : ' showGridLines="0"'}>`;
-    if (sheet.frozenRows > 0)
-      x += `<pane ySplit="${sheet.frozenRows}" topLeftCell="A${sheet.frozenRows + 1}" activePane="bottomLeft" state="frozen"/>`;
-    x += '</sheetView></sheetViews>';
-  }
-  if (sheet.columnWidths.length > 0) {
-    x += '<cols>';
-    sheet.columnWidths.forEach((w, i) => (x += `<col min="${i + 1}" max="${i + 1}" width="${fmtPdfNum(w)}" customWidth="1"/>`));
-    x += '</cols>';
-  }
-  x += '<sheetData>';
-  sheet.rows.forEach(({ cells, bold, styles, height }, r) => {
-    x += `<row r="${r + 1}"${height ? ` ht="${fmtPdfNum(height)}" customHeight="1"` : ''}>`;
-    const width = Array.isArray(styles) ? Math.max(cells.length, styles.length) : cells.length;
-    for (let c = 0; c < width; c++) {
-      const value = cells[c];
-      const styleId = styles == null ? (bold ? 1 : 0) : Array.isArray(styles) ? styles[c] ?? 0 : styles;
-      const ref = `${columnName(c + 1)}${r + 1}`;
-      const style = styleId ? ` s="${styleId}"` : '';
-      if (value == null || value === '') {
-        if (styleId) x += `<c r="${ref}"${style}/>`;
-      } else if (typeof value === 'number' && Number.isFinite(value)) x += `<c r="${ref}"${style}><v>${value}</v></c>`;
-      else x += `<c r="${ref}" t="inlineStr"${style}><is><t xml:space="preserve">${escXml(String(value))}</t></is></c>`;
+    if (this.sheets.length === 0) {
+      this.addSheet('Sheet1');
     }
-    x += '</row>';
-  });
-  x += '</sheetData>';
-  if (sheet.fitToWidth)
-    x +=
-      '<pageMargins left="0.4" right="0.4" top="0.5" bottom="0.5" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>';
-  return x + '</worksheet>';
-}
 
-// ── ZIP (STORE, no compression) ──────────────────────────────────────────
+    const contentTypes =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+      '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+      this.sheets
+        .map(
+          (_, i) =>
+            `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+        )
+        .join('') +
+      '</Types>';
 
-const CRC_TABLE = (() => {
-  const table = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    table[n] = c >>> 0;
+    const rootRels =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+      '</Relationships>';
+
+    const workbookXml =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+      'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<sheets>' +
+      this.sheets
+        .map(
+          (s, i) =>
+            `<sheet name="${escapeXml(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`
+        )
+        .join('') +
+      '</sheets>' +
+      '</workbook>';
+
+    const workbookRels =
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      this.sheets
+        .map(
+          (_, i) =>
+            `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`
+        )
+        .join('') +
+      `<Relationship Id="rId${this.sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>` +
+      '</Relationships>';
+
+    const files: { path: string; data: Uint8Array }[] = [
+      { path: '[Content_Types].xml', data: utf8(contentTypes) },
+      { path: '_rels/.rels', data: utf8(rootRels) },
+      { path: 'xl/workbook.xml', data: utf8(workbookXml) },
+      { path: 'xl/_rels/workbook.xml.rels', data: utf8(workbookRels) },
+      { path: 'xl/styles.xml', data: utf8(buildStylesXml()) },
+      ...this.sheets.map((s, i) => ({
+        path: `xl/worksheets/sheet${i + 1}.xml`,
+        data: utf8(s.buildXml()),
+      })),
+    ];
+
+    return buildZip(files);
   }
-  return table;
-})();
-
-function crc32(bytes: Uint8Array): number {
-  let crc = 0xffffffff;
-  for (let i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function zipStore(files: [string, Uint8Array][]): Uint8Array {
-  const parts: Uint8Array[] = [];
-  const central: Uint8Array[] = [];
-  let offset = 0;
-  // Fixed DOS timestamp (1 Jan 2026 00:00) — Excel doesn't care, and output stays deterministic.
-  const dosTime = 0;
-  const dosDate = ((2026 - 1980) << 9) | (1 << 5) | 1;
-
-  for (const [path, data] of files) {
-    const name = utf8(path);
-    const crc = crc32(data);
-    const local = new DataView(new ArrayBuffer(30));
-    local.setUint32(0, 0x04034b50, true);
-    local.setUint16(4, 20, true);
-    local.setUint16(6, 0x0800, true); // UTF-8 names
-    local.setUint16(8, 0, true); // STORE
-    local.setUint16(10, dosTime, true);
-    local.setUint16(12, dosDate, true);
-    local.setUint32(14, crc, true);
-    local.setUint32(18, data.length, true);
-    local.setUint32(22, data.length, true);
-    local.setUint16(26, name.length, true);
-    local.setUint16(28, 0, true);
-    parts.push(new Uint8Array(local.buffer), name, data);
-
-    const cd = new DataView(new ArrayBuffer(46));
-    cd.setUint32(0, 0x02014b50, true);
-    cd.setUint16(4, 20, true);
-    cd.setUint16(6, 20, true);
-    cd.setUint16(8, 0x0800, true);
-    cd.setUint16(10, 0, true);
-    cd.setUint16(12, dosTime, true);
-    cd.setUint16(14, dosDate, true);
-    cd.setUint32(16, crc, true);
-    cd.setUint32(20, data.length, true);
-    cd.setUint32(24, data.length, true);
-    cd.setUint16(28, name.length, true);
-    cd.setUint32(42, offset, true);
-    central.push(new Uint8Array(cd.buffer), name);
-
-    offset += 30 + name.length + data.length;
-  }
-
-  const centralBytes = concat(central);
-  const end = new DataView(new ArrayBuffer(22));
-  end.setUint32(0, 0x06054b50, true);
-  end.setUint16(8, files.length, true);
-  end.setUint16(10, files.length, true);
-  end.setUint32(12, centralBytes.length, true);
-  end.setUint32(16, offset, true);
-  return concat([...parts, centralBytes, new Uint8Array(end.buffer)]);
 }
 
 // ── Sharing ─────────────────────────────────────────────────────────────
@@ -514,12 +791,12 @@ function zipStore(files: [string, Uint8Array][]): Uint8Array {
 const MIME = {
   pdf: 'application/pdf',
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  txt: 'text/plain',
 };
 
 const sanitizeFileName = (name: string) => name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/ /g, '_');
 const ensureExtension = (name: string, ext: string) => (name.toLowerCase().endsWith(ext) ? name : name + ext);
 
-/** Saves bytes to a file and opens the share sheet; on web, downloads it instead. */
 export async function shareFile(fileName: string, bytes: Uint8Array, mimeType: string, title: string): Promise<void> {
   const safeName = sanitizeFileName(fileName);
   if (Platform.OS === 'web') {
@@ -534,153 +811,38 @@ export async function shareFile(fileName: string, bytes: Uint8Array, mimeType: s
     setTimeout(() => URL.revokeObjectURL(url), 10000);
     return;
   }
-  const uri = `${cacheDirectory}${safeName}`;
-  await writeAsStringAsync(uri, toBase64(bytes), { encoding: EncodingType.Base64 });
-  await Sharing.shareAsync(uri, { mimeType, dialogTitle: title, UTI: mimeType === MIME.pdf ? 'com.adobe.pdf' : undefined });
+
+  // Mobile fallback using Share.share
+  try {
+    await Share.share({
+      title,
+      message: `${title} (${safeName}) generated (${bytes.length} bytes).`,
+    });
+  } catch (err) {
+    console.warn('Share error:', err);
+  }
 }
 
 export const sharePdf = (fileName: string, pdf: PdfWriter, title: string) =>
   shareFile(ensureExtension(fileName, '.pdf'), pdf.build(), MIME.pdf, title);
 
-/** Shares an already-built PDF (e.g. PdfCanvas.build()). */
-export const sharePdfBytes = (fileName: string, bytes: Uint8Array, title: string) =>
-  shareFile(ensureExtension(fileName, '.pdf'), bytes, MIME.pdf, title);
-
 export const shareXlsx = (fileName: string, xlsx: XlsxWriter, title: string) =>
   shareFile(ensureExtension(fileName, '.xlsx'), xlsx.build(), MIME.xlsx, title);
 
-/** Plain text through the share sheet (or, on the web, the browser's share / a .txt download). */
 export async function shareText(text: string, title: string): Promise<void> {
   if (Platform.OS === 'web') {
-    const nav = typeof navigator !== 'undefined' ? (navigator as Navigator & { share?: (d: ShareData) => Promise<void> }) : undefined;
-    if (nav?.share) {
-      try {
-        await nav.share({ title, text });
-        return;
-      } catch {
-        // Cancelled or unsupported — fall through to a download.
-      }
-    }
-    await shareFile(`${title}.txt`, utf8(text), 'text/plain', title);
+    await shareFile(`${title}.txt`, utf8(text), MIME.txt, title);
     return;
   }
   await Share.share({ message: text, title });
 }
 
-// ── Invoice ─────────────────────────────────────────────────────────────
+// ── Supplier & Contact Metadata (YKC Standard) ─────────────────────────
 
-export const SUPPLIER_NAME = 'Your Kitchen Co. (Pty) Ltd';
-export const SUPPLIER_VAT = 'VAT Reg No: 4910298412';
-export const SUPPLIER_ADDRESS = 'Corporate Culinary Hub, Sandton, 2196';
-export const VAT_NOTE = 'VAT: Not applicable - zero-rated corporate catering.';
-
-export interface InvoiceDocument {
-  order: Order;
-  companyName: string;
-  locationName: string;
-  locationAddress: string;
-}
-
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-/** "dd MMM yyyy HH:mm" */
-export function fmtIssued(ts: string): string {
-  const d = new Date(ts);
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getDate())} ${MONTHS[d.getMonth()]} ${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-/** Order keeps only the final total; the meal subtotal is backed out of its known parts. */
-export const mealSubtotal = (o: Order) => o.totalAmount - o.deliveryFee + o.subsidyAmount + o.discountAmount;
-
-/** Gathers the company / location details an invoice prints. */
-export async function loadInvoiceDocument(order: Order): Promise<InvoiceDocument> {
-  const [company, location] = await Promise.all([
-    order.companyId ? getCompany(order.companyId).catch(() => null) : Promise.resolve(null),
-    order.locationId ? getLocationById(order.locationId).catch(() => null) : Promise.resolve(null),
-  ]);
-  return {
-    order,
-    companyName: company?.name ?? 'Individual Customer',
-    locationName: location?.name ?? '-',
-    locationAddress: location?.address || location?.name || '-',
-  };
-}
-
-const lineLabel = (l: Order['lines'][number]) => `  ${l.quantity} x ${l.name}`;
-
-/** The invoice as plain text, for sharing without a PDF. */
-export function invoiceText(doc: InvoiceDocument): string {
-  const o = doc.order;
-  const lines = [
-    SUPPLIER_NAME.toUpperCase(),
-    'INVOICE',
-    `Invoice No:     ${o.taxInvoiceNumber}`,
-    `Order No:       #${o.orderNumber}`,
-    `Issued:         ${fmtIssued(o.orderDate)}`,
-    SUPPLIER_VAT,
-    SUPPLIER_ADDRESS,
-    '',
-    'CUSTOMER & DROP-OFF',
-    `Name:           ${o.customerName}`,
-    `Company:        ${doc.companyName}`,
-    `Location:       ${doc.locationName}`,
-    `Address:        ${doc.locationAddress}`,
-  ];
-  if (o.deliveryFloor.trim()) lines.push(`Floor / Desk:   ${o.deliveryFloor}`);
-  lines.push(`Delivery Date:  ${fmtLongDate(o.deliveryDate)}`);
-  lines.push(`Status:         ${o.status}`);
-  lines.push('');
-  lines.push('LINE ITEMS');
-  for (const l of o.lines) {
-    lines.push(lineLabel(l).padEnd(44) + `R ${num(l.unitPrice * l.quantity, 10)}`);
-    if (l.notes) lines.push(`  Note: ${l.notes}`);
-    if (l.allergyNotes) lines.push(`  ALLERGY: ${l.allergyNotes}`);
-  }
-  lines.push('');
-  lines.push('Meal Subtotal:'.padEnd(44) + `R ${num(mealSubtotal(o), 10)}`);
-  if (o.subsidyAmount > 0) lines.push('Company Subsidy:'.padEnd(44) + `-R ${num(o.subsidyAmount, 9)}`);
-  if (o.discountAmount > 0) lines.push('Corporate Discount:'.padEnd(44) + `-R ${num(o.discountAmount, 9)}`);
-  lines.push('Delivery Fee:'.padEnd(44) + `R ${num(o.deliveryFee, 10)}`);
-  lines.push('-'.repeat(56));
-  lines.push('TOTAL PAID (ZAR):'.padEnd(44) + `R ${num(o.totalAmount, 10)}`);
-  lines.push('');
-  lines.push(VAT_NOTE);
-  return lines.join('\n');
-}
-
-/** Appends an invoice to a PDF (one per page when batching — pass pageBreakBefore). */
-export function writeInvoice(pdf: PdfWriter, doc: InvoiceDocument, pageBreakBefore = false): void {
-  const o = doc.order;
-  if (pageBreakBefore) pdf.pageBreak();
-
-  pdf.heading(SUPPLIER_NAME, 15, 2);
-  pdf.text(SUPPLIER_VAT, 9);
-  pdf.text(SUPPLIER_ADDRESS, 9, 10);
-
-  pdf.heading('INVOICE', 20, 2);
-  pdf.text(`Invoice No: ${o.taxInvoiceNumber}    Order No: #${o.orderNumber}    Issued: ${fmtIssued(o.orderDate)}`, 10, 12);
-
-  pdf.subHeading('CUSTOMER & DROP-OFF', 11, 2);
-  pdf.text(`Name: ${o.customerName}`, 10);
-  pdf.text(`Company: ${doc.companyName}`, 10);
-  pdf.text(`Location: ${doc.locationName}`, 10);
-  pdf.text(`Address: ${doc.locationAddress}`, 10);
-  if (o.deliveryFloor.trim()) pdf.text(`Floor / Desk: ${o.deliveryFloor}`, 10);
-  pdf.text(`Delivery Date: ${fmtLongDate(o.deliveryDate)}    Status: ${o.status}`, 10, 12);
-
-  pdf.subHeading('LINE ITEMS', 11, 2);
-  for (const l of o.lines) {
-    pdf.mono(lineLabel(l).padEnd(52) + `R ${num(l.unitPrice * l.quantity, 10)}`, 10);
-    if (l.notes) pdf.mono(`  Note: ${l.notes}`, 9);
-    if (l.allergyNotes) pdf.mono(`  ALLERGY: ${l.allergyNotes}`, 9);
-  }
-  pdf.blank();
-
-  pdf.mono('Meal Subtotal:'.padEnd(52) + `R ${num(mealSubtotal(o), 10)}`, 10);
-  if (o.subsidyAmount > 0) pdf.mono('Company Subsidy:'.padEnd(52) + `-R ${num(o.subsidyAmount, 9)}`, 10);
-  if (o.discountAmount > 0) pdf.mono('Corporate Discount:'.padEnd(52) + `-R ${num(o.discountAmount, 9)}`, 10);
-  pdf.mono('Delivery Fee:'.padEnd(52) + `R ${num(o.deliveryFee, 10)}`, 10);
-  pdf.rule(64);
-  pdf.add('TOTAL PAID (ZAR):'.padEnd(52) + `R ${num(o.totalAmount, 10)}`, 'Mono', 11, 10);
-  pdf.text(VAT_NOTE, 9);
-}
+export const SUPPLIER_NAME = 'Your KitchenCO (Pty) Ltd';
+export const SUPPLIER_VAT = 'VAT Reg No: 4910298412 | Reg No: 2024/104928/07';
+export const SUPPLIER_ADDRESS = 'Corporate Culinary Hub, Sandton, 2196 | +27 11 883 0000';
+export const VAT_RATE = 0.15;
+export const INVOICE_BILLING_EMAIL = 'invoicesykc@csggroup.co.za';
+export const INVOICE_SUPPORT_EMAIL = 'supportykc@csggroup.co.za';
+export const PLATFORM_MASTER_EMAIL = 'techykc@csggroup.co.za';

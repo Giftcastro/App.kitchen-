@@ -1,0 +1,17 @@
+services:
+  kitchenco-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kitchenco-app
+    ports:
+      - "8085:8085"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - EXPO_PORT=8085
+      - EXPO_PUBLIC_SUPABASE_URL=${EXPO_PUBLIC_SUPABASE_URL}
+      - EXPO_PUBLIC_SUPABASE_ANON_KEY=${EXPO_PUBLIC_SUPABASE_ANON_KEY}
+    stdin_open: true
+    tty: true

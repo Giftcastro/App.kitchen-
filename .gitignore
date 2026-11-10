@@ -1,22 +1,16 @@
-# OS / editor
-.DS_Store
-*.log
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-.vscode/
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-# Node
+# dependencies
 node_modules/
 
 # Expo
 .expo/
 dist/
-dist-proto/
 web-build/
 expo-env.d.ts
 
 # Native
+.kotlin/
 *.orig.*
 *.jks
 *.p8
@@ -24,14 +18,38 @@ expo-env.d.ts
 *.key
 *.mobileprovision
 
-# Build artifacts
-*.tsbuildinfo
-tsc_output.txt
-qa-*.txt
+# Metro
+.metro-health-check*
 
-# Misc
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
 .env
-.env.local
-# QA tooling output (screenshots, dumps) — scripts are versioned, results are not
-tools/_qa-output/
-tools/shots/
+.env.*
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# generated native folders
+/ios
+/android
+
+# Project documentation & architecture models (local only - untracked, except test.md)
+*.md
+!test.md
+PROJECT.md
+PROJECT_V1_MODEL.md
+SUPABASE_PRO_AND_AUTH_GUIDE.md
+README.md
+walkthrough.md
+
+.idea/
+generated_docs_foramt/

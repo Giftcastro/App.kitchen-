@@ -1,2 +1,0 @@
-/** Invoice — Menu tab copy; the page itself lives in screens/TaxInvoiceScreen. */
-export { default } from '../../../screens/TaxInvoiceScreen';

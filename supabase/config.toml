@@ -1,0 +1,16 @@
+project_id = "hazlxumtnlgdvuyluxfp"
+
+[functions.payfast-create-payment]
+verify_jwt = true
+
+[functions.payfast-itn]
+# PayFast cannot send a Supabase JWT. The function verifies each request itself.
+verify_jwt = false
+
+[functions.payfast-return]
+# Browser redirect only. It carries no payment data and changes nothing.
+verify_jwt = false
+
+[functions.daily-kitchen-manifest]
+# Called by pg_cron. The function checks its private key or an admin session itself.
+verify_jwt = false

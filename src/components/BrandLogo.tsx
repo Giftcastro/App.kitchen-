@@ -1,50 +1,46 @@
-/**
- * The brand-guideline wordmark: "your kitchen" in Playfair Display with a
- * bold "co.", and a fine rule underneath spanning the wordmark's width.
- * Set as live text (not an image) so it stays crisp at every size.
- *
- * Sizes follow the guideline's minimums: full lockup 38px+, standard 22px,
- * never below 14px on screen.
- */
 import React from 'react';
-import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
-import { useApp } from '../state/AppState';
+import { Image, ImageStyle, StyleProp, View, StyleSheet } from 'react-native';
+import { useTheme } from '../theme/ThemeContext';
 
-const MIN_DIGITAL = 14;
-
-export function BrandLogo({
-  size = 22,
-  color,
-  align = 'center',
-  style,
-}: {
-  /** Font size in px (clamped to the 14px digital minimum). */
-  size?: number;
-  /** Ink colour; defaults to the page's primary text colour. */
-  color?: string;
-  align?: 'center' | 'left';
-  style?: StyleProp<ViewStyle>;
-}) {
-  const { colors } = useApp();
-  const ink = color ?? colors.text;
-  const fontSize = Math.max(size, MIN_DIGITAL);
-  return (
-    <View
-      accessibilityRole="image"
-      accessibilityLabel="Your Kitchen Co."
-      style={[styles.lockup, { alignSelf: align === 'center' ? 'center' : 'flex-start' }, style]}
-    >
-      <Text style={[styles.regular, { color: ink, fontSize, lineHeight: Math.round(fontSize * 1.25) }]} numberOfLines={1}>
-        your kitchen <Text style={styles.bold}>co.</Text>
-      </Text>
-      <View style={[styles.rule, { backgroundColor: ink, marginTop: Math.max(2, Math.round(fontSize * 0.12)) }]} />
-    </View>
-  );
+interface BrandLogoProps {
+  variant?: 'hero' | 'large' | 'standard' | 'compact';
+  style?: StyleProp<ImageStyle>;
 }
 
+export const BrandLogo: React.FC<BrandLogoProps> = ({
+  variant = 'standard',
+  style,
+}) => {
+  const { isDark } = useTheme();
+
+  // Aspect ratio is 1118 / 322 ≈ 3.472
+  const dimensions =
+    variant === 'hero'
+      ? { width: 330, height: 95 }
+      : variant === 'large'
+      ? { width: 280, height: 81 }
+      : variant === 'compact'
+      ? { width: 130, height: 38 }
+      : { width: 200, height: 58 };
+
+  const logoSource = isDark
+    ? require('../../assets/logo_dark.png')
+    : require('../../assets/logo_transparent.png');
+
+  return (
+    <View style={styles.wrapper}>
+      <Image
+        source={logoSource}
+        style={[dimensions, style]}
+        resizeMode="contain"
+      />
+    </View>
+  );
+};
+
 const styles = StyleSheet.create({
-  lockup: { alignItems: 'stretch' },
-  regular: { fontFamily: 'PlayfairDisplay_400Regular' },
-  bold: { fontFamily: 'PlayfairDisplay_700Bold' },
-  rule: { height: 1, opacity: 0.3 },
+  wrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
