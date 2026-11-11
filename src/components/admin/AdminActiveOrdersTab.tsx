@@ -527,12 +527,12 @@ export const AdminActiveOrdersTab: React.FC<AdminActiveOrdersTabProps> = ({
                   <Ionicons
                     name={pill.icon}
                     size={12}
-                    color={isActive ? '#FFFFFF' : pill.activeColor}
+                    color={isActive ? (pill.id === 'all' ? theme.onPrimary : '#FFFFFF') : pill.activeColor}
                   />
                   <Text
                     style={[
                       styles.statusFilterPillText,
-                      { color: isActive ? '#FFFFFF' : theme.textSecondary },
+                      { color: isActive ? (pill.id === 'all' ? theme.onPrimary : '#FFFFFF') : theme.textSecondary },
                     ]}
                   >
                     {pill.label}
@@ -832,7 +832,7 @@ export const AdminActiveOrdersTab: React.FC<AdminActiveOrdersTabProps> = ({
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>
@@ -885,7 +885,7 @@ export const AdminActiveOrdersTab: React.FC<AdminActiveOrdersTabProps> = ({
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>
@@ -933,7 +933,7 @@ export const AdminActiveOrdersTab: React.FC<AdminActiveOrdersTabProps> = ({
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>
@@ -973,7 +973,7 @@ export const AdminActiveOrdersTab: React.FC<AdminActiveOrdersTabProps> = ({
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.exportModalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>
@@ -1122,7 +1122,7 @@ export const AdminActiveOrdersTab: React.FC<AdminActiveOrdersTabProps> = ({
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.pickerModalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>
@@ -1167,7 +1167,7 @@ export const AdminActiveOrdersTab: React.FC<AdminActiveOrdersTabProps> = ({
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.pickerModalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>

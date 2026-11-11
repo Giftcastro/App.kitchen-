@@ -38,10 +38,12 @@ import { getChefsChoiceDishesForDate, getCycleWeekForDate, INITIAL_CYCLE_WEEKS }
 
 interface MenuBrowserScreenProps {
   onNavigateToCheckout?: () => void;
+  onNavigateToOrders?: () => void;
 }
 
 export const MenuBrowserScreen: React.FC<MenuBrowserScreenProps> = ({
   onNavigateToCheckout,
+  onNavigateToOrders,
 }) => {
   const { theme, isDark } = useTheme();
   const {
@@ -53,6 +55,7 @@ export const MenuBrowserScreen: React.FC<MenuBrowserScreenProps> = ({
     openCartModal,
     closeCartModal,
     getActiveDateTotals,
+    getCartTotals,
     activeDateCartItems,
     menuItems,
     categories: allCategories,
@@ -92,6 +95,16 @@ export const MenuBrowserScreen: React.FC<MenuBrowserScreenProps> = ({
   // Cart summary for the active selected delivery date
   const dateTotals = getActiveDateTotals(selectedDate);
   const dateItems = activeDateCartItems(selectedDate);
+
+  // The cart icon and the review bar open checkout, which lists every day, so they count
+  // every day too. Counting only the selected day made a full cart look empty after a day switch.
+  const cartTotals = getCartTotals();
+  const cartBarDateLabel =
+    cartTotals.deliveryDates.length > 1
+      ? `${cartTotals.deliveryDates.length} delivery days`
+      : deliveryDates.find((d) => d.dateString === cartTotals.deliveryDates[0])?.fullFormattedDate ||
+        cartTotals.deliveryDates[0] ||
+        selectedDate;
 
   // Filter categories matching active menu type
   const availableCategories = useMemo(() => {
@@ -243,10 +256,10 @@ export const MenuBrowserScreen: React.FC<MenuBrowserScreenProps> = ({
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="cart-outline" size={20} color={theme.textPrimary} />
-          {dateTotals.itemCount > 0 && (
+          {cartTotals.itemCount > 0 && (
             <View style={[styles.cartBadge, { backgroundColor: theme.primary, borderColor: theme.background }]}>
-              <Text style={[styles.cartBadgeText, { color: isDark ? '#121212' : '#FFFFFF' }]}>
-                {dateTotals.itemCount}
+              <Text style={[styles.cartBadgeText, { color:theme.onPrimary}]}>
+                {cartTotals.itemCount}
               </Text>
             </View>
           )}
@@ -337,11 +350,11 @@ export const MenuBrowserScreen: React.FC<MenuBrowserScreenProps> = ({
       </ScrollView>
 
       {/* Floating Cart Bar */}
-      {dateTotals.itemCount > 0 && (
+      {cartTotals.itemCount > 0 && (
         <FloatingCartBar
-          itemCount={dateTotals.itemCount}
-          formattedTotal={dateTotals.formattedTotalZar}
-          deliveryDateFormatted={selectedDateOption?.fullFormattedDate || selectedDate}
+          itemCount={cartTotals.itemCount}
+          formattedTotal={`R ${cartTotals.totalZar.toFixed(2)}`}
+          deliveryDateFormatted={cartBarDateLabel}
           onPress={onNavigateToCheckout || openCartModal}
         />
       )}
@@ -393,6 +406,17 @@ export const MenuBrowserScreen: React.FC<MenuBrowserScreenProps> = ({
         onConfirm={handleConfirmDate}
         onClose={handleCloseDateModal}
         canDismiss={true}
+        // Skip and Orders belong to the prompt shown after login only. Opened from the calendar
+        // icon, the picker is just Confirm (and the close button).
+        onSkip={!hasPromptedDeliveryDate ? handleCloseDateModal : undefined}
+        onViewOrders={
+          !hasPromptedDeliveryDate && onNavigateToOrders
+            ? () => {
+                handleCloseDateModal();
+                onNavigateToOrders();
+              }
+            : undefined
+        }
       />
     </SafeAreaView>
   );

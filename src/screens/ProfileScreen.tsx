@@ -383,6 +383,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               value={pushEnabled}
               onValueChange={setPushEnabled}
               trackColor={{ false: theme.inputBorder, true: theme.primary }}
+              {...(Platform.OS === 'web' ? ({ activeThumbColor: theme.onPrimary } as object) : {})}
               thumbColor={Platform.OS === 'android' ? theme.textInverse : undefined}
             />
           </View>
@@ -401,6 +402,7 @@ export const ProfileScreen: React.FC<ProfileScreenProps> = ({
               value={isDark}
               onValueChange={(val) => setThemeMode(val ? 'dark' : 'light')}
               trackColor={{ false: theme.inputBorder, true: theme.primary }}
+              {...(Platform.OS === 'web' ? ({ activeThumbColor: theme.onPrimary } as object) : {})}
               thumbColor={Platform.OS === 'android' ? theme.textInverse : undefined}
             />
           </View>

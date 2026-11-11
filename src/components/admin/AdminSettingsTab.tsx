@@ -365,6 +365,7 @@ export const AdminSettingsTab: React.FC = () => {
             value={pushNotifications}
             onValueChange={setPushNotifications}
             trackColor={{ false: 'rgba(150, 150, 150, 0.3)', true: theme.primary }}
+            {...(Platform.OS === 'web' ? ({ activeThumbColor: theme.onPrimary } as object) : {})}
           />
         </View>
 
@@ -380,6 +381,7 @@ export const AdminSettingsTab: React.FC = () => {
             value={isDark}
             onValueChange={(val) => setThemeMode(val ? 'dark' : 'light')}
             trackColor={{ false: 'rgba(150, 150, 150, 0.3)', true: theme.primary }}
+            {...(Platform.OS === 'web' ? ({ activeThumbColor: theme.onPrimary } as object) : {})}
           />
         </View>
 
@@ -396,7 +398,7 @@ export const AdminSettingsTab: React.FC = () => {
                 { backgroundColor: theme.surfaceElevated, borderColor: brandTheme === 'Current' ? theme.primary : theme.surfaceBorder },
               ]}
             >
-              <View style={[styles.swatchPreview, { backgroundColor: '#1E293B' }]} />
+              <View style={[styles.swatchPreview, { backgroundColor: '#121212' }]} />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.swatchTitle, { color: theme.textPrimary }]}>
                   {brandTheme === 'Current' ? '✓ ' : ''}Ink &amp; Cream
@@ -416,7 +418,7 @@ export const AdminSettingsTab: React.FC = () => {
                 { backgroundColor: theme.surfaceElevated, borderColor: brandTheme === 'MediterraneanPantry' ? theme.primary : theme.surfaceBorder },
               ]}
             >
-              <View style={[styles.swatchPreview, { backgroundColor: '#881337' }]} />
+              <View style={[styles.swatchPreview, { backgroundColor: '#D53220' }]} />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.swatchTitle, { color: theme.textPrimary }]}>
                   {brandTheme === 'MediterraneanPantry' ? '✓ ' : ''}Mediterranean Pantry
@@ -456,7 +458,7 @@ export const AdminSettingsTab: React.FC = () => {
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.confirmModalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>

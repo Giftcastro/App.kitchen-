@@ -470,7 +470,7 @@ export const OrdersScreen: React.FC<OrdersScreenProps> = ({ onNavigateToMenu }) 
                               </Text>
                             )}
                             {line.allergyNotes ? (
-                              <Text style={[styles.itemAllergyAlert, { color: '#D53220' }]}>
+                              <Text style={[styles.itemAllergyAlert, { color: theme.error }]}>
                                 ⚠️ Notes: {line.allergyNotes}
                               </Text>
                             ) : null}
@@ -483,7 +483,7 @@ export const OrdersScreen: React.FC<OrdersScreenProps> = ({ onNavigateToMenu }) 
                     })}
 
                     {/* Action Section: Rating + Vertical Buttons (Reorder first, Tax Invoice below) */}
-                    <View style={styles.cardActionsColumn}>
+                    <View style={[styles.cardActionsColumn, { borderTopColor: theme.surfaceBorder }]}>
                       {/* Rating Stars Row (for Order History) */}
                       {activeTab === 'history' && (
                         <View

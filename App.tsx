@@ -37,7 +37,7 @@ type ActiveView = 'home' | 'checkout' | 'orders' | 'profile' | 'admin';
 const MainNavigator: React.FC = () => {
   const { theme, isDark } = useTheme();
   const { currentUser, isLoading, isPasswordRecoveryMode, pendingOAuthUser } = useAuth();
-  const { cartItems, unreadBroadcastCount, corporateAccounts } = useCart();
+  const { unreadBroadcastCount, corporateAccounts } = useCart();
   const [activeView, setActiveView] = useState<ActiveView>(() => {
     const isStaff = currentUser?.role === 'admin' || currentUser?.role === 'chef';
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
@@ -93,9 +93,14 @@ const MainNavigator: React.FC = () => {
     RobotoCondensed_700Bold,
   });
 
-  const totalCartCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+  // The full-screen loader is for start-up only. Later auth calls also raise isLoading, and
+  // unmounting AuthScreen for them wiped its sign-up stage, email and PIN mid-flow.
+  const [hasBooted, setHasBooted] = useState<boolean>(false);
+  useEffect(() => {
+    if (!isLoading && fontsLoaded) setHasBooted(true);
+  }, [isLoading, fontsLoaded]);
 
-  if (isLoading || !fontsLoaded) {
+  if (!hasBooted) {
     return (
       <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
         <ActivityIndicator size="large" color={theme.primary} />
@@ -138,7 +143,7 @@ const MainNavigator: React.FC = () => {
             ]}
           >
             <Text style={{ fontSize: 18 }}>⚙️</Text>
-            <View style={[styles.adminPreviewBallDot, { backgroundColor: theme.brandGold }]} />
+            <View style={[styles.adminPreviewBallDot, { backgroundColor: theme.brandGold, borderColor: theme.onPrimary }]} />
           </TouchableOpacity>
         ) : (
           <View style={[styles.adminPreviewBanner, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>
@@ -182,11 +187,14 @@ const MainNavigator: React.FC = () => {
         )
       )}
 
-      <View style={styles.screenContainer}>
+      {/* Customer screens are a phone layout; on tablets and desktops keep them in a centred column
+          instead of stretching edge to edge. The admin portal uses the full width. */}
+      <View style={[styles.screenContainer, activeView !== 'admin' && styles.customerColumn]}>
         {/* Screen 2: Menu Browser (Home) */}
         {activeView === 'home' && (
           <MenuBrowserScreen
             onNavigateToCheckout={() => setActiveView('checkout')}
+            onNavigateToOrders={() => setActiveView('orders')}
           />
         )}
 
@@ -230,7 +238,6 @@ const MainNavigator: React.FC = () => {
         <BottomNavBar
           currentTab={currentBottomTab}
           onTabChange={(tab) => setActiveView(tab)}
-          cartItemCount={totalCartCount}
           unreadMessageCount={unreadBroadcastCount}
         />
       )}
@@ -261,6 +268,11 @@ const styles = StyleSheet.create({
   },
   screenContainer: {
     flex: 1,
+  },
+  customerColumn: {
+    width: '100%',
+    maxWidth: 760,
+    alignSelf: 'center',
   },
   loadingContainer: {
     flex: 1,

@@ -114,10 +114,10 @@ export {};
 //
 //         <TouchableOpacity
 //           onPress={onNavigateToMenu}
-//           style={[styles.menuShortcutBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+//           style={[styles.menuShortcutBtn, { backgroundColor:theme.primary}]}
 //         >
-//           <Ionicons name="restaurant" size={14} color={isDark ? '#000000' : '#FFFFFF'} />
-//           <Text style={[styles.menuShortcutText, { color: isDark ? '#000000' : '#FFFFFF' }]}>+ Order</Text>
+//           <Ionicons name="restaurant" size={14} color={theme.onPrimary} />
+//           <Text style={[styles.menuShortcutText, { color:theme.onPrimary}]}>+ Order</Text>
 //         </TouchableOpacity>
 //       </View>
 //
@@ -222,9 +222,9 @@ export {};
 //             </Text>
 //             <TouchableOpacity
 //               onPress={onNavigateToMenu}
-//               style={[styles.exploreBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+//               style={[styles.exploreBtn, { backgroundColor:theme.primary}]}
 //             >
-//               <Text style={[styles.exploreBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+//               <Text style={[styles.exploreBtnText, { color:theme.onPrimary}]}>
 //                 Browse Advance Menu
 //               </Text>
 //             </TouchableOpacity>
@@ -460,10 +460,10 @@ export {};
 //                       onPress={() => {
 //                         setSelectedInvoiceOrder(selectedHistoryOrder);
 //                       }}
-//                       style={[styles.invoiceBtn, { backgroundColor: isDark ? '#FFFFFF' : '#121212' }]}
+//                       style={[styles.invoiceBtn, { backgroundColor:theme.primary}]}
 //                     >
-//                       <Ionicons name="document-text-outline" size={16} color={isDark ? '#121212' : '#FFFFFF'} />
-//                       <Text style={[styles.invoiceBtnText, { color: isDark ? '#121212' : '#FFFFFF' }]}>
+//                       <Ionicons name="document-text-outline" size={16} color={theme.onPrimary} />
+//                       <Text style={[styles.invoiceBtnText, { color:theme.onPrimary}]}>
 //                         View Tax Invoice (PDF)
 //                       </Text>
 //                     </TouchableOpacity>

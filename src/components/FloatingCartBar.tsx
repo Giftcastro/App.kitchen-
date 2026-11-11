@@ -38,21 +38,21 @@ export const FloatingCartBar: React.FC<FloatingCartBarProps> = ({
         style={[
           styles.innerBar,
           {
-            backgroundColor: isDark ? '#FFFFFF' : '#000000',
-            borderColor: isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)',
+            backgroundColor:theme.primary,
+            borderColor: theme.primaryGlow,
             shadowColor: isDark ? '#000000' : '#09090B',
           },
         ]}
       >
         {/* Left Side: Badge + Count + Total */}
         <View style={styles.leftContent}>
-          <View style={[styles.countBadge, { backgroundColor: isDark ? '#000000' : '#FFFFFF' }]}>
-            <Text style={[styles.countText, { color: isDark ? '#FFFFFF' : '#000000' }]}>{itemCount}</Text>
+          <View style={[styles.countBadge, { backgroundColor:theme.surface}]}>
+            <Text style={[styles.countText, { color:theme.textPrimary}]}>{itemCount}</Text>
           </View>
           <View style={styles.priceContainer}>
-            <Text style={[styles.totalPrice, { color: isDark ? '#000000' : '#FFFFFF' }]}>{total}</Text>
+            <Text style={[styles.totalPrice, { color:theme.onPrimary}]}>{total}</Text>
             {dateText ? (
-              <Text style={[styles.dateLabel, { color: isDark ? 'rgba(0,0,0,0.65)' : 'rgba(255,255,255,0.65)' }]} numberOfLines={1}>
+              <Text style={[styles.dateLabel, { color: theme.onPrimary, opacity: 0.65 }]} numberOfLines={1}>
                 {dateText}
               </Text>
             ) : null}
@@ -61,11 +61,11 @@ export const FloatingCartBar: React.FC<FloatingCartBarProps> = ({
 
         {/* Right Side: Action CTA */}
         <View style={styles.rightContent}>
-          <Text style={[styles.actionText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Review Order</Text>
+          <Text style={[styles.actionText, { color:theme.onPrimary}]}>Review Order</Text>
           <Ionicons
             name="arrow-forward"
             size={16}
-            color={isDark ? '#000000' : '#FFFFFF'}
+            color={theme.onPrimary}
             style={styles.arrowIcon}
           />
         </View>

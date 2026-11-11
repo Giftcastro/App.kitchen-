@@ -156,10 +156,10 @@ export {};
 //         <TouchableOpacity
 //           activeOpacity={0.85}
 //           onPress={() => setIsAddAccountOpen(true)}
-//           style={[styles.addAccountBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+//           style={[styles.addAccountBtn, { backgroundColor:theme.primary}]}
 //         >
-//           <Ionicons name="add" size={16} color={isDark ? '#000000' : '#FFFFFF'} />
-//           <Text style={[styles.addAccountBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>+ New Client</Text>
+//           <Ionicons name="add" size={16} color={theme.onPrimary} />
+//           <Text style={[styles.addAccountBtnText, { color:theme.onPrimary}]}>+ New Client</Text>
 //         </TouchableOpacity>
 //       </View>
 //
@@ -276,7 +276,7 @@ export {};
 //           <View
 //             style={[
 //               StyleSheet.absoluteFill,
-//               { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+//               { backgroundColor:theme.overlay},
 //             ]}
 //           />
 //           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorderLight }]}>
@@ -375,7 +375,7 @@ export {};
 //           <View
 //             style={[
 //               StyleSheet.absoluteFill,
-//               { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+//               { backgroundColor:theme.overlay},
 //             ]}
 //           />
 //           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorderLight, maxHeight: '60%' }]}>
@@ -428,7 +428,7 @@ export {};
 //           <View
 //             style={[
 //               StyleSheet.absoluteFill,
-//               { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+//               { backgroundColor:theme.overlay},
 //             ]}
 //           />
 //           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorderLight, maxHeight: '65%' }]}>
@@ -452,14 +452,14 @@ export {};
 //                   styles.discountModeBtn,
 //                   editDiscountType === 'percentage' && [
 //                     styles.discountModeBtnActive,
-//                     { backgroundColor: isDark ? '#FFFFFF' : '#121212' },
+//                     { backgroundColor:theme.primary},
 //                   ],
 //                 ]}
 //               >
 //                 <Text
 //                   style={[
 //                     styles.discountModeBtnText,
-//                     { color: editDiscountType === 'percentage' ? (isDark ? '#121212' : '#FFFFFF') : theme.textSecondary },
+//                     { color: editDiscountType === 'percentage' ? theme.onPrimary : theme.textSecondary },
 //                   ]}
 //                 >
 //                   Percentage (%)
@@ -473,14 +473,14 @@ export {};
 //                   styles.discountModeBtn,
 //                   editDiscountType === 'fixed_zar' && [
 //                     styles.discountModeBtnActive,
-//                     { backgroundColor: isDark ? '#FFFFFF' : '#121212' },
+//                     { backgroundColor:theme.primary},
 //                   ],
 //                 ]}
 //               >
 //                 <Text
 //                   style={[
 //                     styles.discountModeBtnText,
-//                     { color: editDiscountType === 'fixed_zar' ? (isDark ? '#121212' : '#FFFFFF') : theme.textSecondary },
+//                     { color: editDiscountType === 'fixed_zar' ? theme.onPrimary : theme.textSecondary },
 //                   ]}
 //                 >
 //                   Fixed Rands (R)
@@ -505,9 +505,9 @@ export {};
 //             <TouchableOpacity
 //               activeOpacity={0.85}
 //               onPress={handleUpdateDiscount}
-//               style={[styles.saveBtn, { backgroundColor: isDark ? '#FFFFFF' : '#121212', marginTop: 16 }]}
+//               style={[styles.saveBtn, { backgroundColor:theme.primary, marginTop: 16 }]}
 //             >
-//               <Text style={[styles.saveBtnText, { color: isDark ? '#121212' : '#FFFFFF' }]}>
+//               <Text style={[styles.saveBtnText, { color:theme.onPrimary}]}>
 //                 Save Corporate Discount
 //               </Text>
 //             </TouchableOpacity>
@@ -528,7 +528,7 @@ export {};
 //           <View
 //             style={[
 //               StyleSheet.absoluteFill,
-//               { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+//               { backgroundColor:theme.overlay},
 //             ]}
 //           />
 //           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorderLight, maxHeight: '50%' }]}>

@@ -78,6 +78,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return isDark ? darkColors : lightColors;
   }, [brandTheme, isDark]);
 
+  // Wait for the saved choice before drawing anything, so the app never flashes the default
+  // theme and then switches to the one the user picked.
+  if (!isLoaded) return null;
+
   return (
     <ThemeContext.Provider
       value={{

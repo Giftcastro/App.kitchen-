@@ -208,7 +208,7 @@ export {};
 //             style={[
 //               styles.timeframeBtn,
 //               selectedTimeframe === tf.key && {
-//                 backgroundColor: isDark ? '#FFFFFF' : '#000000',
+//                 backgroundColor:theme.primary,
 //               },
 //             ]}
 //           >
@@ -217,7 +217,7 @@ export {};
 //                 styles.timeframeText,
 //                 { color: theme.textSecondary },
 //                 selectedTimeframe === tf.key && {
-//                   color: isDark ? '#000000' : '#FFFFFF',
+//                   color:theme.onPrimary,
 //                   fontWeight: '800',
 //                 },
 //               ]}
@@ -320,20 +320,20 @@ export {};
 //             styles.filterChip,
 //             { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
 //             selectedDayFilter === 'all' && {
-//               backgroundColor: isDark ? '#FFFFFF' : '#000000',
-//               borderColor: isDark ? '#FFFFFF' : '#000000',
+//               backgroundColor:theme.primary,
+//               borderColor:theme.primary,
 //             },
 //           ]}
 //         >
 //           <Ionicons
 //             name="layers-outline"
 //             size={13}
-//             color={selectedDayFilter === 'all' ? (isDark ? '#000000' : '#FFFFFF') : theme.textSecondary}
+//             color={selectedDayFilter === 'all' ? theme.onPrimary : theme.textSecondary}
 //           />
 //           <Text
 //             style={[
 //               styles.filterChipText,
-//               { color: selectedDayFilter === 'all' ? (isDark ? '#000000' : '#FFFFFF') : theme.textPrimary },
+//               { color: selectedDayFilter === 'all' ? theme.onPrimary : theme.textPrimary },
 //               selectedDayFilter === 'all' && { fontWeight: '700' },
 //             ]}
 //           >
@@ -355,20 +355,20 @@ export {};
 //                 styles.filterChip,
 //                 { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
 //                 isSelected && {
-//                   backgroundColor: isDark ? '#FFFFFF' : '#000000',
-//                   borderColor: isDark ? '#FFFFFF' : '#000000',
+//                   backgroundColor:theme.primary,
+//                   borderColor:theme.primary,
 //                 },
 //               ]}
 //             >
 //               <Ionicons
 //                 name="calendar-outline"
 //                 size={12}
-//                 color={isSelected ? (isDark ? '#000000' : '#FFFFFF') : theme.textSecondary}
+//                 color={isSelected ? theme.onPrimary : theme.textSecondary}
 //               />
 //               <Text
 //                 style={[
 //                   styles.filterChipText,
-//                   { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : theme.textPrimary },
+//                   { color: isSelected ? theme.onPrimary : theme.textPrimary },
 //                   isSelected && { fontWeight: '700' },
 //                 ]}
 //               >
@@ -391,15 +391,15 @@ export {};
 //             styles.filterChip,
 //             { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
 //             selectedCompanyFilter === 'all' && {
-//               backgroundColor: isDark ? '#FFFFFF' : '#000000',
-//               borderColor: isDark ? '#FFFFFF' : '#000000',
+//               backgroundColor:theme.primary,
+//               borderColor:theme.primary,
 //             },
 //           ]}
 //         >
 //           <Text
 //             style={[
 //               styles.filterChipText,
-//               { color: selectedCompanyFilter === 'all' ? (isDark ? '#000000' : '#FFFFFF') : theme.textPrimary },
+//               { color: selectedCompanyFilter === 'all' ? theme.onPrimary : theme.textPrimary },
 //               selectedCompanyFilter === 'all' && { fontWeight: '700' },
 //             ]}
 //           >
@@ -418,20 +418,20 @@ export {};
 //                 styles.filterChip,
 //                 { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
 //                 isSelected && {
-//                   backgroundColor: isDark ? '#FFFFFF' : '#000000',
-//                   borderColor: isDark ? '#FFFFFF' : '#000000',
+//                   backgroundColor:theme.primary,
+//                   borderColor:theme.primary,
 //                 },
 //               ]}
 //             >
 //               <Ionicons
 //                 name="business-outline"
 //                 size={12}
-//                 color={isSelected ? (isDark ? '#000000' : '#FFFFFF') : theme.textSecondary}
+//                 color={isSelected ? theme.onPrimary : theme.textSecondary}
 //               />
 //               <Text
 //                 style={[
 //                   styles.filterChipText,
-//                   { color: isSelected ? (isDark ? '#000000' : '#FFFFFF') : theme.textPrimary },
+//                   { color: isSelected ? theme.onPrimary : theme.textPrimary },
 //                   isSelected && { fontWeight: '700' },
 //                 ]}
 //               >
@@ -538,15 +538,15 @@ export {};
 //                 <Text style={[styles.barAmount, { color: isSelected ? theme.primary : theme.textSecondary }]}>
 //                   {bar.revenueFormatted}
 //                 </Text>
-//                 <View style={[styles.barTrack, isSelected && { borderColor: isDark ? '#FFFFFF' : '#000000', borderWidth: 1.5 }]}>
+//                 <View style={[styles.barTrack, isSelected && { borderColor:theme.primary, borderWidth: 1.5 }]}>
 //                   <View
 //                     style={[
 //                       styles.barFill,
 //                       {
 //                         height: `${barHeightPct}%`,
 //                         backgroundColor: isSelected
-//                           ? (isDark ? '#FFFFFF' : '#000000')
-//                           : (isDark ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.12)'),
+//                           ? theme.primary
+//                           : theme.primaryMuted,
 //                       },
 //                     ]}
 //                   />
@@ -567,7 +567,7 @@ export {};
 //           <View style={styles.distRow}>
 //             <Text style={[styles.distLabel, { color: theme.textPrimary }]}>Mains & Bowls</Text>
 //             <View style={[styles.distBarTrack, { backgroundColor: theme.surfaceHighlight }]}>
-//               <View style={[styles.distBarFill, { width: '42%', backgroundColor: isDark ? '#FFFFFF' : '#000000' }]} />
+//               <View style={[styles.distBarFill, { width: '42%', backgroundColor:theme.primary}]} />
 //             </View>
 //             <Text style={[styles.distValue, { color: theme.textPrimary }]}>42%</Text>
 //           </View>
@@ -618,11 +618,11 @@ export {};
 //           <TouchableOpacity
 //             activeOpacity={0.85}
 //             onPress={handlePushPowerBI}
-//             style={[styles.biPushBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+//             style={[styles.biPushBtn, { backgroundColor:theme.primary}]}
 //             disabled={isPushingData}
 //           >
-//             <Ionicons name="cloud-upload" size={16} color={isDark ? '#000000' : '#FFFFFF'} />
-//             <Text style={[styles.biPushBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+//             <Ionicons name="cloud-upload" size={16} color={theme.onPrimary} />
+//             <Text style={[styles.biPushBtnText, { color:theme.onPrimary}]}>
 //               {isPushingData ? 'Syncing...' : 'Push to Power BI'}
 //             </Text>
 //           </TouchableOpacity>

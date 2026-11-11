@@ -100,6 +100,14 @@ interface CartContextType {
     formattedDiscountLabel: string;
     formattedVatZar: string;
   };
+  getCartTotals: () => {
+    itemCount: number;
+    deliveryDates: string[];
+    subtotalZar: number;
+    discountZar: number;
+    deliveryFee: number;
+    totalZar: number;
+  };
   completePaidCheckout: () => Promise<OrderHistoryItem | null>;
   submitOrderRating: (orderId: string, rating: number, feedback?: string) => Promise<void>;
   reportOrderNonDelivery: (orderId: string, reason?: string) => Promise<void>;
@@ -527,6 +535,24 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       formattedDiscountLabel: discountLabel,
       formattedVatZar: `R 0.00`,
     };
+  };
+
+  // The whole cart, every delivery day. Each day is its own order with its own delivery fee
+  // and discount, the same way the server prices checkout.
+  const getCartTotals = () => {
+    const deliveryDates = Array.from(new Set(cartItems.map((item) => item.targetDeliveryDate))).sort();
+    return deliveryDates.reduce(
+      (acc, date) => {
+        const day = getActiveDateTotals(date);
+        acc.itemCount += day.itemCount;
+        acc.subtotalZar += day.subtotalZar;
+        acc.discountZar += day.discountZar;
+        acc.deliveryFee += day.deliveryFee;
+        acc.totalZar += day.totalZar;
+        return acc;
+      },
+      { itemCount: 0, deliveryDates, subtotalZar: 0, discountZar: 0, deliveryFee: 0, totalZar: 0 }
+    );
   };
 
   // Orders are created and marked paid on the server. Once PayFast has
@@ -1049,6 +1075,7 @@ const mustSave = async (saving: Promise<boolean>, what: string) => {
         openCartModal,
         closeCartModal,
         getActiveDateTotals,
+        getCartTotals,
         completePaidCheckout,
         submitOrderRating,
         reportOrderNonDelivery,

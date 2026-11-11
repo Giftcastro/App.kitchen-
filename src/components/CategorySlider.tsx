@@ -47,7 +47,7 @@ export const CategorySlider: React.FC<CategorySliderProps> = ({
             <View
               style={[
                 styles.activeIndicatorBar,
-                { backgroundColor: isDark ? '#F7F2E8' : '#121212' },
+                { backgroundColor:theme.primary},
               ]}
             />
           )}
@@ -77,7 +77,7 @@ export const CategorySlider: React.FC<CategorySliderProps> = ({
                 <View
                   style={[
                     styles.activeIndicatorBar,
-                    { backgroundColor: isDark ? '#F7F2E8' : '#121212' },
+                    { backgroundColor:theme.primary},
                   ]}
                 />
               )}

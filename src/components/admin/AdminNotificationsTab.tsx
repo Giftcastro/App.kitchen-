@@ -678,7 +678,7 @@ export const AdminNotificationsTab: React.FC = () => {
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View
@@ -769,7 +769,7 @@ export const AdminNotificationsTab: React.FC = () => {
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View
@@ -845,7 +845,7 @@ export const AdminNotificationsTab: React.FC = () => {
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View

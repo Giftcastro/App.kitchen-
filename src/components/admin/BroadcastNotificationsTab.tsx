@@ -211,19 +211,19 @@ export {};
 //               style={[
 //                 styles.segmentBtn,
 //                 audienceType === item.key && {
-//                   backgroundColor: isDark ? '#FFFFFF' : '#000000',
+//                   backgroundColor:theme.primary,
 //                 },
 //               ]}
 //             >
 //               <Ionicons
 //                 name={item.icon as any}
 //                 size={13}
-//                 color={audienceType === item.key ? (isDark ? '#000000' : '#FFFFFF') : theme.textSecondary}
+//                 color={audienceType === item.key ? theme.onPrimary : theme.textSecondary}
 //               />
 //               <Text
 //                 style={[
 //                   styles.segmentBtnText,
-//                   { color: audienceType === item.key ? (isDark ? '#000000' : '#FFFFFF') : theme.textSecondary },
+//                   { color: audienceType === item.key ? theme.onPrimary : theme.textSecondary },
 //                   audienceType === item.key && { fontWeight: '700' },
 //                 ]}
 //               >
@@ -248,10 +248,10 @@ export {};
 //                     style={[
 //                       styles.choiceChip,
 //                       { backgroundColor: theme.surfaceHighlight, borderColor: theme.surfaceBorder },
-//                       isSelected && { backgroundColor: isDark ? '#FFFFFF' : '#121212', borderColor: isDark ? '#FFFFFF' : '#121212' },
+//                       isSelected && { backgroundColor:theme.primary, borderColor:theme.primary},
 //                     ]}
 //                   >
-//                     <Text style={[styles.choiceChipText, { color: isSelected ? (isDark ? '#121212' : '#FFFFFF') : theme.textPrimary }]}>
+//                     <Text style={[styles.choiceChipText, { color: isSelected ? theme.onPrimary : theme.textPrimary }]}>
 //                       {comp.companyName}
 //                     </Text>
 //                   </TouchableOpacity>
@@ -276,10 +276,10 @@ export {};
 //                     style={[
 //                       styles.choiceChip,
 //                       { backgroundColor: theme.surfaceHighlight, borderColor: theme.surfaceBorder },
-//                       isSelected && { backgroundColor: isDark ? '#FFFFFF' : '#121212', borderColor: isDark ? '#FFFFFF' : '#121212' },
+//                       isSelected && { backgroundColor:theme.primary, borderColor:theme.primary},
 //                     ]}
 //                   >
-//                     <Text style={[styles.choiceChipText, { color: isSelected ? (isDark ? '#121212' : '#FFFFFF') : theme.textPrimary }]}>
+//                     <Text style={[styles.choiceChipText, { color: isSelected ? theme.onPrimary : theme.textPrimary }]}>
 //                       {floor.label}
 //                     </Text>
 //                   </TouchableOpacity>
@@ -345,8 +345,8 @@ export {};
 //               styles.channelBoxResponsive,
 //               { backgroundColor: theme.surfaceHighlight, borderColor: theme.surfaceBorder },
 //               channelInApp && {
-//                 borderColor: isDark ? '#FFFFFF' : '#121212',
-//                 backgroundColor: isDark ? '#2A2A2C' : '#EFE9DC',
+//                 borderColor:theme.primary,
+//                 backgroundColor:theme.surfaceHighlight,
 //               },
 //             ]}
 //           >
@@ -371,8 +371,8 @@ export {};
 //               styles.channelBoxResponsive,
 //               { backgroundColor: theme.surfaceHighlight, borderColor: theme.surfaceBorder },
 //               channelEmail && {
-//                 borderColor: isDark ? '#FFFFFF' : '#121212',
-//                 backgroundColor: isDark ? '#2A2A2C' : '#EFE9DC',
+//                 borderColor:theme.primary,
+//                 backgroundColor:theme.surfaceHighlight,
 //               },
 //             ]}
 //           >
@@ -397,8 +397,8 @@ export {};
 //               styles.channelBoxResponsive,
 //               { backgroundColor: theme.surfaceHighlight, borderColor: theme.surfaceBorder },
 //               channelSMS && {
-//                 borderColor: isDark ? '#FFFFFF' : '#121212',
-//                 backgroundColor: isDark ? '#2A2A2C' : '#EFE9DC',
+//                 borderColor:theme.primary,
+//                 backgroundColor:theme.surfaceHighlight,
 //               },
 //             ]}
 //           >
@@ -448,7 +448,7 @@ export {};
 //         />
 //
 //         {/* 5. Live Client Preview */}
-//         <View style={[styles.previewContainer, { backgroundColor: isDark ? '#262628' : '#F1F5F9', borderColor: theme.surfaceBorder }]}>
+//         <View style={[styles.previewContainer, { backgroundColor:theme.surfaceHighlight, borderColor: theme.surfaceBorder }]}>
 //           <View style={styles.previewHeader}>
 //             <Ionicons name="eye-outline" size={14} color={theme.textPrimary} />
 //             <Text style={[styles.previewLabel, { color: theme.textPrimary }]}>Live Client In-App Preview</Text>

@@ -8,14 +8,12 @@ export type TabScreen = 'home' | 'orders' | 'profile';
 interface BottomNavBarProps {
   currentTab: TabScreen;
   onTabChange: (tab: TabScreen) => void;
-  cartItemCount?: number;
   unreadMessageCount?: number;
 }
 
 export const BottomNavBar: React.FC<BottomNavBarProps> = ({
   currentTab,
   onTabChange,
-  cartItemCount = 0,
   unreadMessageCount = 0,
 }) => {
   const { theme, isDark } = useTheme();
@@ -40,7 +38,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
             styles.tabButton,
             currentTab === 'home' && [
               styles.tabButtonActive,
-              { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)' },
+              { backgroundColor:theme.primaryMuted},
             ],
           ]}
         >
@@ -68,7 +66,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
             styles.tabButton,
             currentTab === 'orders' && [
               styles.tabButtonActive,
-              { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)' },
+              { backgroundColor:theme.primaryMuted},
             ],
           ]}
         >
@@ -78,13 +76,8 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
               size={18}
               color={currentTab === 'orders' ? theme.textPrimary : theme.textMuted}
             />
-            {cartItemCount > 0 ? (
-              <View style={[styles.cartBadge, { backgroundColor: theme.primary }]}>
-                <Text style={[styles.cartBadgeText, { color: theme.textInverse }]}>{cartItemCount}</Text>
-              </View>
-            ) : (
-              <View style={[styles.liveDot, { backgroundColor: theme.textPrimary }]} />
-            )}
+            {/* The cart count lives on the cart icon. Shown here it read as a number of orders. */}
+            <View style={[styles.liveDot, { backgroundColor: theme.textPrimary }]} />
           </View>
           <Text
             style={[
@@ -105,7 +98,7 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
             styles.tabButton,
             currentTab === 'profile' && [
               styles.tabButtonActive,
-              { backgroundColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)' },
+              { backgroundColor:theme.primaryMuted},
             ],
           ]}
         >

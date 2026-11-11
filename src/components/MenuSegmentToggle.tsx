@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
 import { MenuType } from '../types';
 import { useTheme } from '../theme/ThemeContext';
 import { typography } from '../theme';
@@ -14,6 +14,9 @@ export const MenuSegmentToggle: React.FC<MenuSegmentToggleProps> = ({
   onMenuTypeChange,
 }) => {
   const { theme, isDark } = useTheme();
+  // On narrow phones the label and its badge do not fit side by side, so the badge drops below.
+  const { width: windowWidth } = useWindowDimensions();
+  const isNarrow = windowWidth < 380;
 
   return (
     <View
@@ -33,19 +36,21 @@ export const MenuSegmentToggle: React.FC<MenuSegmentToggleProps> = ({
           activeMenuType === 'standard' && [
             styles.buttonActive,
             {
-              backgroundColor: isDark ? '#242426' : '#121212',
-              borderColor: isDark ? '#3C3C42' : '#000000',
+              backgroundColor:(isDark ? theme.surfaceElevated : theme.primary),
+              borderColor:(isDark ? theme.surfaceBorderLight : theme.primary),
             },
           ],
         ]}
       >
         <Text
+          numberOfLines={1}
           style={[
             styles.text,
+            isNarrow && styles.textNarrow,
             { color: theme.textSecondary, fontFamily: typography.bodyBold },
             activeMenuType === 'standard' && [
               styles.textActive,
-              { color: isDark ? '#F7F2E8' : '#FFFFFF' },
+              { color:(isDark ? theme.textPrimary : theme.onPrimary)},
             ],
           ]}
         >
@@ -61,20 +66,22 @@ export const MenuSegmentToggle: React.FC<MenuSegmentToggleProps> = ({
           activeMenuType === 'chefs_choice' && [
             styles.buttonActive,
             {
-              backgroundColor: isDark ? '#242426' : '#121212',
-              borderColor: isDark ? '#3C3C42' : '#000000',
+              backgroundColor:(isDark ? theme.surfaceElevated : theme.primary),
+              borderColor:(isDark ? theme.surfaceBorderLight : theme.primary),
             },
           ],
         ]}
       >
-        <View style={styles.chefButtonContent}>
+        <View style={[styles.chefButtonContent, isNarrow && styles.chefButtonContentNarrow]}>
           <Text
+            numberOfLines={1}
             style={[
               styles.text,
+              isNarrow && styles.textNarrow,
               { color: theme.textSecondary, fontFamily: typography.bodyBold },
               activeMenuType === 'chefs_choice' && [
                 styles.textActive,
-                { color: isDark ? '#F7F2E8' : '#FFFFFF' },
+                { color:(isDark ? theme.textPrimary : theme.onPrimary)},
               ],
             ]}
           >
@@ -84,7 +91,7 @@ export const MenuSegmentToggle: React.FC<MenuSegmentToggleProps> = ({
             style={[
               styles.cycleBadge,
               {
-                backgroundColor: activeMenuType === 'chefs_choice' ? (isDark ? '#333336' : '#2A2A2E') : theme.surfaceHighlight,
+                backgroundColor: activeMenuType === 'chefs_choice' ? (isDark ? theme.surfaceBorderLight : theme.primaryLight) : theme.surfaceHighlight,
                 borderColor: theme.surfaceBorder,
               },
             ]}
@@ -136,9 +143,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  chefButtonContentNarrow: {
+    flexDirection: 'column',
+    gap: 2,
+  },
   text: {
     fontSize: 14,
     letterSpacing: 0.2,
+  },
+  textNarrow: {
+    fontSize: 13,
+    letterSpacing: 0,
   },
   textActive: {
     fontWeight: '700',

@@ -220,15 +220,15 @@ export const PayFastModal: React.FC<PayFastModalProps> = ({
               activeOpacity={0.85}
               disabled={isProcessing}
               onPress={handlePayFastLaunch}
-              style={[styles.payBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+              style={[styles.payBtn, { backgroundColor:theme.primary}]}
             >
               {isProcessing ? (
                 <View style={styles.loadingRow}>
-                  <ActivityIndicator size="small" color={isDark ? '#000000' : '#FFFFFF'} />
-                  <Text style={[styles.payBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>Redirecting to PayFast...</Text>
+                  <ActivityIndicator size="small" color={theme.onPrimary} />
+                  <Text style={[styles.payBtnText, { color:theme.onPrimary}]}>Redirecting to PayFast...</Text>
                 </View>
               ) : (
-                <Text style={[styles.payBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                <Text style={[styles.payBtnText, { color:theme.onPrimary}]}>
                   Pay {totalZarFormatted} with PayFast →
                 </Text>
               )}

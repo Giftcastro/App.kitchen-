@@ -84,7 +84,7 @@ export const FloorPickerModal: React.FC<FloorPickerModalProps> = ({
                   style={[
                     styles.floorOption,
                     { backgroundColor: theme.surface, borderColor: theme.surfaceBorder },
-                    isSelected && { borderColor: theme.primary, backgroundColor: isDark ? '#242426' : '#EFE9DC' },
+                    isSelected && { borderColor: theme.primary, backgroundColor:theme.chipBg},
                   ]}
                 >
                   <View style={styles.floorLeft}>
@@ -98,7 +98,7 @@ export const FloorPickerModal: React.FC<FloorPickerModalProps> = ({
                       <Ionicons
                         name="business"
                         size={18}
-                        color={isSelected ? (isDark ? '#121212' : '#FFFFFF') : theme.textSecondary}
+                        color={isSelected ? theme.onPrimary : theme.textSecondary}
                       />
                     </View>
                     <View style={styles.floorTextContainer}>

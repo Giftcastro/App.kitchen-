@@ -86,7 +86,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                   style={[
                     styles.dayNumberCompact,
                     { color: theme.textPrimary },
-                    isSelected && { color: '#FFFFFF', fontWeight: '900' },
+                    isSelected && { color: theme.onPrimary, fontWeight: '900' },
                     isLocked && { color: theme.textMuted },
                   ]}
                 >
@@ -96,7 +96,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                   style={[
                     styles.dayInitialCompact,
                     { color: theme.textSecondary },
-                    isSelected && { color: 'rgba(255, 255, 255, 0.9)', fontWeight: '700' },
+                    isSelected && { color: theme.onPrimary, opacity: 0.9, fontWeight: '700' },
                     isLocked && { color: theme.textMuted },
                   ]}
                 >
@@ -134,7 +134,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 style={[
                   styles.dayName,
                   { color: theme.textSecondary },
-                  isSelected && { color: 'rgba(255, 255, 255, 0.9)', fontWeight: '800' },
+                  isSelected && { color: theme.onPrimary, opacity: 0.9, fontWeight: '800' },
                   isLocked && { color: theme.textMuted },
                 ]}
               >
@@ -146,7 +146,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 style={[
                   styles.dayNumber,
                   { color: theme.textPrimary },
-                  isSelected && { color: '#FFFFFF', fontWeight: '900' },
+                  isSelected && { color: theme.onPrimary, fontWeight: '900' },
                   isLocked && { color: theme.textMuted },
                 ]}
               >
@@ -158,7 +158,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
                 style={[
                   styles.monthName,
                   { color: theme.textMuted },
-                  isSelected && { color: 'rgba(255, 255, 255, 0.8)' },
+                  isSelected && { color: theme.onPrimary, opacity: 0.8 },
                 ]}
               >
                 {item.monthName}
@@ -170,7 +170,7 @@ export const DateSelector: React.FC<DateSelectorProps> = ({
               ) : isLocked ? (
                 <Ionicons name="lock-closed" size={8} color={theme.textMuted} style={styles.lockIcon} />
               ) : isSelected ? (
-                <View style={[styles.selectedIndicator, { backgroundColor: '#FFFFFF' }]} />
+                <View style={[styles.selectedIndicator, { backgroundColor: theme.onPrimary }]} />
               ) : null}
             </TouchableOpacity>
           );

@@ -196,9 +196,9 @@ export {};
 //                   <TouchableOpacity
 //                     activeOpacity={0.8}
 //                     onPress={() => handleSetCycle(week.weekNumber)}
-//                     style={[styles.setCycleBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+//                     style={[styles.setCycleBtn, { backgroundColor:theme.primary}]}
 //                   >
-//                     <Text style={[styles.setCycleBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+//                     <Text style={[styles.setCycleBtnText, { color:theme.onPrimary}]}>
 //                       Set as Live Cycle
 //                     </Text>
 //                   </TouchableOpacity>
@@ -237,7 +237,7 @@ export {};
 //             <View
 //               style={[
 //                 StyleSheet.absoluteFill,
-//                 { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+//                 { backgroundColor:theme.overlay},
 //               ]}
 //             />
 //             <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorderLight }]}>
@@ -310,9 +310,9 @@ export {};
 //                 {activeCycleWeekNumber !== selectedWeekDetail && (
 //                   <TouchableOpacity
 //                     onPress={() => handleSetCycle(selectedWeekDetail)}
-//                     style={[styles.activateModalBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+//                     style={[styles.activateModalBtn, { backgroundColor:theme.primary}]}
 //                   >
-//                     <Text style={[styles.activateModalBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+//                     <Text style={[styles.activateModalBtnText, { color:theme.onPrimary}]}>
 //                       Set Week {selectedWeekDetail} as Live Cycle
 //                     </Text>
 //                   </TouchableOpacity>
@@ -342,7 +342,7 @@ export {};
 //             <View
 //               style={[
 //                 StyleSheet.absoluteFill,
-//                 { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+//                 { backgroundColor:theme.overlay},
 //               ]}
 //             />
 //             <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorderLight, maxHeight: '80%' }]}>

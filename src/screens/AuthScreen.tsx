@@ -1226,12 +1226,12 @@ export const AuthScreen: React.FC = () => {
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.modalCard, { backgroundColor: theme.surface, borderColor: theme.surfaceBorder }]}>
-            <View style={styles.modalIconCircle}>
-              <Ionicons name="alert" size={28} color="#D53220" />
+            <View style={[styles.modalIconCircle, { backgroundColor: theme.errorSurface }]}>
+              <Ionicons name="alert" size={28} color={theme.error} />
             </View>
 
             <Text style={[styles.modalTitle, { color: theme.textPrimary }]}>

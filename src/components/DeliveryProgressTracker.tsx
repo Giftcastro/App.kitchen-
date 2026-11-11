@@ -110,7 +110,7 @@ export const DeliveryProgressTracker: React.FC<DeliveryProgressTrackerProps> = (
                       ]}
                     />
                     <View style={[styles.activeNode, { backgroundColor: theme.primary }]}>
-                      <Ionicons name={step.icon} size={16} color="#FFFFFF" />
+                      <Ionicons name={step.icon} size={16} color={theme.onPrimary} />
                     </View>
                   </View>
                 ) : isCompleted ? (

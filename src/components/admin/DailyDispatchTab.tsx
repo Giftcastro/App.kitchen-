@@ -300,7 +300,7 @@ export {};
 //                 styles.dateTabBtn,
 //                 isSelected && [
 //                   styles.dateTabBtnActive,
-//                   { backgroundColor: isDark ? '#FFFFFF' : '#121212', borderColor: isDark ? '#FFFFFF' : '#000000' },
+//                   { backgroundColor:theme.primary, borderColor:theme.primary},
 //                 ],
 //               ]}
 //             >
@@ -309,8 +309,7 @@ export {};
 //                   styles.dateTabText,
 //                   {
 //                     color: isSelected
-//                       ? isDark ? '#121212' : '#FFFFFF'
-//                       : theme.textPrimary,
+//                       ?theme.onPrimary//                       : theme.textPrimary,
 //                     fontWeight: isSelected ? '800' : '600',
 //                     fontSize: 12,
 //                   },
@@ -321,8 +320,7 @@ export {};
 //               <Text
 //                 style={{
 //                   color: isSelected
-//                     ? isDark ? '#121212' : '#FFFFFF'
-//                     : theme.textSecondary,
+//                     ?theme.onPrimary//                     : theme.textSecondary,
 //                   fontSize: 10,
 //                   marginTop: 1,
 //                 }}
@@ -351,10 +349,10 @@ export {};
 //           <TouchableOpacity
 //             activeOpacity={0.85}
 //             onPress={() => setIsPrintModalOpen(true)}
-//             style={[styles.printBtn, { backgroundColor: isDark ? '#FFFFFF' : '#121212' }]}
+//             style={[styles.printBtn, { backgroundColor:theme.primary}]}
 //           >
-//             <Ionicons name="print-outline" size={16} color={isDark ? '#121212' : '#FFFFFF'} />
-//             <Text style={[styles.printBtnText, { color: isDark ? '#121212' : '#FFFFFF', fontFamily: typography.bodyBold }]}>
+//             <Ionicons name="print-outline" size={16} color={theme.onPrimary} />
+//             <Text style={[styles.printBtnText, { color:theme.onPrimary, fontFamily: typography.bodyBold }]}>
 //               Print Sheet
 //             </Text>
 //           </TouchableOpacity>
@@ -427,7 +425,7 @@ export {};
 //               { backgroundColor: theme.surfaceHighlight, borderColor: theme.surfaceBorder },
 //               selectedCompanyFilter === 'all' && [
 //                 styles.filterPillActive,
-//                 { backgroundColor: isDark ? '#FFFFFF' : '#121212', borderColor: isDark ? '#FFFFFF' : '#000000' },
+//                 { backgroundColor:theme.primary, borderColor:theme.primary},
 //               ],
 //             ]}
 //           >
@@ -435,7 +433,7 @@ export {};
 //               style={[
 //                 styles.filterPillText,
 //                 {
-//                   color: selectedCompanyFilter === 'all' ? (isDark ? '#121212' : '#FFFFFF') : theme.textSecondary,
+//                   color: selectedCompanyFilter === 'all' ? theme.onPrimary : theme.textSecondary,
 //                   fontFamily: typography.bodyBold,
 //                 },
 //               ]}
@@ -455,7 +453,7 @@ export {};
 //                   { backgroundColor: theme.surfaceHighlight, borderColor: theme.surfaceBorder },
 //                   isSelected && [
 //                     styles.filterPillActive,
-//                     { backgroundColor: isDark ? '#FFFFFF' : '#121212', borderColor: isDark ? '#FFFFFF' : '#000000' },
+//                     { backgroundColor:theme.primary, borderColor:theme.primary},
 //                   ],
 //                 ]}
 //               >
@@ -463,7 +461,7 @@ export {};
 //                   style={[
 //                     styles.filterPillText,
 //                     {
-//                       color: isSelected ? (isDark ? '#121212' : '#FFFFFF') : theme.textSecondary,
+//                       color: isSelected ? theme.onPrimary : theme.textSecondary,
 //                       fontFamily: typography.bodyBold,
 //                     },
 //                   ]}
@@ -484,7 +482,7 @@ export {};
 //               { backgroundColor: theme.surfaceHighlight, borderColor: theme.surfaceBorder },
 //               selectedCategoryFilter === 'all' && [
 //                 styles.filterPillActive,
-//                 { backgroundColor: isDark ? '#FFFFFF' : '#121212', borderColor: isDark ? '#FFFFFF' : '#000000' },
+//                 { backgroundColor:theme.primary, borderColor:theme.primary},
 //               ],
 //             ]}
 //           >
@@ -492,7 +490,7 @@ export {};
 //               style={[
 //                 styles.filterPillText,
 //                 {
-//                   color: selectedCategoryFilter === 'all' ? (isDark ? '#121212' : '#FFFFFF') : theme.textSecondary,
+//                   color: selectedCategoryFilter === 'all' ? theme.onPrimary : theme.textSecondary,
 //                   fontFamily: typography.bodyBold,
 //                 },
 //               ]}
@@ -512,7 +510,7 @@ export {};
 //                   { backgroundColor: theme.surfaceHighlight, borderColor: theme.surfaceBorder },
 //                   isSelected && [
 //                     styles.filterPillActive,
-//                     { backgroundColor: isDark ? '#FFFFFF' : '#121212', borderColor: isDark ? '#FFFFFF' : '#000000' },
+//                     { backgroundColor:theme.primary, borderColor:theme.primary},
 //                   ],
 //                 ]}
 //               >
@@ -520,7 +518,7 @@ export {};
 //                   style={[
 //                     styles.filterPillText,
 //                     {
-//                       color: isSelected ? (isDark ? '#121212' : '#FFFFFF') : theme.textSecondary,
+//                       color: isSelected ? theme.onPrimary : theme.textSecondary,
 //                       fontFamily: typography.bodyBold,
 //                     },
 //                   ]}
@@ -563,15 +561,15 @@ export {};
 //                   style={[
 //                     styles.portionBox,
 //                     {
-//                       backgroundColor: isDark ? '#242426' : '#121212',
-//                       borderColor: isDark ? '#3C3C42' : '#000000',
+//                       backgroundColor:(isDark ? theme.surfaceElevated : theme.primary),
+//                       borderColor:(isDark ? theme.surfaceBorderLight : theme.primary),
 //                     },
 //                   ]}
 //                 >
 //                   <Text
 //                     style={[
 //                       styles.portionNumber,
-//                       { color: isDark ? '#F7F2E8' : '#FFFFFF', fontFamily: typography.heading },
+//                       { color:(isDark ? theme.textPrimary : theme.onPrimary), fontFamily: typography.heading },
 //                     ]}
 //                   >
 //                     {item.totalQuantity}x
@@ -579,7 +577,7 @@ export {};
 //                   <Text
 //                     style={[
 //                       styles.portionLabel,
-//                       { color: isDark ? '#A1A1A6' : '#E0E0E0', fontFamily: typography.bodyBold },
+//                       { color:theme.textMuted, fontFamily: typography.bodyBold },
 //                     ]}
 //                   >
 //                     PORTIONS
@@ -694,9 +692,9 @@ export {};
 //                 <TouchableOpacity
 //                   activeOpacity={0.85}
 //                   onPress={() => handleToggleBatchStatus(site.id, site.status)}
-//                   style={[styles.advanceStatusBtn, { backgroundColor: isDark ? '#FFFFFF' : '#121212' }]}
+//                   style={[styles.advanceStatusBtn, { backgroundColor:theme.primary}]}
 //                 >
-//                   <Text style={[styles.advanceStatusBtnText, { color: isDark ? '#121212' : '#FFFFFF', fontFamily: typography.bodyBold }]}>
+//                   <Text style={[styles.advanceStatusBtnText, { color:theme.onPrimary, fontFamily: typography.bodyBold }]}>
 //                     {isOut ? 'Mark Delivered ✔' : 'Set Out for Delivery →'}
 //                   </Text>
 //                 </TouchableOpacity>
@@ -744,7 +742,7 @@ export {};
 //           <View
 //             style={[
 //               StyleSheet.absoluteFill,
-//               { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+//               { backgroundColor:theme.overlay},
 //             ]}
 //           />
 //           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorderLight }]}>
@@ -808,10 +806,10 @@ export {};
 //                 <TouchableOpacity
 //                   activeOpacity={0.85}
 //                   onPress={handlePrintConfirm}
-//                   style={[styles.confirmPrintBtn, { backgroundColor: isDark ? '#FFFFFF' : '#121212' }]}
+//                   style={[styles.confirmPrintBtn, { backgroundColor:theme.primary}]}
 //                 >
-//                   <Ionicons name="print" size={16} color={isDark ? '#121212' : '#FFFFFF'} />
-//                   <Text style={[styles.confirmPrintBtnText, { color: isDark ? '#121212' : '#FFFFFF', fontFamily: typography.bodyBold }]}>
+//                   <Ionicons name="print" size={16} color={theme.onPrimary} />
+//                   <Text style={[styles.confirmPrintBtnText, { color:theme.onPrimary, fontFamily: typography.bodyBold }]}>
 //                     Download 1 &amp; 2. Production &amp; Packing PDF
 //                   </Text>
 //                 </TouchableOpacity>

@@ -89,7 +89,7 @@ export const CancellationPolicyModal: React.FC<CancellationPolicyModalProps> = (
               onPress={onClose}
               style={[styles.closeModalBtn, { backgroundColor: theme.primary }]}
             >
-              <Text style={styles.closeModalBtnText}>I Understand</Text>
+              <Text style={[styles.closeModalBtnText, { color: theme.onPrimary }]}>I Understand</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>

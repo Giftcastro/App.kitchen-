@@ -140,7 +140,7 @@ export const TaxInvoiceModal: React.FC<TaxInvoiceModalProps> = ({
                       {item.quantity}x {item.menuItem.name}{item.size === 'large' ? ' (Large)' : ''}{item.selectedAddOns && item.selectedAddOns.length > 0 ? ` (+${item.selectedAddOns.map((a) => a.name).join(', ')})` : ''}
                     </Text>
                     {item.allergyNotes ? (
-                      <Text style={[styles.itemNotes, { color: '#C62828' }]}>
+                      <Text style={[styles.itemNotes, { color: theme.error }]}>
                         Special Request: {item.allergyNotes}
                       </Text>
                     ) : null}

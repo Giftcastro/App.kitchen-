@@ -588,8 +588,8 @@ export const AllergyModal: React.FC<AllergyModalProps> = ({
       <Modal visible={showCutoffNotice} transparent animationType="fade">
         <View style={styles.cutoffOverlay}>
           <View style={[styles.cutoffCard, { backgroundColor: theme.surface, borderColor: theme.surfaceBorder }]}>
-            <View style={styles.cutoffIconCircle}>
-              <Ionicons name="time" size={28} color="#D53220" />
+            <View style={[styles.cutoffIconCircle, { backgroundColor: theme.errorSurface }]}>
+              <Ionicons name="time" size={28} color={theme.error} />
             </View>
 
             <Text style={[styles.cutoffTitle, { color: theme.textPrimary }]}>

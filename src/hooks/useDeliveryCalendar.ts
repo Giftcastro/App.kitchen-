@@ -1,6 +1,23 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useSyncExternalStore } from 'react';
 import { DeliveryDateOption } from '../types';
 import { generate14WeekdayOptions, getNowInSAST } from '../utils/sastTime';
+
+// The chosen delivery day is one value for the whole app. Kept per hook instance, the menu
+// and checkout each had their own and disagreed about which day was selected.
+let sharedSelectedDate = '';
+const selectedDateListeners = new Set<() => void>();
+const subscribeSelectedDate = (listener: () => void) => {
+  selectedDateListeners.add(listener);
+  return () => {
+    selectedDateListeners.delete(listener);
+  };
+};
+const getSharedSelectedDate = () => sharedSelectedDate;
+const setSharedSelectedDate = (dateString: string) => {
+  if (dateString === sharedSelectedDate) return;
+  sharedSelectedDate = dateString;
+  selectedDateListeners.forEach((listener) => listener());
+};
 
 export interface UseDeliveryCalendarResult {
   deliveryDates: DeliveryDateOption[];
@@ -23,9 +40,13 @@ export function useDeliveryCalendar(): UseDeliveryCalendarResult {
     return deliveryDates.find((d) => d.isAvailable && !d.isLocked) || deliveryDates[0];
   }, [deliveryDates]);
 
-  const [selectedDate, setSelectedDate] = useState<string>(
-    firstAvailable ? firstAvailable.dateString : ''
+  const storedSelectedDate = useSyncExternalStore(
+    subscribeSelectedDate,
+    getSharedSelectedDate,
+    getSharedSelectedDate
   );
+  const selectedDate = storedSelectedDate || (firstAvailable ? firstAvailable.dateString : '');
+  const setSelectedDate = setSharedSelectedDate;
 
   const refreshCalendar = useCallback(() => {
     const updated = generate14WeekdayOptions(undefined, 14);

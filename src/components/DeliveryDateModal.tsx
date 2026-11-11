@@ -5,8 +5,7 @@ import {
   Modal,
   TouchableOpacity,
   StyleSheet,
-  Image,
-  Dimensions,
+  useWindowDimensions,
   TouchableWithoutFeedback,
   ScrollView,
   Platform,
@@ -14,6 +13,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
+import { BrandLogo } from './BrandLogo';
 import { DeliveryDateOption } from '../types';
 import { generateWeekdayOptions } from '../utils/sastTime';
 
@@ -24,6 +24,10 @@ interface DeliveryDateModalProps {
   onConfirm: (dateString: string) => void;
   onClose?: () => void;
   canDismiss?: boolean;
+  /** Shows a Skip button under Confirm: closes the picker and keeps the current day. */
+  onSkip?: () => void;
+  /** Shows an Orders button under Confirm: closes the picker and opens the Orders screen. */
+  onViewOrders?: () => void;
 }
 
 export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
@@ -33,8 +37,13 @@ export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
   onConfirm,
   onClose,
   canDismiss = true,
+  onSkip,
+  onViewOrders,
 }) => {
   const { theme, isDark } = useTheme();
+  // Sized from the live window so the card always fits; on short screens the dates scroll
+  // and Confirm stays pinned in view.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   // Resolve available orderable weekdays (matching AllergyModal "Choosing a delivery day")
   const orderableDates = useMemo(() => {
@@ -101,7 +110,7 @@ export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
 
         {/* Semi-transparent Tint Overlay */}
         <TouchableWithoutFeedback onPress={() => canDismiss && onClose && onClose()}>
-          <View style={[styles.backdropTint, { backgroundColor: isDark ? 'rgba(0,0,0,0.65)' : 'rgba(0,0,0,0.35)' }]} />
+          <View style={[styles.backdropTint, { backgroundColor:theme.overlay}]} />
         </TouchableWithoutFeedback>
 
         {/* Centered Modal Card */}
@@ -109,8 +118,10 @@ export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
           style={[
             styles.cardContainer,
             {
-              backgroundColor: isDark ? '#1C1C1E' : '#FDFBF7',
-              borderColor: isDark ? '#2C2C2E' : '#E2E8F0',
+              width: Math.min(windowWidth - 32, 380),
+              maxHeight: windowHeight - 48,
+              backgroundColor:theme.surface,
+              borderColor:theme.surfaceBorder,
             },
           ]}
         >
@@ -120,19 +131,20 @@ export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
               activeOpacity={0.7}
               onPress={onClose}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              style={[styles.closeBtn, { backgroundColor: isDark ? '#2C2C2E' : '#EDF2F7' }]}
+              style={[styles.closeBtn, { backgroundColor:theme.surfaceHighlight}]}
             >
               <Ionicons name="close" size={16} color={theme.textSecondary} />
             </TouchableOpacity>
           )}
 
-          {/* 1. Header Banner / CSG Logo */}
+          <ScrollView
+            style={styles.bodyScroll}
+            contentContainerStyle={styles.bodyScrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+          {/* 1. Header Banner / Brand Logo (themed, so no white box in dark mode) */}
           <View style={styles.headerBannerWrapper}>
-            <Image
-              source={require('../../assets/docs/img.png')}
-              style={styles.headerLogo}
-              resizeMode="contain"
-            />
+            <BrandLogo variant="compact" />
           </View>
 
           {/* 2. Modal Title & Subtitle */}
@@ -163,15 +175,11 @@ export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
                     styles.datePill,
                     {
                       backgroundColor: isSelected
-                        ? (isDark ? '#FFFFFF' : '#121212')
-                        : isDark
-                        ? '#262628'
-                        : '#FFFFFF',
+                        ? theme.primary
+                        :theme.surfaceElevated,
                       borderColor: isSelected
-                        ? (isDark ? '#FFFFFF' : '#121212')
-                        : isDark
-                        ? '#3A3A3C'
-                        : '#CBD5E1',
+                        ? theme.primary
+                        :theme.surfaceBorderLight,
                     },
                     isLocked && styles.datePillLocked,
                   ]}
@@ -182,7 +190,7 @@ export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
                       styles.datePillText,
                       {
                         color: isSelected
-                          ? (isDark ? '#121212' : '#FFFFFF')
+                          ? theme.onPrimary
                           : isLocked
                           ? theme.textMuted
                           : theme.textPrimary,
@@ -202,7 +210,7 @@ export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
 
           {/* 4. Cutoff Notice for Tentative Day */}
           {selectedOption && (
-            <View style={[styles.noticeWrapper, { backgroundColor: isDark ? '#262628' : '#F1F5F9' }]}>
+            <View style={[styles.noticeWrapper, { backgroundColor:theme.surfaceHighlight}]}>
               <Ionicons
                 name={selectedOption.isAvailable ? 'time-outline' : 'alert-circle'}
                 size={14}
@@ -223,6 +231,7 @@ export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
               </Text>
             </View>
           )}
+          </ScrollView>
 
           {/* 5. Primary Confirm Button */}
           <TouchableOpacity
@@ -234,8 +243,8 @@ export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
               styles.confirmButton,
               {
                 backgroundColor: !tentativeDate || selectedOption?.isLocked
-                  ? (isDark ? '#3A3A3C' : '#E2E8F0')
-                  : (isDark ? '#FFFFFF' : '#121212'),
+                  ? theme.buttonDisabled
+                  : theme.primary,
               },
             ]}
           >
@@ -245,20 +254,44 @@ export const DeliveryDateModal: React.FC<DeliveryDateModalProps> = ({
                 {
                   color: !tentativeDate || selectedOption?.isLocked
                     ? theme.textMuted
-                    : (isDark ? '#121212' : '#FFFFFF'),
+                    : theme.onPrimary,
                 },
               ]}
             >
               Confirm
             </Text>
           </TouchableOpacity>
+
+          {/* 6. Secondary actions: leave without picking a day, or go straight to Orders */}
+          {(onSkip || onViewOrders) && (
+            <View style={styles.secondaryRow}>
+              {onSkip && (
+                <TouchableOpacity
+                  testID="skip-date-button"
+                  activeOpacity={0.8}
+                  onPress={onSkip}
+                  style={[styles.secondaryButton, { borderColor: theme.surfaceBorderLight, backgroundColor: theme.surfaceElevated }]}
+                >
+                  <Text numberOfLines={1} style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>Skip</Text>
+                </TouchableOpacity>
+              )}
+              {onViewOrders && (
+                <TouchableOpacity
+                  testID="view-orders-button"
+                  activeOpacity={0.8}
+                  onPress={onViewOrders}
+                  style={[styles.secondaryButton, { borderColor: theme.surfaceBorderLight, backgroundColor: theme.surfaceElevated }]}
+                >
+                  <Text numberOfLines={1} style={[styles.secondaryButtonText, { color: theme.textPrimary }]}>Orders</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
         </View>
       </View>
     </Modal>
   );
 };
-
-const { width, height } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
   overlayContainer: {
@@ -274,9 +307,15 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
+  bodyScroll: {
+    alignSelf: 'stretch',
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  bodyScrollContent: {
+    alignItems: 'center',
+  },
   cardContainer: {
-    width: Math.min(width - 32, 380),
-    maxHeight: height * 0.88,
     borderRadius: 24,
     borderWidth: 1,
     paddingHorizontal: 20,
@@ -304,10 +343,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 12,
-  },
-  headerLogo: {
-    width: 170,
-    height: 44,
+    // Clears the close button in the card's top-right corner.
+    paddingHorizontal: 36,
   },
   title: {
     fontSize: 20,
@@ -380,6 +417,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  secondaryRow: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  // Deliberately small: these are side exits, Confirm is the main action.
+  secondaryButton: {
+    height: 30,
+    paddingHorizontal: 16,
+    borderRadius: 15,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   confirmButtonText: {
     color: '#FFFFFF',

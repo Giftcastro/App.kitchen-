@@ -41,7 +41,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
     updateQuantity,
     removeItem,
     clearCartForDate,
-    getActiveDateTotals,
+    getCartTotals,
     completePaidCheckout,
   } = useCart();
   const { deliveryDates, selectedDate, selectedDateOption, isOrderable } = useDeliveryCalendar();
@@ -100,9 +100,20 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
   const formattedSubtotal = `R ${subtotalDisplay.toFixed(2)}`;
 
   // Includes each date's delivery fee and discount. The server has the final say.
-  const formattedAmountDue = `R ${distinctDates
-    .reduce((sum, d) => sum + getActiveDateTotals(d).totalZar, 0)
-    .toFixed(2)}`;
+  // Every amount on this screen comes from here, so the summary, the Pay button and the
+  // PayFast sheet always show the same figure.
+  const cartTotals = getCartTotals();
+  const formattedAmountDue = `R ${cartTotals.totalZar.toFixed(2)}`;
+  const deliveryFeeLabel =
+    distinctDates.length > 1 ? `Delivery Fee (${distinctDates.length} delivery days)` : 'Delivery Fee';
+  const scheduledDeliveryLabel =
+    distinctDates.length > 1
+      ? `${distinctDates.length} delivery days`
+      : distinctDates.length === 1
+      ? formatIsoDateLabel(distinctDates[0]).replace(/ \d{4}$/, '')
+      : selectedDateOption
+      ? `${selectedDateOption.dayName}, ${selectedDateOption.dayNumber} ${selectedDateOption.monthName}`
+      : 'Selected Date';
 
   const checkoutPayload = useMemo(
     () => ({
@@ -159,10 +170,11 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
       {/* 1. Header Bar */}
       <View style={[styles.headerBar, { backgroundColor: theme.background, borderBottomColor: theme.surfaceBorder }]}>
-        <View>
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Review & Checkout</Text>
-          <Text style={[styles.headerSubtitle, { color: theme.primary }]}>
-            Scheduled Delivery: {selectedDateOption ? `${selectedDateOption.dayName}, ${selectedDateOption.dayNumber} ${selectedDateOption.monthName}` : 'Selected Date'} • 12:00 PM
+        {/* Shrinks and truncates so a long date never pushes the home button off a narrow screen. */}
+        <View style={{ flex: 1, minWidth: 0, marginRight: 12 }}>
+          <Text numberOfLines={1} style={[styles.headerTitle, { color: theme.textPrimary }]}>Review & Checkout</Text>
+          <Text numberOfLines={1} style={[styles.headerSubtitle, { color: theme.primary }]}>
+            Scheduled Delivery: {scheduledDeliveryLabel} • 12:00 PM
           </Text>
         </View>
         <TouchableOpacity
@@ -249,7 +261,7 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
                   <View style={[styles.dateGroupHeader, { backgroundColor: theme.surfaceHighlight, borderColor: theme.surfaceBorder }]}>
                     <Ionicons name="calendar-outline" size={13} color={theme.textPrimary} />
                     <Text style={[styles.dateGroupHeaderTitle, { color: theme.textPrimary }]}>
-                      Scheduled: {dKey}
+                      Scheduled: {formatIsoDateLabel(dKey)}
                     </Text>
                     <Text style={[styles.dateGroupHeaderCount, { color: theme.textSecondary }]}>
                       ({dItems.reduce((s: number, i: CartItem) => s + i.quantity, 0)} meals)
@@ -342,15 +354,26 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
             </View>
 
             <View style={styles.summaryRow}>
-              <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Corporate Delivery Fee (0–15km)</Text>
-              <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>R 0.00 (Free Batch)</Text>
+              <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>{deliveryFeeLabel}</Text>
+              <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+                {cartTotals.deliveryFee > 0 ? `R ${cartTotals.deliveryFee.toFixed(2)}` : 'R 0.00 (Free)'}
+              </Text>
             </View>
+
+            {cartTotals.discountZar > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={[styles.summaryLabel, { color: theme.textSecondary }]}>Corporate Discount</Text>
+                <Text style={[styles.summaryValue, { color: theme.textPrimary }]}>
+                  -R {cartTotals.discountZar.toFixed(2)}
+                </Text>
+              </View>
+            )}
 
             <View style={[styles.divider, { backgroundColor: theme.surfaceBorder }]} />
 
             <View style={styles.totalRow}>
               <Text style={[styles.totalLabel, { color: theme.textPrimary }]}>Total Due</Text>
-              <Text style={[styles.totalValue, { color: theme.textPrimary }]}>{formattedSubtotal}</Text>
+              <Text style={[styles.totalValue, { color: theme.textPrimary }]}>{formattedAmountDue}</Text>
             </View>
           </View>
         )}
@@ -377,10 +400,10 @@ export const CheckoutScreen: React.FC<CheckoutScreenProps> = ({
             onPress={handlePayPress}
             style={[styles.payBtn, { backgroundColor: theme.primary }]}
           >
-            <Text style={[styles.payBtnText, { color: isDark ? '#121212' : '#FFFFFF' }]}>
-              Pay {formattedSubtotal} with PayFast →
+            <Text style={[styles.payBtnText, { color:theme.onPrimary}]}>
+              Pay {formattedAmountDue} with PayFast →
             </Text>
-            <Text style={[styles.payBtnSublabel, { color: isDark ? '#121212' : '#FFFFFF', opacity: 0.9 }]}>
+            <Text style={[styles.payBtnSublabel, { color:theme.onPrimary, opacity: 0.9 }]}>
               PayFast Sandbox • Instant EFT & Card
             </Text>
           </TouchableOpacity>
@@ -772,7 +795,8 @@ const styles = StyleSheet.create({
   },
   bottomBar: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 76 : 64,
+    // Sits fully above the floating tab bar (16/24 offset + ~62 tall) instead of under its top edge.
+    bottom: Platform.OS === 'ios' ? 96 : 88,
     left: 0,
     right: 0,
     paddingHorizontal: 16,

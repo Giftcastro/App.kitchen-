@@ -629,8 +629,8 @@ export const AdminMenuTab: React.FC = () => {
 
             <View style={styles.timelineFlow}>
               <View style={[styles.timelineStep, { backgroundColor: theme.primary }]}>
-                <Text style={styles.timelineStepText}>Week {activeCycleWeekNumber}</Text>
-                <Text style={styles.timelineStepSub}>Active Week (Now)</Text>
+                <Text style={[styles.timelineStepText, { color: theme.onPrimary }]}>Week {activeCycleWeekNumber}</Text>
+                <Text style={[styles.timelineStepSub, { color: theme.onPrimary }]}>Active Week (Now)</Text>
               </View>
               <Ionicons name="arrow-forward" size={14} color={theme.textMuted} />
               <View style={[styles.timelineStep, { backgroundColor: theme.chipBg, borderColor: theme.surfaceBorder, borderWidth: 1 }]}>
@@ -800,7 +800,7 @@ export const AdminMenuTab: React.FC = () => {
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>
@@ -895,6 +895,7 @@ export const AdminMenuTab: React.FC = () => {
                   value={editIsAvailable}
                   onValueChange={setEditIsAvailable}
                   trackColor={{ false: 'rgba(150, 150, 150, 0.3)', true: theme.primary }}
+                  {...(Platform.OS === 'web' ? ({ activeThumbColor: theme.onPrimary } as object) : {})}
                 />
               </View>
 
@@ -995,7 +996,7 @@ export const AdminMenuTab: React.FC = () => {
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>
@@ -1090,7 +1091,7 @@ export const AdminMenuTab: React.FC = () => {
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>
@@ -1157,7 +1158,7 @@ export const AdminMenuTab: React.FC = () => {
           <View
             style={[
               StyleSheet.absoluteFill,
-              { backgroundColor: isDark ? 'rgba(0,0,0,0.68)' : 'rgba(15,23,42,0.45)' },
+              { backgroundColor:theme.overlay},
             ]}
           />
           <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.surfaceBorder }]}>

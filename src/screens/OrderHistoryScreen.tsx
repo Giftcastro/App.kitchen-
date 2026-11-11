@@ -198,7 +198,7 @@ export const OrderHistoryScreen: React.FC<OrderHistoryScreenProps> = ({
               style={[
                 styles.tabBtn,
                 isSelected && {
-                  backgroundColor: isDark ? '#FFFFFF' : '#000000',
+                  backgroundColor:theme.primary,
                 },
               ]}
             >
@@ -207,7 +207,7 @@ export const OrderHistoryScreen: React.FC<OrderHistoryScreenProps> = ({
                   styles.tabBtnText,
                   { color: theme.textSecondary },
                   isSelected && {
-                    color: isDark ? '#000000' : '#FFFFFF',
+                    color:theme.onPrimary,
                     fontWeight: '800',
                   },
                 ]}
@@ -220,7 +220,7 @@ export const OrderHistoryScreen: React.FC<OrderHistoryScreenProps> = ({
                     styles.tabBadge,
                     {
                       backgroundColor: isSelected
-                        ? (isDark ? '#000000' : '#FFFFFF')
+                        ? theme.surface
                         : theme.surfaceHighlight,
                     },
                   ]}
@@ -230,7 +230,7 @@ export const OrderHistoryScreen: React.FC<OrderHistoryScreenProps> = ({
                       styles.tabBadgeText,
                       {
                         color: isSelected
-                          ? (isDark ? '#FFFFFF' : '#000000')
+                          ? theme.textPrimary
                           : theme.textPrimary,
                       },
                     ]}
@@ -299,9 +299,9 @@ export const OrderHistoryScreen: React.FC<OrderHistoryScreenProps> = ({
               <TouchableOpacity
                 activeOpacity={0.85}
                 onPress={onNavigateToMenu}
-                style={[styles.browseBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+                style={[styles.browseBtn, { backgroundColor:theme.primary}]}
               >
-                <Text style={[styles.browseBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                <Text style={[styles.browseBtnText, { color:theme.onPrimary}]}>
                   Browse 2-Week Menu →
                 </Text>
               </TouchableOpacity>
@@ -471,9 +471,9 @@ export const OrderHistoryScreen: React.FC<OrderHistoryScreenProps> = ({
                           <TouchableOpacity
                             activeOpacity={0.85}
                             onPress={() => handleRatingSubmit(order.id)}
-                            style={[styles.submitRatingBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+                            style={[styles.submitRatingBtn, { backgroundColor:theme.primary}]}
                           >
-                            <Text style={[styles.submitRatingBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                            <Text style={[styles.submitRatingBtnText, { color:theme.onPrimary}]}>
                               Submit Rating
                             </Text>
                           </TouchableOpacity>
@@ -502,10 +502,10 @@ export const OrderHistoryScreen: React.FC<OrderHistoryScreenProps> = ({
                   <TouchableOpacity
                     activeOpacity={0.85}
                     onPress={onNavigateToTracker}
-                    style={[styles.trackOrderBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+                    style={[styles.trackOrderBtn, { backgroundColor:theme.primary}]}
                   >
-                    <Ionicons name="navigate-outline" size={15} color={isDark ? '#000000' : '#FFFFFF'} />
-                    <Text style={[styles.trackOrderBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+                    <Ionicons name="navigate-outline" size={15} color={theme.onPrimary} />
+                    <Text style={[styles.trackOrderBtnText, { color:theme.onPrimary}]}>
                       Track Today's Batch Drop
                     </Text>
                   </TouchableOpacity>
@@ -550,15 +550,15 @@ export const OrderHistoryScreen: React.FC<OrderHistoryScreenProps> = ({
             style={StyleSheet.absoluteFill}
           />
           <TouchableWithoutFeedback onPress={() => setIsMorningNoticeOpen(false)}>
-            <View style={[styles.modalBackdropTint, { backgroundColor: isDark ? 'rgba(0,0,0,0.65)' : 'rgba(0,0,0,0.35)' }]} />
+            <View style={[styles.modalBackdropTint, { backgroundColor:theme.overlay}]} />
           </TouchableWithoutFeedback>
 
           <View
             style={[
               styles.noticeCard,
               {
-                backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
-                borderColor: isDark ? '#2E2E32' : '#E5DFD3',
+                backgroundColor:theme.surface,
+                borderColor:theme.surfaceBorder,
               },
             ]}
           >
@@ -632,10 +632,10 @@ export const OrderHistoryScreen: React.FC<OrderHistoryScreenProps> = ({
                   onNavigateToTracker();
                 }
               }}
-              style={[styles.noticePrimaryBtn, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]}
+              style={[styles.noticePrimaryBtn, { backgroundColor:theme.primary}]}
             >
-              <Ionicons name="navigate-outline" size={16} color={isDark ? '#000000' : '#FFFFFF'} />
-              <Text style={[styles.noticePrimaryBtnText, { color: isDark ? '#000000' : '#FFFFFF' }]}>
+              <Ionicons name="navigate-outline" size={16} color={theme.onPrimary} />
+              <Text style={[styles.noticePrimaryBtnText, { color:theme.onPrimary}]}>
                 Track Batch Progress
               </Text>
             </TouchableOpacity>
